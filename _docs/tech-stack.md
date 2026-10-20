@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.3** | Tasks 2–3 grooming: `proxy.ts` also sets `x-request-id` (§3 rule 6, M3); logger reads `LOG_LEVEL` directly as an exception to §3 rule 5; G1 enforced by workflow instead of branch protection (TO-21) |
 | **Changes in 1.2** | Task 1 grooming: UI, utility and i18n file locations (§3), test file naming (§11), ESLint, Node version enforced at install (§2), scope of `pnpm verify` vs. `ci.yml` and `main.yml` (G7, T7, §12) |
 | **Changes in 1.1** | Decisions from `open-questions.md` (Q1–Q27) applied |
 
@@ -128,7 +129,7 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
     /pdf          offer letter component
     config.ts     typed configuration loader
   /worker         pg-boss job handlers + standalone entry point
-  proxy.ts        cookie presence check only (rule 6)
+  proxy.ts        session-cookie presence check + x-request-id (rule 6)
 /messages         en.json (next-intl messages)
 /infra            Bicep templates
 /tests            Vitest specs (**/*.test.ts(x)), fixtures
@@ -140,8 +141,8 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
 2. All API input is validated with Zod.
 3. Every route that reads the database, including the public career pages, is rendered on the server at request time (`export const dynamic = 'force-dynamic'`). There is no build-time static generation of database content (W1).
 4. External services are reached only through the adapter interfaces `StorageService`, `EmailService`, `CalendarService`, `JobQueue` and `CaptchaService`. No SDK imports outside `/server/adapters`.
-5. **Configuration** is read through `getConfig()`, which validates all environment variables with Zod **on first call** (not at import time) and caches the result. Startup code calls it immediately, so a missing variable stops the app at start. The production build never needs runtime secrets.
-6. **`proxy.ts`** (Next.js 16's replacement for `middleware.ts`) only checks that the session cookie is present and redirects to sign-in if not. Every page, server action and route handler loads the session and role on the server and authorizes through the policy module. No authorization decision is made in `proxy.ts`.
+5. **Configuration** is read through `getConfig()`, which validates all environment variables with Zod **on first call** (not at import time) and caches the result. Startup code calls it immediately, so a missing variable stops the app at start. The production build never needs runtime secrets. **Exception:** the logger reads `process.env.LOG_LEVEL` directly (default `info`), so a configuration error can itself be logged.
+6. **`proxy.ts`** (Next.js 16's replacement for `middleware.ts`) does only two things: it checks that the session cookie is present and redirects to sign-in if not, and it generates a fresh `x-request-id` for every request, replacing any value the client sent, and sets it on the forwarded request and the response (M3). Every page, server action and route handler loads the session and role on the server and authorizes through the policy module. No authorization or role (RBAC) decision is made in `proxy.ts`.
 7. `next.config.ts`: `output: 'standalone'`; `serverExternalPackages: ['pg', 'pg-boss', 'pino', '@react-pdf/renderer']`.
 8. One container image runs everything; `pnpm worker` (standalone worker) exists for future scaling but isn't deployed.
 9. **Client IP and rate limit** (`ats-project-scope.md` F6): one helper resolves the client IP as (1) `x-envoy-external-address` (set by the Container Apps ingress), if present; (2) otherwise the **last** entry of `x-forwarded-for`; (3) otherwise `127.0.0.1` (local). The first `x-forwarded-for` entry is never used, because the client can set it. Counts are stored in the `rate_limits` table. When `AUTH_DEV_LOGIN=true`, the limit is bypassed unless the request sends `x-enforce-rate-limit: true` (used by the `F6:` test), so parallel Playwright tests don't throttle each other.
@@ -321,7 +322,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 
 | Rule | Behaviour |
 |---|---|
-| G1 Branching | Short-lived branches → pull request → `main`; branch protection requires `ci.yml`. |
+| G1 Branching | Short-lived branches → pull request → `main`. A pull request is merged only after `ci.yml` passes and the owner approves it. This is enforced by the agent and owner workflow (`AGENTS.md`), not by GitHub branch protection, which private repositories on the Free plan don't have (TO-21). |
 | G2 One image | The image tested end-to-end is the image deployed. |
 | G3 Azure access | GitHub authenticates to Azure with an OIDC federated credential on a service principal in the project tenant, with Contributor rights on the project resource group only. No Azure secrets in GitHub. |
 | G4 Minutes budget | End-to-end tests only on `main`; dependency and build caching; `concurrency` cancels superseded runs. The Free plan includes 2,000 Linux minutes per month for private repositories. |
@@ -340,7 +341,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 |---|---|
 | M1 Logger | pino structured JSON to stdout through one logger module. |
 | M2 No personal data | Log identifiers only (application, requisition, user, job IDs); never names, emails, phone numbers, file content, salary or comments. pino `redact` paths act as a safety net. The same applies to `audit_log.details_json`: IDs and counts only. |
-| M3 Correlation | Each request gets a `request_id` (returned in `x-request-id`); job logs include `job_id` and queue name. |
+| M3 Correlation | Each request gets a `request_id`, generated in `proxy.ts` (§3 rule 6) and returned in `x-request-id`; job logs include `job_id` and queue name. |
 | M4 Errors | Unhandled errors are logged with stack and `request_id`; users see a generic error page showing the `request_id`. |
 | M5 Health | `GET /api/health` checks database and storage connectivity; used by the deploy smoke test and Container Apps health probes. |
 | M6 Job visibility | J6. |

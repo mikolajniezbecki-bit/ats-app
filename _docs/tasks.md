@@ -24,6 +24,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 2. Pull-request CI and rule-traceability scanner
 
+**Issue:** [#2](https://github.com/mikolajniezbecki-bit/ats-app/issues/2)
+
 **Goal:** Every pull request runs the checks from `ci.yml`, including the rule-ID scan.
 
 **Description:** Add `.github/workflows/ci.yml` (install with pnpm cache → the `pnpm verify` checks: lint → typecheck → unit tests → `pnpm test:rules` → then `next build`; no Playwright; `concurrency` cancelling superseded runs, G4) and Dependabot weekly updates for npm and GitHub Actions (G8). Implement `pnpm test:rules` (T1): it scans Vitest and Playwright test titles for rule IDs followed by a colon, matching exactly (`A2:` is not `AU2:`), and fails when a required ID has no test. Because rules are built incrementally, the scanner also reads a committed list of not-yet-implemented IDs (`tests/rules-pending.json`) that each task shrinks; it fails if a pending ID already has a test, so the list cannot go stale. Add `test:rules` to `pnpm verify`; `verify` still does not run `next build` (G7).
@@ -37,11 +39,13 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 3. Typed configuration and structured logging
 
+**Issue:** [#3](https://github.com/mikolajniezbecki-bit/ats-app/issues/3)
+
 **Goal:** The app reads all configuration through one validated loader and logs structured JSON without personal data.
 
 **Description:** Implement `getConfig()` in `src/server/config.ts`: it validates every environment variable from `tech-stack.md` §3 with Zod on first call (not at import time), caches the result, and enforces the AU7 guard (refuse to start when `AUTH_DEV_LOGIN === 'true'` and `APP_ENV === 'azure'` or `EMAIL_PROVIDER === 'outbox'`). Add a pino logger module with `redact` paths for personal fields (M1, M2), a per-request `request_id` returned in `x-request-id` (M3), and a generic error page that shows the `request_id` (M4). Commit a `.env.example` listing every variable without secret values.
 
-**Depends on:** 1
+**Depends on:** 1, 2
 
 **Done when:**
 - Unit tests show `getConfig()` throws a message naming a missing variable and is not evaluated when the module is imported.

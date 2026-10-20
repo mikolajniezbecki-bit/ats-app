@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.1 |
+| **Version** | 1.2 |
 | **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.2** | TO-21 added (G1 without branch protection) |
 | **Changes in 1.1** | Decisions from `open-questions.md` (Q1–Q27) applied |
 
 **Purpose of this document:** lists every deliberate limitation of the proof of concept: what is left out or simplified, the impact, why it's acceptable now, and how the enterprise version would close the gap. It contains no build instructions.
@@ -38,6 +39,7 @@
 | TO-18 | Network | Database reachable over public endpoint |
 | TO-19 | Environments | Single Azure environment |
 | TO-20 | Interviews | Interviewer access ends immediately at a final status |
+| TO-21 | Delivery | `main` is protected by workflow, not by GitHub branch protection |
 
 ---
 
@@ -200,3 +202,11 @@
 | **Impact** | Interview feedback can be lost when a candidate is rejected quickly after an interview. |
 | **Why acceptable** | Strict need-to-know access; recruiters can ask for feedback before rejecting. |
 | **Upgrade path** | A short grace period after the final status during which interviewers can still submit scorecards for past interviews. |
+
+## TO-21 — Merge Gate by Workflow, Not Branch Protection
+| | |
+|---|---|
+| **Limitation** | The repository is private on the GitHub Free plan, which has no branch protection or rulesets for private repositories. GitHub does not block a merge to `main` when `ci.yml` fails, or a direct push to `main`. |
+| **Impact** | A red pull request or a direct push can reach `main` by mistake; `main.yml` would then catch it only after the merge. |
+| **Why acceptable** | One owner and one agent; `AGENTS.md` requires green tests before every commit and the owner's approval before every merge; `main.yml` runs `pnpm verify` and the full Playwright suite on every push to `main` before anything is deployed (G1, G2). |
+| **Upgrade path** | GitHub Pro or Team (or a public repository) with a ruleset on `main` that requires `ci.yml` and a pull request review. |
