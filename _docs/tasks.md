@@ -650,11 +650,13 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 40. Data retention purge
 
+**Issue:** [#46](https://github.com/mikolajniezbecki-bit/ats-app/issues/46)
+
 **Goal:** Expired applications are anonymized and their personal data and files removed.
 
 **Description:** Implement the daily `retention.purge` task (RT1–RT5): select final applications past `RETENTION_DAYS` since `dispositioned_at` (hires only after export), null the personal fields, set `anonymized_at`, delete pre-screening answers, clear comments and email content, delete linked files from storage (F8), and clear offer approval comments, in batches with one transaction per application. The same task deletes `rate_limits` rows older than 2 hours.
 
-**Grooming notes:** cancel the application's queued emails before anonymizing (RT4). also deletes `rate_limits` rows older than 2 h (keys `apply:<ip or /64>`, one-minute buckets); anonymized applications already refuse status changes (RT3). include scorecard notes files (`owner_type = SCORECARD`) and queued interview emails in the test. offer approval and reminder emails set `application_id`, so RT4 clears them; include `OFFER_LETTER` files and offer `approval_events` comments in the purge test; check hires corrected by R4 (`exported_at` cleared, no longer `HIRED`).
+**Grooming notes:** cancel the application's queued emails before anonymizing (RT4). also deletes `rate_limits` rows older than 2 h (keys `apply:<ip or /64>`, one-minute buckets); anonymized applications already refuse status changes (RT3). include scorecard notes files (`owner_type = SCORECARD`) and queued interview emails in the test. offer approval and reminder emails set `application_id`, so RT4 clears them; include `OFFER_LETTER` files and offer `approval_events` comments in the purge test; check hires corrected by R4 (`exported_at` cleared, no longer `HIRED`). label anonymized applications as "Anonymized applicant" across staff pages.
 
 **Depends on:** 39
 
@@ -665,11 +667,13 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 41. Reporting dashboard and CSV exports
 
+**Issue:** [#47](https://github.com/mikolajniezbecki-bit/ats-app/issues/47)
+
 **Goal:** Recruiters and Admins see recruiting KPIs and can export requisition and pipeline data.
 
 **Description:** Build the KPI dashboard: open requisitions, active applications per status, average Time to Fill (only `FILLED`), average Time to Hire (`hired_at − applied_at`) and Age of Requisition per open requisition, using the paused-time formulas in L10. Add CSV exports for the requisition list and pipeline data, Recruiter and Admin only (V10).
 
-**Grooming notes:** L10 uses `paused_days` from task 29; re-approval doesn't pause the clock (TO-10). reuse `src/server/exports/csv.ts` (BOM, quoting, formula prefix, V10) for the requisition and pipeline exports on `/exports`.
+**Grooming notes:** L10 uses `paused_days` from task 29; re-approval doesn't pause the clock (TO-10). reuse `src/server/exports/csv.ts` (BOM, quoting, formula prefix, V10) for the requisition and pipeline exports on `/exports`. the pipeline CSV handles anonymized rows.
 
 **Depends on:** 38
 
@@ -679,6 +683,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Requisition and pipeline CSV exports download for Recruiters and return 403 for other roles.
 
 ## 42. Synthetic demo data
+
+**Issue:** [#48](https://github.com/mikolajniezbecki-bit/ats-app/issues/48)
 
 **Goal:** A fresh environment shows a realistic demo with requisitions, applications and files.
 
@@ -695,11 +701,13 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 43. Main-branch pipeline with end-to-end tests
 
+**Issue:** [#49](https://github.com/mikolajniezbecki-bit/ats-app/issues/49)
+
 **Goal:** Every push to `main` builds one image and runs the full Playwright suite against it.
 
 **Description:** Add `.github/workflows/main.yml` (push to `main` and manual): run `pnpm verify`, build the image once tagged with the commit SHA, start the Compose stack with that image, migrate and seed from that image, run `pnpm test:integration` against the Compose PostgreSQL, run the full Playwright suite with one retry and trace, video and screenshot kept on failure (T6), then push the image to GHCR with `GITHUB_TOKEN` (G2, G4). Deployment steps are added later.
 
-**Grooming notes:** add a Compose app healthcheck on `/api/health` so the workflow waits for the app; run `pnpm test:e2e` (parallel, then `time-travel`); set `E2E_*` overrides only if needed; add an Azurite service wherever integration tests run (task 13 adds it to `ci.yml`). the seed step gets `DEMO_USER_*` from Compose; Mailpit is already in the stack. CI Playwright needs internet access to `challenges.cloudflare.com` (Turnstile test keys, browser and server); `@axe-core/playwright` is a dev dependency. keep the task 37 Playwright preview test in the main suite: it proves the fonts and `/public/logo.png` are in the image.
+**Grooming notes:** add a Compose app healthcheck on `/api/health` so the workflow waits for the app; run `pnpm test:e2e` (parallel, then `time-travel`); set `E2E_*` overrides only if needed; add an Azurite service wherever integration tests run (task 13 adds it to `ci.yml`). the seed step gets `DEMO_USER_*` from Compose; Mailpit is already in the stack. CI Playwright needs internet access to `challenges.cloudflare.com` (Turnstile test keys, browser and server); `@axe-core/playwright` is a dev dependency. keep the task 37 Playwright preview test in the main suite: it proves the fonts and `/public/logo.png` are in the image. Playwright `forbidOnly`, retries and trace/video/screenshot settings (left over from task 2); the `APP_IMAGE` Compose variable and app healthcheck; GHCR cleanup (10 versions).
 
 **Depends on:** 42
 
@@ -710,11 +718,13 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 44. Azure infrastructure as code
 
+**Issue:** [#50](https://github.com/mikolajniezbecki-bit/ats-app/issues/50)
+
 **Goal:** The whole Azure environment is defined in Bicep and deployable from GitHub.
 
 **Description:** Write `/infra/main.bicep` with every resource in G5: Log Analytics (0.1 GB/day cap, 30-day retention), Container Apps environment, web app (0–1 replicas, Key Vault secret references, user-assigned identity, `APP_ENV=azure`), `tick`, `db-migrate` and `db-seed` jobs, PostgreSQL Flexible Server 17 B1MS with TLS and a least-privilege app login (which still needs rights to create and use the `pgboss` schema, since app start runs `boss.start()` and `createQueue()`, J5), storage with private `files` container, Key Vault, role assignments and the EUR 10 budget alert. Add `infra.yml` (manual: what-if → approval → deploy) authenticating with OIDC on a service principal scoped to the resource group (G3), and document the one-time owner setup including the GHCR classic PAT with `read:packages` only (G9).
 
-**Grooming notes:** use `/api/health` for the readiness and startup probes, not liveness (M5); Bicep creates the `files` container; `MICROSOFT_TENANT_ID` must be the tenant GUID (AU1). the `db-seed` job runs the compiled entry points (no pnpm in the image), sets `DEMO_USER_DOMAIN` to the tenant domain and never sets `DEMO_USER_PASSWORD` or `AUTH_DEV_LOGIN`; `EMAIL_PROVIDER=outbox` is required (§3 rule 10). real Turnstile keys go in Key Vault; `BETTER_AUTH_URL` is used for sitemap URLs and approval-email links.
+**Grooming notes:** use `/api/health` for the readiness and startup probes, not liveness (M5); Bicep creates the `files` container; `MICROSOFT_TENANT_ID` must be the tenant GUID (AU1). the `db-seed` job runs the compiled entry points (no pnpm in the image), sets `DEMO_USER_DOMAIN` to the tenant domain and never sets `DEMO_USER_PASSWORD` or `AUTH_DEV_LOGIN`; `EMAIL_PROVIDER=outbox` is required (§3 rule 10). real Turnstile keys go in Key Vault; `BETTER_AUTH_URL` is used for sitemap URLs and approval-email links. the `db-seed` job gets the storage identity, `EMAIL_HASH_KEY` and the full variable set (task 42's seed needs them); blob soft delete off so task 40's deletions are real; `pgboss` ownership for the app login and `DATABASE_ADMIN_URL` for the `db:migrate` entry point; a compiled tick client entry point; `infra.yml` runs `db-migrate` and the health check after a full deploy.
 
 **Depends on:** 43
 
@@ -725,11 +735,13 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 45. Azure deployment and cloud proofs
 
+**Issue:** [#51](https://github.com/mikolajniezbecki-bit/ats-app/issues/51)
+
 **Goal:** `main` deploys automatically to Azure and the cloud-only proofs pass.
 
 **Description:** Extend `main.yml` after the image push: Azure login with OIDC, run the `db-migrate` job, update the web Container App to the new tag, and smoke-test `GET /api/health`. Run the remaining manual Sprint 0 proofs in Azure (#6 Entra sign-in and refusal, #7 signed links with a user delegation key, #8 Outbox, #9 client IP header) and record the results. Document the rebuild order from an empty resource group (G6) and how to stop the database and the tick job between demos (G10).
 
-**Grooming notes:** this task runs the cloud halves of Sprint 0 proofs #6 and #7, whose local halves are in tasks 11 and 13. also runs the Azure half of the Outbox proof (#8). Sprint 0 proof #9 confirms the header `getClientIp` relies on; check the Turnstile widget on the Azure hostname.
+**Grooming notes:** this task runs the cloud halves of Sprint 0 proofs #6 and #7, whose local halves are in tasks 11 and 13. also runs the Azure half of the Outbox proof (#8). Sprint 0 proof #9 confirms the header `getClientIp` relies on; check the Turnstile widget on the Azure hostname. update job images on every deploy; the `ipSource` log line in `getClientIp`; check that dev sign-in and `x-test-now` are off in Azure; Key Vault soft-delete and host-name steps in the rebuild procedure.
 
 **Depends on:** 44
 
@@ -741,11 +753,13 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 46. Rule coverage close-out
 
+**Issue:** [#52](https://github.com/mikolajniezbecki-bit/ats-app/issues/52)
+
 **Goal:** Every required rule ID has a named test and the full role journeys pass.
 
 **Description:** Fill any remaining gaps so `tests/rules-pending.json` is empty and `pnpm test:rules` enforces T1 with no exceptions, then remove the pending-list mechanism. Add end-to-end journeys for every role covering apply → screen → interview → scorecard → offer → hire → export, approvals and re-approval, hold/close/reopen and purge (`tech-stack.md` §11).
 
-**Grooming notes:** the journeys can reuse the Playwright flows from tasks 22, 24 and 27. also reuse the flows from tasks 29, 30, 32 and 33. also reuse the flows from tasks 34–39 (Hiring Manager read-only view, My interviews, offer create/approve/reject, preview, response, hire, auto-close, export).
+**Grooming notes:** the journeys can reuse the Playwright flows from tasks 22, 24 and 27. also reuse the flows from tasks 29, 30, 32 and 33. also reuse the flows from tasks 34–39 (Hiring Manager read-only view, My interviews, offer create/approve/reject, preview, response, hire, auto-close, export). includes the purge journey with the test clock.
 
 **Depends on:** 45
 
