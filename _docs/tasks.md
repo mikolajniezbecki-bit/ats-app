@@ -8,9 +8,11 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 1. Empty project skeleton
 
+**Issue:** [#1](https://github.com/mikolajniezbecki-bit/ats-app/issues/1)
+
 **Goal:** An empty Next.js project that matches `tech-stack.md`, with one passing test.
 
-**Description:** Create a Next.js 16 App Router project in TypeScript (strict mode) on Node.js 24 with pnpm (version pinned in `packageManager`), Tailwind CSS, shadcn/ui, and `next-intl` in single-locale mode (`en` only, `/messages/en.json`, no locale prefix). Set up the folder structure from `tech-stack.md` §3 (`src/app`, `src/server/{domain,policy,db,adapters,pdf}`, `src/worker`, `messages`, `infra`, `tests`), `next.config.ts` per §3 rule 7, and install Vitest and Playwright. Add the scripts `lint`, `typecheck`, `test` and `verify` (lint + typecheck + unit tests) and one trivial Vitest test; no business code.
+**Description:** Create a Next.js 16 App Router project in TypeScript (strict mode) on Node.js 24 with pnpm (version pinned in `packageManager`), Tailwind CSS, shadcn/ui, and `next-intl` in single-locale mode (`en` only, `/messages/en.json`, no locale prefix). Set up the folder structure from `tech-stack.md` §3 (`src/app`, `src/components`, `src/lib`, `src/i18n`, `src/server/{domain,policy,db,adapters,pdf}`, `src/worker`, `messages`, `infra`, `tests`, `tests/e2e`), `next.config.ts` per §3 rule 7, and install ESLint (`eslint-config-next`), Vitest (`tests/**/*.test.ts(x)`, excluding `tests/e2e/**`) and Playwright (`tests/e2e/**/*.spec.ts`). Enforce Node 24 with `engines` and `engine-strict=true` in `.npmrc`. Add the scripts `lint`, `typecheck`, `test` and `verify` (lint + typecheck + unit tests; no `next build`, G7) and one trivial Vitest test; no business code.
 
 **Depends on:** none
 
@@ -24,7 +26,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Goal:** Every pull request runs the checks from `ci.yml`, including the rule-ID scan.
 
-**Description:** Add `.github/workflows/ci.yml` (install with pnpm cache → lint → typecheck → unit tests → `pnpm test:rules` → `next build`, with `concurrency` cancelling superseded runs, G4) and Dependabot weekly updates for npm and GitHub Actions (G8). Implement `pnpm test:rules` (T1): it scans Vitest and Playwright test titles for rule IDs followed by a colon, matching exactly (`A2:` is not `AU2:`), and fails when a required ID has no test. Because rules are built incrementally, the scanner also reads a committed list of not-yet-implemented IDs (`tests/rules-pending.json`) that each task shrinks; it fails if a pending ID already has a test, so the list cannot go stale. Add `test:rules` to `pnpm verify` (G7).
+**Description:** Add `.github/workflows/ci.yml` (install with pnpm cache → the `pnpm verify` checks: lint → typecheck → unit tests → `pnpm test:rules` → then `next build`; no Playwright; `concurrency` cancelling superseded runs, G4) and Dependabot weekly updates for npm and GitHub Actions (G8). Implement `pnpm test:rules` (T1): it scans Vitest and Playwright test titles for rule IDs followed by a colon, matching exactly (`A2:` is not `AU2:`), and fails when a required ID has no test. Because rules are built incrementally, the scanner also reads a committed list of not-yet-implemented IDs (`tests/rules-pending.json`) that each task shrinks; it fails if a pending ID already has a test, so the list cannot go stale. Add `test:rules` to `pnpm verify`; `verify` still does not run `next build` (G7).
 
 **Depends on:** 1
 
@@ -566,7 +568,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Goal:** Every push to `main` builds one image and runs the full Playwright suite against it.
 
-**Description:** Add `.github/workflows/main.yml` (push to `main` and manual): run the `ci.yml` checks, build the image once tagged with the commit SHA, start the Compose stack with that image, migrate and seed, run the full Playwright suite with one retry and trace, video and screenshot kept on failure (T6), then push the image to GHCR with `GITHUB_TOKEN` (G2, G4). Deployment steps are added later.
+**Description:** Add `.github/workflows/main.yml` (push to `main` and manual): run `pnpm verify`, build the image once tagged with the commit SHA, start the Compose stack with that image, migrate and seed, run the full Playwright suite with one retry and trace, video and screenshot kept on failure (T6), then push the image to GHCR with `GITHUB_TOKEN` (G2, G4). Deployment steps are added later.
 
 **Depends on:** 42
 

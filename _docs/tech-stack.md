@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.1 |
+| **Version** | 1.2 |
 | **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.2** | Task 1 grooming: UI, utility and i18n file locations (§3), test file naming (§11), ESLint, Node version enforced at install (§2), scope of `pnpm verify` vs. `ci.yml` and `main.yml` (G7, T7, §12) |
 | **Changes in 1.1** | Decisions from `open-questions.md` (Q1–Q27) applied |
 
 **Purpose of this document:** defines **how** the system is built: architecture, technology choices, technical rules, testing, deployment and operating cost.
@@ -94,7 +95,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 
 | Component | Version |
 |---|---|
-| Node.js | 24 LTS |
+| Node.js | 24 LTS (`engines.node` in `package.json`; `engine-strict=true` in `.npmrc` makes install fail on another version) |
 | Next.js | 16.x |
 | React | version required by Next.js 16 |
 | TypeScript | 5.x, strict |
@@ -104,6 +105,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 | Better Auth | latest stable 1.x |
 | next-intl | latest stable |
 | Playwright / Vitest | latest stable |
+| Linter | ESLint with `eslint-config-next` (called directly; Next.js 16 removed `next lint`) |
 | Package manager | pnpm (version pinned in `package.json` `packageManager`) |
 
 All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Dependabot (G8).
@@ -115,6 +117,9 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
 ```
 /src
   /app            Next.js routes (career portal, back office, API route handlers)
+  /components     React components; shadcn/ui components in /components/ui
+  /lib            client-safe helpers (utils.ts: shadcn/ui `cn`)
+  /i18n           request.ts (next-intl request config)
   /server
     /domain       business rules (A, L, S, F, R, I, E, RT, V); no framework imports
     /policy       can(user, action, resource) + row-level query filters (V9)
@@ -126,7 +131,8 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
   proxy.ts        cookie presence check only (rule 6)
 /messages         en.json (next-intl messages)
 /infra            Bicep templates
-/tests            Playwright specs, Vitest specs, fixtures
+/tests            Vitest specs (**/*.test.ts(x)), fixtures
+  /e2e            Playwright specs (**/*.spec.ts)
 ```
 
 **Rules**
@@ -290,6 +296,8 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | Unit | Vitest | Pure logic: transition table, scoring, token resolution, KPI and paused-time calculations, `.ics` builder, time zones (incl. the Europe/Warsaw run date), client IP resolution, `email_hash` |
 | Integration | Vitest + PostgreSQL container | D4 and other database-dependent rules where an end-to-end test would be slow |
 
+**Test files:** Vitest collects `tests/**/*.test.ts(x)` and excludes `tests/e2e/**` in `vitest.config.ts`; Playwright collects `tests/e2e/**/*.spec.ts`. `pnpm test:rules` (T1) relies on this split.
+
 | Rule | Behaviour |
 |---|---|
 | T1 Rule traceability | Every rule ID listed below has at least one test whose title starts with the ID and a colon (e.g. `R7: status change cancels pending rejection email`). IDs are matched exactly (`A2:` is not `AU2:`). **Required:** all business rules in `ats-project-scope.md` (A, L, S, F, R, I, E, RT, V except V9) and AU1–AU10 except AU8, J1–J3, J5, W1, W4, W5, D4, D7, P2, P3, P5–P8. **Not required** (structural): V9, AU8, J4, J6, J7, W2, W3, W6–W9, D1–D3, D5, D6, D8, D9, P1, P4, and all T, G and M rules. `pnpm test:rules` scans Vitest and Playwright test titles and fails if a required ID has no test; it runs in CI on every pull request. |
@@ -298,7 +306,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | T4 Sign-in | Tests sign in through AU7 and reuse saved sign-in state per role. |
 | T5 API visibility | V-rules are asserted on API responses, not only on rendered pages. |
 | T6 Flakiness | One retry in CI; trace, video and screenshot kept on failure; flaky tests are fixed, not skipped. |
-| T7 Agent loop | The agent runs `pnpm verify` (lint, typecheck, unit tests, rule scan) on every change and the Playwright specs for the affected rule IDs (`--grep`) before pushing; the full suite runs on `main`. |
+| T7 Agent loop | The agent runs `pnpm verify` (lint, typecheck, Vitest unit tests, rule scan; no `next build`) on every change and the Playwright specs for the affected rule IDs (`--grep`) before pushing; the full suite runs on `main`. |
 | T8 Test integrity | Existing assertions are never deleted or weakened to make a test pass; any change to an existing test is listed with its reason in the pull request. |
 
 ---
@@ -307,8 +315,8 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | Pull request | Install (pnpm, cached) → lint → typecheck → unit tests → `pnpm test:rules` → `next build` |
-| `main.yml` | Push to `main`, manual | Same checks → build the image once (tag = commit SHA) → start the Compose stack with that image → migrate + seed → Playwright suite → push image to GHCR → Azure login (OIDC) → run `db-migrate` job → update the web Container App to the new tag → smoke test `GET /api/health`. Each step runs only if the previous one succeeded. |
+| `ci.yml` | Pull request | Install (pnpm, cached) → the `pnpm verify` checks (lint → typecheck → unit tests → `pnpm test:rules`) → `next build`. No Playwright (G4). |
+| `main.yml` | Push to `main`, manual | `pnpm verify` → build the image once (tag = commit SHA) → start the Compose stack with that image → migrate + seed → Playwright suite → push image to GHCR → Azure login (OIDC) → run `db-migrate` job → update the web Container App to the new tag → smoke test `GET /api/health`. Each step runs only if the previous one succeeded. |
 | `infra.yml` | Manual | `az deployment group what-if` → manual approval → `az deployment group create` with `/infra/main.bicep` |
 
 | Rule | Behaviour |
@@ -319,7 +327,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | G4 Minutes budget | End-to-end tests only on `main`; dependency and build caching; `concurrency` cancels superseded runs. The Free plan includes 2,000 Linux minutes per month for private repositories. |
 | G5 Infrastructure | `/infra/main.bicep` defines: Log Analytics workspace (M7); Container Apps environment; web Container App (0–1 replicas, external HTTPS ingress, Key Vault secret references, user-assigned identity); `tick` job (cron `0 * * * *`); `db-migrate` job; `db-seed` job (manual trigger; runs `pnpm db:seed`, or `pnpm seed:admin` when its admin email variable is set); `APP_ENV=azure` on the web app and every job; PostgreSQL Flexible Server 17 B1MS with public access, firewall rule `AllowAllWindowsAzureIps` (0.0.0.0–0.0.0.0), `require_secure_transport = on`, admin password generated into Key Vault and a separate least-privilege app login; storage account with private container `files`; Key Vault; user-assigned managed identity with Storage Blob Data Contributor (storage account scope) and Key Vault Secrets User; budget alert at EUR 10 per month. |
 | G6 Rebuildable | An empty resource group can be rebuilt with `infra.yml`, then `main.yml`, then the `db-seed` job (D8), then `pnpm seed:admin --email <owner UPN>` through the `db-seed` job. |
-| G7 Local parity | `pnpm verify` runs locally what `ci.yml` runs. |
+| G7 Local parity | `pnpm verify` is the fast local check: lint, typecheck, Vitest unit tests and, from task 2, `pnpm test:rules`. It does not run `next build`. `ci.yml` runs the same checks followed by `next build`; `main.yml` runs `pnpm verify`, builds the Docker image and runs the full Playwright suite. |
 | G8 Dependencies | Dependabot weekly for npm and GitHub Actions. |
 | G9 Image pull | The GHCR package is private. GitHub Packages authenticates only with a **classic** personal access token, so the Container App pulls with a classic PAT that has the **`read:packages` scope only** and an expiry date (e.g. 90 days), stored in Key Vault, with a calendar reminder before it expires. A classic token applies to the whole personal account, so it must never get any other scope. `main.yml` pushes images with `GITHUB_TOKEN`. |
 | G10 Stopping the database | To save cost between demos, stop the PostgreSQL server **and** disable the `tick` job. A stopped Flexible Server starts again automatically after 7 days. |
