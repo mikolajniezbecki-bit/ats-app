@@ -6,7 +6,7 @@ If a task conflicts with the specs, stop and ask instead of guessing.
 ## Commits
 Make focused, regular commits, and explain your decisions in the commit messages so we can use them as logs.
 Run the tests before every commit; don't commit failing tests.
-Never commit secrets, .env files or credentials.
+Never commit secrets, .env files or credentials. Exception: `docker-compose.yml` may contain obviously fake, local-only test values (e.g. `local-only-not-secret-…`, the public Azurite account key, Cloudflare's Turnstile test keys, a local Postgres password) so the stack starts on a fresh clone. They must never be used outside the local/CI Compose stack.
 
 ## Docs
 When a decision changes the specs, update the relevant file in _docs in the same commit.

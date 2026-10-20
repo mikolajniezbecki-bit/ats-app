@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.3 |
+| **Version** | 1.4 |
 | **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.4** | Tasks 4–6 grooming: fake local-only values committed in `docker-compose.yml` (§1); browser-facing Azurite endpoint `AZURE_STORAGE_PUBLIC_URL` for signed links and `frame-src` (§3, §8); migrations and seeds run from the production image (§3 rule 8, D2, D8); integration tests in `tests/integration/**` via `pnpm test:integration`, run in `ci.yml` (PostgreSQL 17 service) and `main.yml` (§11, §12, G7) |
 | **Changes in 1.3** | Tasks 2–3 grooming: `proxy.ts` also sets `x-request-id` (§3 rule 6, M3); logger reads `LOG_LEVEL` directly as an exception to §3 rule 5; G1 enforced by workflow instead of branch protection (TO-21) |
 | **Changes in 1.2** | Task 1 grooming: UI, utility and i18n file locations (§3), test file naming (§11), ESLint, Node version enforced at install (§2), scope of `pnpm verify` vs. `ci.yml` and `main.yml` (G7, T7, §12) |
 | **Changes in 1.1** | Decisions from `open-questions.md` (Q1–Q27) applied |
@@ -86,7 +87,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 | Email | SMTP → Mailpit | Outbox (stored in `email_log`) |
 | Staff sign-in | Dev sign-in (AU7) | Microsoft Entra ID |
 | `APP_ENV` | `local` / `ci` | `azure` (set only in Bicep) |
-| Secrets | `.env` (never committed) | Key Vault references |
+| Secrets | `.env` (never committed) for `pnpm dev`; the Compose stack uses obviously fake, local-only values committed in `docker-compose.yml` (`AGENTS.md`) | Key Vault references |
 | Tick | Called by tests or manually | Hourly Container Apps Job |
 | Seed | `pnpm db:seed` | `db-seed` Container Apps Job (manual, G6) |
 
@@ -144,7 +145,7 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
 5. **Configuration** is read through `getConfig()`, which validates all environment variables with Zod **on first call** (not at import time) and caches the result. Startup code calls it immediately, so a missing variable stops the app at start. The production build never needs runtime secrets. **Exception:** the logger reads `process.env.LOG_LEVEL` directly (default `info`), so a configuration error can itself be logged.
 6. **`proxy.ts`** (Next.js 16's replacement for `middleware.ts`) does only two things: it checks that the session cookie is present and redirects to sign-in if not, and it generates a fresh `x-request-id` for every request, replacing any value the client sent, and sets it on the forwarded request and the response (M3). Every page, server action and route handler loads the session and role on the server and authorizes through the policy module. No authorization or role (RBAC) decision is made in `proxy.ts`.
 7. `next.config.ts`: `output: 'standalone'`; `serverExternalPackages: ['pg', 'pg-boss', 'pino', '@react-pdf/renderer']`.
-8. One container image runs everything; `pnpm worker` (standalone worker) exists for future scaling but isn't deployed.
+8. One container image runs everything; `pnpm worker` (standalone worker) exists for future scaling but isn't deployed. Besides the standalone server, the image contains the committed SQL migrations and compiled JavaScript entry points for `db:migrate`, `db:seed` and `seed:admin` (runtime dependencies only, no pnpm or `drizzle-kit`), so the Azure `db-migrate` and `db-seed` jobs run the same image (G2, G5).
 9. **Client IP and rate limit** (`ats-project-scope.md` F6): one helper resolves the client IP as (1) `x-envoy-external-address` (set by the Container Apps ingress), if present; (2) otherwise the **last** entry of `x-forwarded-for`; (3) otherwise `127.0.0.1` (local). The first `x-forwarded-for` entry is never used, because the client can set it. Counts are stored in the `rate_limits` table. When `AUTH_DEV_LOGIN=true`, the limit is bypassed unless the request sends `x-enforce-rate-limit: true` (used by the `F6:` test), so parallel Playwright tests don't throttle each other.
 
 **Environment variables** (secrets marked ●; Azure values come from Key Vault)
@@ -162,6 +163,7 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
 | `EMAIL_PROVIDER` | `smtp` (local/CI) or `outbox` (Azure) |
 | `SMTP_HOST`, `SMTP_PORT` | Mailpit (local/CI) |
 | `AZURE_STORAGE_CONNECTION_STRING` ● | Azurite only (local/CI) |
+| `AZURE_STORAGE_PUBLIC_URL` | Azurite only, optional: browser-facing Blob endpoint (e.g. `http://localhost:10000/devstoreaccount1`) used in signed links and `frame-src` when the app reaches Azurite under another host (Compose: `http://azurite:10000`); defaults to the endpoint in the connection string (§8) |
 | `AZURE_STORAGE_ACCOUNT_URL`, `AZURE_CLIENT_ID` | Azure Blob via managed identity |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` ● | CAPTCHA (official test keys locally/CI) |
 | `TICK_SECRET` ● | Shared secret for `/api/internal/tick` |
@@ -240,13 +242,13 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | Rule | Behaviour |
 |---|---|
 | D1 Schema | Drizzle schema in `/src/server/db/schema/` is the single source of truth for `ats-project-scope.md` §7, including check constraints, unique and partial indexes, and the `req_number_seq` sequence. |
-| D2 Migrations | `drizzle-kit generate` → committed SQL reviewed in pull requests; applied by `pnpm db:migrate` in the `db-migrate` job. `drizzle-kit push` is allowed only on a local database. |
+| D2 Migrations | `drizzle-kit generate` → committed SQL reviewed in pull requests; applied by `pnpm db:migrate`, which uses drizzle-orm's runtime migrator (`drizzle-orm/node-postgres/migrator`), not `drizzle-kit`, so the same command runs from the production image in the `db-migrate` job (§3 rule 8). `drizzle-kit push` is allowed only on a local database. |
 | D3 Transactions | Domain services receive a transaction handle `tx`; every multi-step change (status change + history + email jobs) runs in one transaction. |
 | D4 Transaction proof | A test proves J1: a status change and `enqueue` in one transaction; on rollback no job exists, on commit the job exists. |
 | D5 Pool | One `pg.Pool` per process, max 10 connections; TLS in Azure. |
 | D6 Row-level filters | Visibility rules are implemented as reusable query helpers (e.g. `scopeApplicationsFor(user)`), never written ad hoc in handlers. |
 | D7 Optimistic locking | Updates to `applications` and `requisitions` include `WHERE version = :v` and increment `version`. |
-| D8 Seed | `pnpm db:seed` runs in every environment (in Azure through the `db-seed` job, G6). **Idempotent and non-destructive:** it inserts missing records only, by natural key (template type + name, setting key, master data type + code, user email), and never overwrites settings or templates an Admin has changed; synthetic data is created only if no requisitions exist yet. **Contents:** settings defaults; email, offer and requisition templates (incl. `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", and a default offer letter); master data; the four demo users matching the Entra demo accounts; synthetic requisitions and applications with sample PDF files uploaded through `StorageService`. Dev passwords for demo users (AU7) are created **only when `AUTH_DEV_LOGIN=true`**; in Azure, demo users sign in through Entra only. |
+| D8 Seed | `pnpm db:seed` runs in every environment (in Azure through the `db-seed` job from the production image, §3 rule 8, G6). **Idempotent and non-destructive:** it inserts missing records only, by natural key (template type + name, setting key, master data type + code, user email), and never overwrites settings or templates an Admin has changed; synthetic data is created only if no requisitions exist yet. **Contents:** settings defaults; email, offer and requisition templates (incl. `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", and a default offer letter); master data; the four demo users matching the Entra demo accounts; synthetic requisitions and applications with sample PDF files uploaded through `StorageService`. Dev passwords for demo users (AU7) are created **only when `AUTH_DEV_LOGIN=true`**; in Azure, demo users sign in through Entra only. |
 | D9 Real database in tests | Integration tests run against the PostgreSQL container, never mocks. |
 
 ---
@@ -255,9 +257,10 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 
 - One adapter, `StorageService`, built on `@azure/storage-blob`, with: `upload`, `delete`, `getSignedUrl(key, ttl = 5 min)`.
 - **Local/CI:** if `AZURE_STORAGE_CONNECTION_STRING` is set (Azurite), signed links use a `StorageSharedKeyCredential` (account-key SAS).
+- **Azurite host names:** the app talks to Azurite through the endpoint in the connection string (`http://azurite:10000/devstoreaccount1` inside Compose, `http://127.0.0.1:10000/devstoreaccount1` for `pnpm dev`), but signed links handed to the browser use `AZURE_STORAGE_PUBLIC_URL` when set (`http://localhost:10000/devstoreaccount1` in Compose). The SAS signature doesn't include the host, so only the link's origin changes.
 - **Azure:** otherwise the adapter uses `DefaultAzureCredential` (user-assigned managed identity via `AZURE_CLIENT_ID`) and signs links with a **user delegation key**. The identity has **Storage Blob Data Contributor** on the **storage account**, which includes permission to request user delegation keys.
 - Container `files` is private; object keys are random UUIDs; the original file name is stored only in the database.
-- **PDF viewing** (`ats-project-scope.md` F5): signed links for inline viewing set the response headers through the SAS (`rsct=application/pdf`, `rscd=inline`); PDFs are never streamed through the app. The restrictive CSP and `X-Content-Type-Options: nosniff` are set on the app pages that embed the viewer; their `frame-src` includes only the Blob endpoint taken from configuration (`AZURE_STORAGE_ACCOUNT_URL` in Azure, the Azurite endpoint from the connection string locally/CI), never `*`.
+- **PDF viewing** (`ats-project-scope.md` F5): signed links for inline viewing set the response headers through the SAS (`rsct=application/pdf`, `rscd=inline`); PDFs are never streamed through the app. The restrictive CSP and `X-Content-Type-Options: nosniff` are set on the app pages that embed the viewer; their `frame-src` includes only the browser-facing Blob endpoint taken from configuration (`AZURE_STORAGE_ACCOUNT_URL` in Azure; locally/CI `AZURE_STORAGE_PUBLIC_URL`, or the Azurite endpoint from the connection string when it is not set), never `*` and never the Compose-internal `azurite` host.
 
 ---
 
@@ -295,9 +298,9 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 |---|---|---|
 | End-to-end (primary) | Playwright against the Compose stack | Journeys for every role: apply → screen → interview → scorecard → offer → hire → export; approvals, re-approval, withdrawal; hold, close, reopen; purge; visibility per role; email and `.ics` content via Mailpit |
 | Unit | Vitest | Pure logic: transition table, scoring, token resolution, KPI and paused-time calculations, `.ics` builder, time zones (incl. the Europe/Warsaw run date), client IP resolution, `email_hash` |
-| Integration | Vitest + PostgreSQL container | D4 and other database-dependent rules where an end-to-end test would be slow |
+| Integration | Vitest + PostgreSQL container (`pnpm test:integration`) | D4 and other database-dependent rules where an end-to-end test would be slow |
 
-**Test files:** Vitest collects `tests/**/*.test.ts(x)` and excludes `tests/e2e/**` in `vitest.config.ts`; Playwright collects `tests/e2e/**/*.spec.ts`. `pnpm test:rules` (T1) relies on this split.
+**Test files:** Vitest unit tests (`pnpm test`) collect `tests/**/*.test.ts(x)` and exclude `tests/e2e/**` and `tests/integration/**` in `vitest.config.ts`; integration tests in `tests/integration/**/*.test.ts` need PostgreSQL and run only through `pnpm test:integration`; Playwright collects `tests/e2e/**/*.spec.ts`. `pnpm test:rules` (T1) relies on this split and scans all three.
 
 | Rule | Behaviour |
 |---|---|
@@ -316,8 +319,8 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | Pull request | Install (pnpm, cached) → the `pnpm verify` checks (lint → typecheck → unit tests → `pnpm test:rules`) → `next build`. No Playwright (G4). |
-| `main.yml` | Push to `main`, manual | `pnpm verify` → build the image once (tag = commit SHA) → start the Compose stack with that image → migrate + seed → Playwright suite → push image to GHCR → Azure login (OIDC) → run `db-migrate` job → update the web Container App to the new tag → smoke test `GET /api/health`. Each step runs only if the previous one succeeded. |
+| `ci.yml` | Pull request | Install (pnpm, cached) → the `pnpm verify` checks (lint → typecheck → unit tests → `pnpm test:rules`) → `pnpm db:migrate` + `pnpm test:integration` against a `postgres:17` service container → `next build`. No Playwright (G4). |
+| `main.yml` | Push to `main`, manual | `pnpm verify` → build the image once (tag = commit SHA) → start the Compose stack with that image → migrate + seed (run from that image) → `pnpm test:integration` against the Compose PostgreSQL → Playwright suite → push image to GHCR → Azure login (OIDC) → run `db-migrate` job → update the web Container App to the new tag → smoke test `GET /api/health`. Each step runs only if the previous one succeeded. |
 | `infra.yml` | Manual | `az deployment group what-if` → manual approval → `az deployment group create` with `/infra/main.bicep` |
 
 | Rule | Behaviour |
@@ -328,7 +331,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | G4 Minutes budget | End-to-end tests only on `main`; dependency and build caching; `concurrency` cancels superseded runs. The Free plan includes 2,000 Linux minutes per month for private repositories. |
 | G5 Infrastructure | `/infra/main.bicep` defines: Log Analytics workspace (M7); Container Apps environment; web Container App (0–1 replicas, external HTTPS ingress, Key Vault secret references, user-assigned identity); `tick` job (cron `0 * * * *`); `db-migrate` job; `db-seed` job (manual trigger; runs `pnpm db:seed`, or `pnpm seed:admin` when its admin email variable is set); `APP_ENV=azure` on the web app and every job; PostgreSQL Flexible Server 17 B1MS with public access, firewall rule `AllowAllWindowsAzureIps` (0.0.0.0–0.0.0.0), `require_secure_transport = on`, admin password generated into Key Vault and a separate least-privilege app login; storage account with private container `files`; Key Vault; user-assigned managed identity with Storage Blob Data Contributor (storage account scope) and Key Vault Secrets User; budget alert at EUR 10 per month. |
 | G6 Rebuildable | An empty resource group can be rebuilt with `infra.yml`, then `main.yml`, then the `db-seed` job (D8), then `pnpm seed:admin --email <owner UPN>` through the `db-seed` job. |
-| G7 Local parity | `pnpm verify` is the fast local check: lint, typecheck, Vitest unit tests and, from task 2, `pnpm test:rules`. It does not run `next build`. `ci.yml` runs the same checks followed by `next build`; `main.yml` runs `pnpm verify`, builds the Docker image and runs the full Playwright suite. |
+| G7 Local parity | `pnpm verify` is the fast local check: lint, typecheck, Vitest unit tests and, from task 2, `pnpm test:rules`. It does not run `next build`. `ci.yml` runs the same checks, then the database integration tests (`pnpm test:integration`, PostgreSQL 17 service container), then `next build`; `main.yml` runs `pnpm verify`, builds the Docker image and runs the integration tests and the full Playwright suite. |
 | G8 Dependencies | Dependabot weekly for npm and GitHub Actions. |
 | G9 Image pull | The GHCR package is private. GitHub Packages authenticates only with a **classic** personal access token, so the Container App pulls with a classic PAT that has the **`read:packages` scope only** and an expiry date (e.g. 90 days), stored in Key Vault, with a calendar reminder before it expires. A classic token applies to the whole personal account, so it must never get any other scope. `main.yml` pushes images with `GITHUB_TOKEN`. |
 | G10 Stopping the database | To save cost between demos, stop the PostgreSQL server **and** disable the `tick` job. A stopped Flexible Server starts again automatically after 7 days. |

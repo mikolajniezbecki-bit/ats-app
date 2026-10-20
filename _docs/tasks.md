@@ -54,41 +54,48 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 4. Docker Compose stack and production image
 
+**Issue:** [#8](https://github.com/mikolajniezbecki-bit/ats-app/issues/8)
+
 **Goal:** `docker compose up` runs the whole local stack from the same image used in CI and Azure.
 
-**Description:** Write a multi-stage `Dockerfile` that builds the Next.js standalone output and runs as a non-root user, and a `docker-compose.yml` with `app`, `postgres:17`, `azurite` and `mailpit` (`tech-stack.md` §1, local topology). The image must build without any runtime secrets and run with `NODE_ENV=production`. Document the local start-up commands in the README.
+**Description:** Write a multi-stage `Dockerfile` that builds the Next.js standalone output and runs as a non-root user, and a `docker-compose.yml` with `app`, `postgres:17`, `azurite` and `mailpit` (`tech-stack.md` §1, local topology). The image must build without any runtime secrets and run with `NODE_ENV=production`. `docker-compose.yml` contains obviously fake, local-only values for the secrets and the Postgres password, so the stack starts on a fresh clone without `.env` (`AGENTS.md` exception). The `app` service reaches Azurite at `http://azurite:10000` and sets `AZURE_STORAGE_PUBLIC_URL=http://localhost:10000/devstoreaccount1` for browser-facing signed links (`tech-stack.md` §3, §8). Document the local start-up commands in the README.
 
 **Depends on:** 1, 3
 
 **Done when:**
 - `docker compose up --build` starts all four services and the app home page returns HTTP 200 on `localhost:3000`.
-- The app container starts with `AUTH_DEV_LOGIN=true`, `APP_ENV=ci`, `EMAIL_PROVIDER=smtp` and `NODE_ENV=production`.
+- The app container starts with `AUTH_DEV_LOGIN=true`, `APP_ENV=ci`, `EMAIL_PROVIDER=smtp` and `NODE_ENV=production` on a fresh clone with no `.env`.
 - Mailpit's web UI is reachable on `localhost:8025`; the README describes how to start and stop the stack.
 
 ## 5. Database access and administration tables
 
+**Issue:** [#9](https://github.com/mikolajniezbecki-bit/ats-app/issues/9)
+
 **Goal:** Drizzle is wired to PostgreSQL with migrations and the first set of tables.
 
-**Description:** Set up Drizzle ORM with node-postgres (one `pg.Pool`, max 10 connections, TLS when required, D5), `drizzle-kit` with committed SQL migrations, a `pnpm db:migrate` script and a transaction helper that passes `tx` to domain services (D3). Define the tables `users`, `master_data`, `templates`, `settings`, `audit_log`, `job_runs` and `rate_limits` from `ats-project-scope.md` §7 with its conventions (UUID keys, `created_at`/`updated_at`, text enums with check constraints, indexed foreign keys, the `NULLS NOT DISTINCT` unique and the partial unique index on templates). Set up Vitest integration tests against the Compose PostgreSQL (never mocks, D9) with a database reset per test worker (T2).
+**Description:** Set up Drizzle ORM with node-postgres (one `pg.Pool`, max 10 connections, TLS when required, D5), `drizzle-kit` with committed SQL migrations, a `pnpm db:migrate` script using drizzle-orm's runtime migrator (`drizzle-orm/node-postgres/migrator`, D2) and a transaction helper that passes `tx` to domain services (D3). Extend the `Dockerfile` so the production image contains the SQL migrations and a compiled migrate entry point that runs without pnpm or dev dependencies (`tech-stack.md` §3 rule 8). Define the tables `users`, `master_data`, `templates`, `settings`, `audit_log`, `job_runs` and `rate_limits` from `ats-project-scope.md` §7 with its conventions (UUID keys, `created_at`/`updated_at`, text enums with check constraints, indexed foreign keys, the `NULLS NOT DISTINCT` unique and the partial unique index on templates). Set up Vitest integration tests in `tests/integration/**`, run by `pnpm test:integration` (not by `pnpm verify`), against the Compose PostgreSQL (never mocks, D9) with a database reset per test worker (T2), and add a `postgres:17` service container to `ci.yml` that runs them on every pull request (§12, G7).
 
 **Depends on:** 4
 
 **Done when:**
-- `pnpm db:migrate` creates the tables on an empty PostgreSQL 17 database, and a second run is a no-op.
+- `pnpm db:migrate` creates the tables on an empty PostgreSQL 17 database, and a second run is a no-op; `docker compose run --rm app <migrate command>` does the same from the production image.
 - Integration tests prove: the `master_data` unique constraint rejects a duplicate `(type, NULL, code)`; a second active `EMAIL` template with the same `trigger_status` is rejected; an unknown `users.role` is rejected.
 - Integration tests run in parallel workers without interfering with each other.
+- `ci.yml` runs `pnpm test:integration` against a `postgres:17` service container; a failing integration test turns the pull-request check red.
 
 ## 6. Recruiting tables
 
+**Issue:** [#11](https://github.com/mikolajniezbecki-bit/ats-app/issues/11)
+
 **Goal:** All remaining recruiting tables from the data model exist with their constraints.
 
-**Description:** Add Drizzle schema and migrations for `requisitions` (including `req_number_seq` and the `REQ-00001` default), `requisition_history`, `prescreen_questions`, `applications`, `prescreen_answers`, `application_history`, `files`, `interviews`, `interview_participants`, `interview_scorecards`, `offers`, `approval_events` and `email_log`, exactly as in `ats-project-scope.md` §7. Add the optimistic-locking update helper for `applications` and `requisitions` (`WHERE version = :v`, increment `version`, D7) that fails with "This record was changed by someone else. Reload and try again."
+**Description:** Add Drizzle schema and migrations for `requisitions` (including `req_number_seq` and the `REQ-00001` default), `requisition_history`, `prescreen_questions`, `applications`, `prescreen_answers`, `application_history`, `files` (including the nullable `original_name`), `interviews`, `interview_participants`, `interview_scorecards`, `offers`, `approval_events` and `email_log`, exactly as in `ats-project-scope.md` §7. Add the optimistic-locking update helper for `applications` and `requisitions` (`WHERE version = :v`, increment `version`, D7) that fails with "This record was changed by someone else. Reload and try again."
 
 **Depends on:** 5
 
 **Done when:**
 - Migrations apply cleanly; generated SQL is committed.
-- Integration tests prove: `req_number` is generated as `REQ-00001`, `REQ-00002`; the `applications` check rejects a NULL email unless `anonymized_at` is set; the `offers` check rejects a NULL `approver_id` unless `approval_status = 'DRAFT'`.
+- Integration tests prove: `req_number` is generated as `REQ-00001`, `REQ-00002`; the `applications` check rejects a NULL email unless `anonymized_at` is set; the `offers` check rejects a NULL `approver_id` unless `approval_status` is `DRAFT` or `WITHDRAWN`.
 - `D7:` test: an update with a stale `version` fails with the message above and changes nothing.
 
 ## 7. Transactional job queue adapter
@@ -173,12 +180,12 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Goal:** PDFs are validated, stored privately and viewed inline through short-lived signed links.
 
-**Description:** Implement `StorageService` (`upload`, `delete`, `getSignedUrl` with a 5-minute default) on `@azure/storage-blob`, using account-key SAS for Azurite and a user delegation key with managed identity in Azure (`tech-stack.md` §8), random UUID keys in the private `files` container (F4), and SAS headers `rsct=application/pdf`, `rscd=inline` (F5). Add a PDF upload validator (PDF only, `%PDF-` signature, no encrypted PDFs, `MAX_UPLOAD_MB`, F1–F3), a viewer component whose page sets a CSP with `frame-src` limited to the configured Blob endpoint and `nosniff`, and `GET /api/health` checking database and storage (M5).
+**Description:** Implement `StorageService` (`upload`, `delete`, `getSignedUrl` with a 5-minute default) on `@azure/storage-blob`, using account-key SAS for Azurite and a user delegation key with managed identity in Azure (`tech-stack.md` §8), random UUID keys in the private `files` container (F4), and SAS headers `rsct=application/pdf`, `rscd=inline` (F5). With Azurite, signed links use the browser-facing `AZURE_STORAGE_PUBLIC_URL` when set (`http://localhost:10000` in Compose) while the app itself talks to `http://azurite:10000` (`tech-stack.md` §8). Add a PDF upload validator (PDF only, `%PDF-` signature, no encrypted PDFs, `MAX_UPLOAD_MB`, F1–F3), a viewer component whose page sets a CSP with `frame-src` limited to the configured Blob endpoint and `nosniff`, and `GET /api/health` checking database and storage (M5).
 
 **Depends on:** 4, 12
 
 **Done when:**
-- `F5:` test: a signed link returns `Content-Type: application/pdf` and `Content-Disposition: inline`; the viewer page's `frame-src` is the configured endpoint, never `*`. `V11:` test: links expire after 5 minutes and are issued only after a policy check.
+- `F5:` test: a signed link returns `Content-Type: application/pdf` and `Content-Disposition: inline`; the viewer page's `frame-src` is the configured browser-facing endpoint, never `*` or the Compose-internal `azurite` host. A signed link created by the `app` container in Compose opens from the host. `V11:` test: links expire after 5 minutes and are issued only after a policy check.
 - `F1:`, `F2:`, `F3:` tests: a renamed non-PDF, an oversize file and an encrypted PDF are rejected; `F4:` test: an anonymous request to the blob fails.
 - `/api/health` returns 200 when database and storage are reachable and 503 otherwise.
 
@@ -225,7 +232,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Goal:** `pnpm db:seed` sets up any environment with defaults, templates, master data and demo users.
 
-**Description:** Implement an idempotent, non-destructive seed (D8) that inserts only missing records by natural key: settings defaults, master data, a requisition template, the `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", a default offer letter, and four demo users (one per role). Dev passwords are created only when `AUTH_DEV_LOGIN=true`. Synthetic requisitions and applications are added in a later task.
+**Description:** Implement an idempotent, non-destructive seed (D8) that inserts only missing records by natural key: settings defaults, master data, a requisition template, the `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", a default offer letter, and four demo users (one per role). Dev passwords are created only when `AUTH_DEV_LOGIN=true`. Synthetic requisitions and applications are added in a later task. Like `db:migrate` (task 5), `db:seed` and `seed:admin` (task 12) get compiled entry points in the production image, so the Azure `db-seed` job runs them from the same image (`tech-stack.md` §3 rule 8, D8, G5).
 
 **Depends on:** 15, 16
 
@@ -233,6 +240,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Running the seed twice produces the same row counts.
 - A setting and a template changed by an Admin are not overwritten by a rerun.
 - With `AUTH_DEV_LOGIN` not `true`, no passwords are created; with `true`, each demo user can sign in.
+- `docker compose run --rm app <seed command>` and `<seed:admin command> --email admin@example.com` succeed from the production image.
 
 ## 18. Email service and delivery job
 
@@ -572,7 +580,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Goal:** Every push to `main` builds one image and runs the full Playwright suite against it.
 
-**Description:** Add `.github/workflows/main.yml` (push to `main` and manual): run `pnpm verify`, build the image once tagged with the commit SHA, start the Compose stack with that image, migrate and seed, run the full Playwright suite with one retry and trace, video and screenshot kept on failure (T6), then push the image to GHCR with `GITHUB_TOKEN` (G2, G4). Deployment steps are added later.
+**Description:** Add `.github/workflows/main.yml` (push to `main` and manual): run `pnpm verify`, build the image once tagged with the commit SHA, start the Compose stack with that image, migrate and seed from that image, run `pnpm test:integration` against the Compose PostgreSQL, run the full Playwright suite with one retry and trace, video and screenshot kept on failure (T6), then push the image to GHCR with `GITHUB_TOKEN` (G2, G4). Deployment steps are added later.
 
 **Depends on:** 42
 
