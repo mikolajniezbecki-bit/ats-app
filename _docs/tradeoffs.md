@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
-| **Date** | 2026-10-19 |
+| **Version** | 1.1 |
+| **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.1** | Decisions from `open-questions.md` (Q1–Q27) applied |
 
 **Purpose of this document:** lists every deliberate limitation of the proof of concept: what is left out or simplified, the impact, why it's acceptable now, and how the enterprise version would close the gap. It contains no build instructions.
 
@@ -13,7 +14,7 @@
 - `ats-project-scope.md`: what to build, business rules, data model.
 - `tech-stack.md`: how it's built.
 
-**Upgrade-friendly foundations already in the PoC:** `candidate_id` reserved on applications; `consent_version` stored per application; `files.status` reserves scan states; `email_log.direction`; i18n with an English resource file; all external services behind adapter interfaces (`StorageService`, `EmailService`, `CalendarService`, `JobQueue`, `CaptchaService`); retention period read through one function (`getRetentionDays`); worker code separable into its own process.
+**Upgrade-friendly foundations already in the PoC:** `candidate_id` reserved on applications; `consent_version` stored per application; `files.status` reserves scan states; `email_log.direction`; i18n through `next-intl` with an English message file; all external services behind adapter interfaces (`StorageService`, `EmailService`, `CalendarService`, `JobQueue`, `CaptchaService`); retention period read through one function (`getRetentionDays`); worker code separable into its own process.
 
 | ID | Area | Limitation |
 |---|---|---|
@@ -36,6 +37,7 @@
 | TO-17 | Monitoring | Logs only, with a daily cap |
 | TO-18 | Network | Database reachable over public endpoint |
 | TO-19 | Environments | Single Azure environment |
+| TO-20 | Interviews | Interviewer access ends immediately at a final status |
 
 ---
 
@@ -190,3 +192,11 @@
 | **Impact** | No staging for manual acceptance before deployment. |
 | **Why acceptable** | The full end-to-end suite runs against the exact image before deployment (G2). |
 | **Upgrade path** | Separate staging and production with manual approval gates. |
+
+## TO-20 — Interviewer Access Ends at a Final Status
+| | |
+|---|---|
+| **Limitation** | Once an application is `HIRED`, `REJECTED` or `WITHDRAWN`, interviewer access to the candidate's data ends immediately (V5, V8), including scorecards they haven't submitted yet. |
+| **Impact** | Interview feedback can be lost when a candidate is rejected quickly after an interview. |
+| **Why acceptable** | Strict need-to-know access; recruiters can ask for feedback before rejecting. |
+| **Upgrade path** | A short grace period after the final status during which interviewers can still submit scorecards for past interviews. |

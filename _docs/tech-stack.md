@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
-| **Date** | 2026-10-19 |
+| **Version** | 1.1 |
+| **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.1** | Decisions from `open-questions.md` (Q1–Q27) applied |
 
 **Purpose of this document:** defines **how** the system is built: architecture, technology choices, technical rules, testing, deployment and operating cost.
 
@@ -40,7 +41,7 @@
 |---|---|
 | Language | TypeScript (strict mode) |
 | Application | **Next.js** (App Router): career portal, back office and API in one app |
-| UI | React, Tailwind CSS, shadcn/ui; i18n library with an English resource file |
+| UI | React, Tailwind CSS, shadcn/ui; `next-intl` in single-locale mode (`en` only, `/messages/en.json`, no locale prefix in URLs) |
 | Validation | Zod (forms, API input, configuration) |
 | Database | PostgreSQL 17 |
 | Data access | Drizzle ORM + node-postgres; SQL migrations committed to Git |
@@ -63,7 +64,8 @@ GitHub Actions ──OIDC──► Resource group (personal subscription)
    │ push image                ├─ Container Apps environment ──► Log Analytics (0.1 GB/day cap)
    ▼                           │    ├─ web Container App (0–1 replicas): Next.js + in-process worker
   GHCR ◄─ pull (token in KV) ──┤    ├─ Container Apps Job "tick" (hourly) ──► POST /api/internal/tick
-                               │    └─ Container Apps Job "db-migrate" (run on each deploy)
+                               │    ├─ Container Apps Job "db-migrate" (run on each deploy)
+                               │    └─ Container Apps Job "db-seed" (manual: db:seed, seed:admin)
                                ├─ PostgreSQL Flexible Server 17, Burstable B1MS (public access, TLS)
                                ├─ Storage account: private Blob container "files"
                                ├─ Key Vault + user-assigned managed identity
@@ -81,8 +83,10 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 | Files | Azurite (connection string) | Azure Blob (managed identity) |
 | Email | SMTP → Mailpit | Outbox (stored in `email_log`) |
 | Staff sign-in | Dev sign-in (AU7) | Microsoft Entra ID |
+| `APP_ENV` | `local` / `ci` | `azure` (set only in Bicep) |
 | Secrets | `.env` (never committed) | Key Vault references |
 | Tick | Called by tests or manually | Hourly Container Apps Job |
+| Seed | `pnpm db:seed` | `db-seed` Container Apps Job (manual, G6) |
 
 ---
 
@@ -98,6 +102,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 | pg-boss | 12.x |
 | Drizzle ORM / drizzle-kit | latest stable 0.x (no release candidates) |
 | Better Auth | latest stable 1.x |
+| next-intl | latest stable |
 | Playwright / Vitest | latest stable |
 | Package manager | pnpm (version pinned in `package.json` `packageManager`) |
 
@@ -119,6 +124,7 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
     config.ts     typed configuration loader
   /worker         pg-boss job handlers + standalone entry point
   proxy.ts        cookie presence check only (rule 6)
+/messages         en.json (next-intl messages)
 /infra            Bicep templates
 /tests            Playwright specs, Vitest specs, fixtures
 ```
@@ -126,12 +132,13 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
 **Rules**
 1. No business rules in React components. UI calls domain services through server actions or route handlers.
 2. All API input is validated with Zod.
-3. Public career pages are server-rendered; back-office pages and route handlers use `export const dynamic = 'force-dynamic'`.
+3. Every route that reads the database, including the public career pages, is rendered on the server at request time (`export const dynamic = 'force-dynamic'`). There is no build-time static generation of database content (W1).
 4. External services are reached only through the adapter interfaces `StorageService`, `EmailService`, `CalendarService`, `JobQueue` and `CaptchaService`. No SDK imports outside `/server/adapters`.
 5. **Configuration** is read through `getConfig()`, which validates all environment variables with Zod **on first call** (not at import time) and caches the result. Startup code calls it immediately, so a missing variable stops the app at start. The production build never needs runtime secrets.
 6. **`proxy.ts`** (Next.js 16's replacement for `middleware.ts`) only checks that the session cookie is present and redirects to sign-in if not. Every page, server action and route handler loads the session and role on the server and authorizes through the policy module. No authorization decision is made in `proxy.ts`.
 7. `next.config.ts`: `output: 'standalone'`; `serverExternalPackages: ['pg', 'pg-boss', 'pino', '@react-pdf/renderer']`.
 8. One container image runs everything; `pnpm worker` (standalone worker) exists for future scaling but isn't deployed.
+9. **Client IP and rate limit** (`ats-project-scope.md` F6): one helper resolves the client IP as (1) `x-envoy-external-address` (set by the Container Apps ingress), if present; (2) otherwise the **last** entry of `x-forwarded-for`; (3) otherwise `127.0.0.1` (local). The first `x-forwarded-for` entry is never used, because the client can set it. Counts are stored in the `rate_limits` table. When `AUTH_DEV_LOGIN=true`, the limit is bypassed unless the request sends `x-enforce-rate-limit: true` (used by the `F6:` test), so parallel Playwright tests don't throttle each other.
 
 **Environment variables** (secrets marked ●; Azure values come from Key Vault)
 
@@ -142,6 +149,7 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
 | `BETTER_AUTH_URL` | Public base URL of the app |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_TENANT_ID` | Entra app registration |
 | `MICROSOFT_CLIENT_SECRET` ● | Entra client secret |
+| `APP_ENV` | `local`, `ci` or `azure`; `azure` is set only in Bicep (AU7) |
 | `AUTH_DEV_LOGIN` | `true` only locally/CI (AU7) |
 | `EMAIL_HASH_KEY` ● | HMAC key for `email_hash` |
 | `EMAIL_PROVIDER` | `smtp` (local/CI) or `outbox` (Azure) |
@@ -167,8 +175,8 @@ Staff sign in with Microsoft Entra ID accounts from the project's own Entra tena
 | AU4 Account linking | `account.accountLinking.enabled = true` with `trustedProviders: ['microsoft']`. On first sign-in, the Entra account links to the pre-created user with the same email; Admin-created users have `email_verified = true`, which linking requires. After that, sign-in matches on the stored Entra account ID, not on email. |
 | AU5 Active check | A `databaseHooks.session.create.before` hook refuses to create a session for an inactive user. Every request reloads the user's role and `is_active` from the database, so role changes and deactivation apply immediately. Deactivation also deletes the user's sessions. |
 | AU6 Sessions | Database sessions; HTTP-only, Secure, SameSite=Lax cookie; `expiresIn` 8 h, `updateAge` 1 h (sliding expiry). |
-| AU7 Dev sign-in | Better Auth `emailAndPassword` with `disableSignUp: true` is enabled **only** when `AUTH_DEV_LOGIN=true`. Seeded demo users (one per role) get a password and sign in through the normal sign-in endpoint, which creates real database sessions. If `AUTH_DEV_LOGIN=true` while `NODE_ENV=production` or `EMAIL_PROVIDER=outbox`, the app refuses to start. |
-| AU8 First Admin | `pnpm seed:admin --email <upn>` creates the first Admin in an environment. |
+| AU7 Dev sign-in | Better Auth `emailAndPassword` with `disableSignUp: true` is enabled **only** when `AUTH_DEV_LOGIN=true`. When `AUTH_DEV_LOGIN=true`, seeded demo users (one per role) get a password and sign in through the normal sign-in endpoint, which creates real database sessions. The app refuses to start when `AUTH_DEV_LOGIN === 'true' && (APP_ENV === 'azure' \|\| EMAIL_PROVIDER === 'outbox')`. `NODE_ENV` is not part of the check, so the production image (`NODE_ENV=production`) runs with `AUTH_DEV_LOGIN=true`, `APP_ENV=ci` and `EMAIL_PROVIDER=smtp` in the CI Compose stack. The environment is never inferred from `AZURE_CLIENT_ID` or other incidental variables. |
+| AU8 First Admin | `pnpm seed:admin --email <upn>` creates the first Admin in an environment (in Azure through the `db-seed` job, G6). |
 | AU9 Authorization | Authentication only identifies the user; every permission check goes through the policy module (`ats-project-scope.md` V9). |
 | AU10 Schema | The Better Auth `user` model is mapped to the `users` table with additional fields `role` and `is_active` (not settable through the auth API). IDs are UUIDs. The tables `session`, `account` and `verification` are generated with the Better Auth CLI into the Drizzle schema and migrated like any other table. |
 
@@ -192,13 +200,13 @@ pg-boss stores jobs in PostgreSQL (schema `pgboss`), so jobs can be created in t
 
 | Rule | Behaviour |
 |---|---|
-| J1 Same transaction | Jobs are created and cancelled inside the business transaction using pg-boss's Drizzle adapter: `boss.send(queue, data, { db: fromDrizzle(tx, sql) })`, and likewise for `boss.cancel`. A rollback removes the job. |
+| J1 Same transaction | Jobs are created and cancelled inside the business transaction using pg-boss's Drizzle adapter: `boss.send(queue, data, { db: fromDrizzle(tx, sql) })`, and likewise for `boss.cancel`. A rollback removes the job. `fromDrizzle` is imported from `pg-boss` and `sql` from `drizzle-orm` (node-postgres). If Sprint 0 proof #1 shows a typing or signature mismatch, the job adapter implements the same `{ executeSql(text, values) }` interface on top of the Drizzle transaction in one small function. |
 | J2 Cancellation | `email_log.job_id` stores the job ID while `QUEUED`. Cancelling calls `boss.cancel('email.send', jobId, { db: fromDrizzle(tx, sql) })` and sets `email_log.status = CANCELLED` in the same transaction (`ats-project-scope.md` R7). |
 | J3 Idempotency | Every handler checks current state before acting and is safe to run twice. |
 | J4 Interface | Domain code uses `JobQueue` (`enqueue`, `cancel`); only the adapter imports pg-boss. |
 | J5 Queue setup | `boss.start()` and `createQueue()` for every queue run in the `db-migrate` job and again at app start (both are idempotent), so `send()` never targets a missing queue. |
 | J6 Admin view | A page lists queued, active and failed jobs per queue and the last 30 days of `job_runs`. |
-| J7 Test helper | Tests can process all due jobs synchronously through a helper. |
+| J7 Test helper | Tests can process all due jobs synchronously through a helper. When `TEST_NOW` is set, it first applies the T3 clock shift. |
 
 ---
 
@@ -211,8 +219,8 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | W1 Startup | `instrumentation.ts` runs only when `NEXT_RUNTIME === 'nodejs'` and `NEXT_PHASE !== 'phase-production-build'`. It calls `getConfig()`, starts pg-boss and ensures the queues (J5), and registers job handlers with `boss.work()` only when `WORKER_ENABLED === 'true'`. |
 | W2 Separable | Handlers live in `/src/worker` with their own entry point (`pnpm worker`). |
 | W3 Daily tasks | Daily tasks are not scheduled with pg-boss cron (it can't fire while the app is asleep). |
-| W4 Tick | The hourly job calls `POST /api/internal/tick` with header `x-tick-secret`. The endpoint: (a) queues each daily task whose time has passed and has no `job_runs` row for today; (b) waits for due work by polling every 1 s with a count of pg-boss jobs in states `created`, `retry` or `active` whose start time is ≤ now (future-dated jobs, such as delayed rejections not yet due, are excluded); (c) returns `200` when the count is 0 or after **180 s**, whichever comes first. Container Apps' default request timeout is 240 s. Unfinished work continues at the next tick. The count is implemented in one helper in the job adapter. |
-| W5 Run-once | `job_runs` has `UNIQUE (job_name, run_date)`; a task is recorded before it starts, so overlapping ticks never run it twice. |
+| W4 Tick | The hourly job calls `POST /api/internal/tick` with header `x-tick-secret`. The endpoint: (a) when `TEST_NOW` is set, applies the T3 clock shift; queues each daily task whose time has passed and has no `job_runs` row for today's Europe/Warsaw date (W5); (b) waits for due work by polling every 1 s with a count of pg-boss jobs in states `created`, `retry` or `active` whose start time is ≤ now (future-dated jobs, such as delayed rejections not yet due, are excluded); (c) returns `200` when the count is 0 or after **180 s**, whichever comes first. Container Apps' default request timeout is 240 s. Unfinished work continues at the next tick. The count is implemented in one helper in the job adapter. |
+| W5 Run-once | `job_runs` has `UNIQUE (job_name, run_date)`; a task is recorded before it starts, so overlapping ticks never run it twice. `run_date` is the Europe/Warsaw calendar date (`YYYY-MM-DD`), computed by one helper that handles daylight-saving changes. |
 | W6 Shutdown | On SIGTERM, `boss.stop({ graceful: true })`; interrupted jobs expire and are retried (J3). |
 | W7 Timing | While the app is awake, jobs run within seconds; while it sleeps, they run at the next tick (up to ~1 h later). |
 | W8 Replicas | Minimum 0, maximum 1 replica; no sidecars. |
@@ -231,7 +239,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | D5 Pool | One `pg.Pool` per process, max 10 connections; TLS in Azure. |
 | D6 Row-level filters | Visibility rules are implemented as reusable query helpers (e.g. `scopeApplicationsFor(user)`), never written ad hoc in handlers. |
 | D7 Optimistic locking | Updates to `applications` and `requisitions` include `WHERE version = :v` and increment `version`. |
-| D8 Seed | `pnpm db:seed` creates master data, templates (incl. `APPLIED` and `REJECTED` stage emails and a default offer letter), settings defaults, demo users matching the Entra demo accounts (with dev passwords for AU7), and synthetic requisitions and applications. |
+| D8 Seed | `pnpm db:seed` runs in every environment (in Azure through the `db-seed` job, G6). **Idempotent and non-destructive:** it inserts missing records only, by natural key (template type + name, setting key, master data type + code, user email), and never overwrites settings or templates an Admin has changed; synthetic data is created only if no requisitions exist yet. **Contents:** settings defaults; email, offer and requisition templates (incl. `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", and a default offer letter); master data; the four demo users matching the Entra demo accounts; synthetic requisitions and applications with sample PDF files uploaded through `StorageService`. Dev passwords for demo users (AU7) are created **only when `AUTH_DEV_LOGIN=true`**; in Azure, demo users sign in through Entra only. |
 | D9 Real database in tests | Integration tests run against the PostgreSQL container, never mocks. |
 
 ---
@@ -242,19 +250,20 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 - **Local/CI:** if `AZURE_STORAGE_CONNECTION_STRING` is set (Azurite), signed links use a `StorageSharedKeyCredential` (account-key SAS).
 - **Azure:** otherwise the adapter uses `DefaultAzureCredential` (user-assigned managed identity via `AZURE_CLIENT_ID`) and signs links with a **user delegation key**. The identity has **Storage Blob Data Contributor** on the **storage account**, which includes permission to request user delegation keys.
 - Container `files` is private; object keys are random UUIDs; the original file name is stored only in the database.
+- **PDF viewing** (`ats-project-scope.md` F5): signed links for inline viewing set the response headers through the SAS (`rsct=application/pdf`, `rscd=inline`); PDFs are never streamed through the app. The restrictive CSP and `X-Content-Type-Options: nosniff` are set on the app pages that embed the viewer; their `frame-src` includes only the Blob endpoint taken from configuration (`AZURE_STORAGE_ACCOUNT_URL` in Azure, the Azurite endpoint from the connection string locally/CI), never `*`.
 
 ---
 
 ## 9. Email Capture & Outbox
 
-`EmailService` builds the complete message (headers, Reply-To, HTML and text body, `.ics`, PDF attachments) the same way in every environment; only the transport differs.
+`EmailService` builds the complete message (headers, Reply-To, optional Cc, HTML and text body, `.ics`, PDF attachments) the same way in every environment; only the transport differs. `EmailService.send()` accepts `cc`, which is stored in `email_log.cc`.
 
 | `EMAIL_PROVIDER` | Behaviour |
 |---|---|
-| `smtp` (local/CI) | Nodemailer → Mailpit (`localhost:1025`), web UI at `http://localhost:8025`; end-to-end tests read messages through Mailpit's API |
+| `smtp` (local/CI) | Nodemailer → Mailpit (`localhost:1025`), web UI at `http://localhost:8025`; end-to-end tests read messages through Mailpit's API; `email_log.status = SENT` |
 | `outbox` (Azure) | Nothing leaves the system: the full message is stored in `email_log` with status `CAPTURED` |
 
-**Outbox page** (`/admin/outbox`, Admin only through the normal session and policy check): lists messages with recipient, subject, status, time and a link to the application; shows the HTML body in a sandboxed iframe without scripts; downloads the `.ics` and attachments through signed links.
+**Outbox page** (`/admin/outbox`, Admin only through the normal session and policy check): lists messages with recipient, subject, status, time and a link to the application; shows the HTML body in a sandboxed iframe without scripts; downloads the `.ics` from the Admin-only route `GET /api/admin/outbox/[id]/ics` (`Content-Type: text/calendar; charset=utf-8`, `Content-Disposition: attachment`) and PDF attachments (`attachment_file_ids`) through signed Blob links.
 
 ---
 
@@ -278,14 +287,14 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | Layer | Tool | Scope |
 |---|---|---|
 | End-to-end (primary) | Playwright against the Compose stack | Journeys for every role: apply → screen → interview → scorecard → offer → hire → export; approvals, re-approval, withdrawal; hold, close, reopen; purge; visibility per role; email and `.ics` content via Mailpit |
-| Unit | Vitest | Pure logic: transition table, scoring, token resolution, KPI and hold calculations, `.ics` builder, time zones, `email_hash` |
+| Unit | Vitest | Pure logic: transition table, scoring, token resolution, KPI and paused-time calculations, `.ics` builder, time zones (incl. the Europe/Warsaw run date), client IP resolution, `email_hash` |
 | Integration | Vitest + PostgreSQL container | D4 and other database-dependent rules where an end-to-end test would be slow |
 
 | Rule | Behaviour |
 |---|---|
 | T1 Rule traceability | Every rule ID listed below has at least one test whose title starts with the ID and a colon (e.g. `R7: status change cancels pending rejection email`). IDs are matched exactly (`A2:` is not `AU2:`). **Required:** all business rules in `ats-project-scope.md` (A, L, S, F, R, I, E, RT, V except V9) and AU1–AU10 except AU8, J1–J3, J5, W1, W4, W5, D4, D7, P2, P3, P5–P8. **Not required** (structural): V9, AU8, J4, J6, J7, W2, W3, W6–W9, D1–D3, D5, D6, D8, D9, P1, P4, and all T, G and M rules. `pnpm test:rules` scans Vitest and Playwright test titles and fails if a required ID has no test; it runs in CI on every pull request. |
 | T2 Isolation | Each test creates its own data; the database is reset per test worker. |
-| T3 Time | Delays and daily tasks are tested with the tick endpoint and a test-only clock (`TEST_NOW`, honoured only when `AUTH_DEV_LOGIN=true`), never by sleeping. |
+| T3 Time | Delays and daily tasks are tested with the tick endpoint and a test-only clock (`TEST_NOW`, honoured only when `AUTH_DEV_LOGIN=true`), never by sleeping. **Clock shift:** because pg-boss compares start times with the database `now()`, the tick endpoint and the J7 helper first set the start time of every `created` or `retry` job whose start time is ≤ `TEST_NOW` to the database `now()`, so it runs immediately. This SQL against pg-boss's internal table lives in one function in the job adapter and runs only in test mode; nothing else touches pg-boss tables directly. The pg-boss 12 table and column names are confirmed in Sprint 0 proof #4. |
 | T4 Sign-in | Tests sign in through AU7 and reuse saved sign-in state per role. |
 | T5 API visibility | V-rules are asserted on API responses, not only on rendered pages. |
 | T6 Flakiness | One retry in CI; trace, video and screenshot kept on failure; flaky tests are fixed, not skipped. |
@@ -308,11 +317,11 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | G2 One image | The image tested end-to-end is the image deployed. |
 | G3 Azure access | GitHub authenticates to Azure with an OIDC federated credential on a service principal in the project tenant, with Contributor rights on the project resource group only. No Azure secrets in GitHub. |
 | G4 Minutes budget | End-to-end tests only on `main`; dependency and build caching; `concurrency` cancels superseded runs. The Free plan includes 2,000 Linux minutes per month for private repositories. |
-| G5 Infrastructure | `/infra/main.bicep` defines: Log Analytics workspace (M7); Container Apps environment; web Container App (0–1 replicas, external HTTPS ingress, Key Vault secret references, user-assigned identity); `tick` job (cron `0 * * * *`); `db-migrate` job; PostgreSQL Flexible Server 17 B1MS with public access, firewall rule `AllowAllWindowsAzureIps` (0.0.0.0–0.0.0.0), `require_secure_transport = on`, admin password generated into Key Vault and a separate least-privilege app login; storage account with private container `files`; Key Vault; user-assigned managed identity with Storage Blob Data Contributor (storage account scope) and Key Vault Secrets User; budget alert at EUR 10 per month. |
-| G6 Rebuildable | An empty resource group can be rebuilt with `infra.yml`, then `main.yml`, then `pnpm seed:admin`. |
+| G5 Infrastructure | `/infra/main.bicep` defines: Log Analytics workspace (M7); Container Apps environment; web Container App (0–1 replicas, external HTTPS ingress, Key Vault secret references, user-assigned identity); `tick` job (cron `0 * * * *`); `db-migrate` job; `db-seed` job (manual trigger; runs `pnpm db:seed`, or `pnpm seed:admin` when its admin email variable is set); `APP_ENV=azure` on the web app and every job; PostgreSQL Flexible Server 17 B1MS with public access, firewall rule `AllowAllWindowsAzureIps` (0.0.0.0–0.0.0.0), `require_secure_transport = on`, admin password generated into Key Vault and a separate least-privilege app login; storage account with private container `files`; Key Vault; user-assigned managed identity with Storage Blob Data Contributor (storage account scope) and Key Vault Secrets User; budget alert at EUR 10 per month. |
+| G6 Rebuildable | An empty resource group can be rebuilt with `infra.yml`, then `main.yml`, then the `db-seed` job (D8), then `pnpm seed:admin --email <owner UPN>` through the `db-seed` job. |
 | G7 Local parity | `pnpm verify` runs locally what `ci.yml` runs. |
 | G8 Dependencies | Dependabot weekly for npm and GitHub Actions. |
-| G9 Image pull | The GHCR package is private; the Container App pulls with a GitHub fine-grained token (read packages only) stored in Key Vault, with a calendar reminder before it expires. |
+| G9 Image pull | The GHCR package is private. GitHub Packages authenticates only with a **classic** personal access token, so the Container App pulls with a classic PAT that has the **`read:packages` scope only** and an expiry date (e.g. 90 days), stored in Key Vault, with a calendar reminder before it expires. A classic token applies to the whole personal account, so it must never get any other scope. `main.yml` pushes images with `GITHUB_TOKEN`. |
 | G10 Stopping the database | To save cost between demos, stop the PostgreSQL server **and** disable the `tick` job. A stopped Flexible Server starts again automatically after 7 days. |
 
 ---
@@ -322,7 +331,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | Rule | Behaviour |
 |---|---|
 | M1 Logger | pino structured JSON to stdout through one logger module. |
-| M2 No personal data | Log identifiers only (application, requisition, user, job IDs); never names, emails, phone numbers, file content, salary or comments. pino `redact` paths act as a safety net. |
+| M2 No personal data | Log identifiers only (application, requisition, user, job IDs); never names, emails, phone numbers, file content, salary or comments. pino `redact` paths act as a safety net. The same applies to `audit_log.details_json`: IDs and counts only. |
 | M3 Correlation | Each request gets a `request_id` (returned in `x-request-id`); job logs include `job_id` and queue name. |
 | M4 Errors | Unhandled errors are logged with stack and `request_id`; users see a generic error page showing the `request_id`. |
 | M5 Health | `GET /api/health` checks database and storage connectivity; used by the deploy smoke test and Container Apps health probes. |
@@ -355,8 +364,9 @@ The first sprint sets up the skeleton and proves the integration points everythi
 | 1 | D4: job creation commits and rolls back with the business transaction (J1, `fromDrizzle`). |
 | 2 | J2: a delayed `email.send` job is cancelled inside a transaction. |
 | 3 | W1: `next build` succeeds with no database and no secrets available. |
-| 4 | W4: the tick queues daily tasks once, drains due jobs, ignores future-dated jobs and returns within 180 s. |
-| 5 | AU7: dev sign-in creates a database session that authenticates later requests; the app refuses to start with `AUTH_DEV_LOGIN=true` in production mode. |
+| 4 | W4: the tick queues daily tasks once, drains due jobs, ignores future-dated jobs and returns within 180 s; T3: the clock shift makes a delayed job due under `TEST_NOW` (confirms the pg-boss 12 table and column names it uses). |
+| 5 | AU7: dev sign-in creates a database session that authenticates later requests; the production image starts with `AUTH_DEV_LOGIN=true`, `APP_ENV=ci`, `EMAIL_PROVIDER=smtp`; the app refuses to start with `AUTH_DEV_LOGIN=true` and `APP_ENV=azure` or `EMAIL_PROVIDER=outbox`. |
 | 6 | AU2–AU5 (manual, in Azure): a pre-created demo user signs in with Entra and is linked; an Entra user without an ATS account is refused; a deactivated user can't sign in. |
-| 7 | §8: signed links work against Azurite (account key) and Azure (user delegation key). |
+| 7 | §8: signed links work against Azurite (account key) and Azure (user delegation key) and return `Content-Type: application/pdf` and `Content-Disposition: inline`; the viewer page's `frame-src` allows the PDF to load. |
 | 8 | §9: the Outbox shows a captured email with its `.ics` and PDF attachment. |
+| 9 | §3 rule 9 (manual, in Azure): confirm which client IP header the Container Apps ingress provides (`x-envoy-external-address` or the last `x-forwarded-for` entry) and that a client-set `x-forwarded-for` can't bypass the limit. |
