@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.3** | TO-21 also covers the `infra.yml` approval step (two manual runs) |
 | **Changes in 1.2** | TO-21 added (G1 without branch protection) |
 | **Changes in 1.1** | Decisions from `open-questions.md` (Q1–Q27) applied |
 
@@ -206,7 +207,7 @@
 ## TO-21 — Merge Gate by Workflow, Not Branch Protection
 | | |
 |---|---|
-| **Limitation** | The repository is private on the GitHub Free plan, which has no branch protection or rulesets for private repositories. GitHub does not block a merge to `main` when `ci.yml` fails, or a direct push to `main`. |
+| **Limitation** | The repository is private on the GitHub Free plan, which has no branch protection or rulesets for private repositories. GitHub does not block a merge to `main` when `ci.yml` fails, or a direct push to `main`. For the same reason `infra.yml` has no approval gate inside one run (Environments with required reviewers): the owner reviews a what-if run and then starts a separate deploy run. |
 | **Impact** | A red pull request or a direct push can reach `main` by mistake; `main.yml` would then catch it only after the merge. |
 | **Why acceptable** | One owner and one agent; `AGENTS.md` requires green tests before every commit and the owner's approval before every merge; `main.yml` runs `pnpm verify` and the full Playwright suite on every push to `main` before anything is deployed (G1, G2). |
-| **Upgrade path** | GitHub Pro or Team (or a public repository) with a ruleset on `main` that requires `ci.yml` and a pull request review. |
+| **Upgrade path** | GitHub Pro or Team (or a public repository) with a ruleset on `main` that requires `ci.yml` and a pull request review, and an environment with required reviewers for `infra.yml`. |
