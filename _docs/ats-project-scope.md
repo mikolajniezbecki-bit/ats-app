@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.3** | Tasks 10–15 grooming: settings allowed values, `PRIVACY_STATEMENT_TEXT`, a text change needs a new version, settings audit (§5.1); master data codes immutable, code formats, "referenced" defined (§5.1); user management adds name edit, reactivation, lock-out guards, audit actions, multi-role picker (§5.1); A5 also blocks a pending approver's role change; F2 MiB, F3 empty/permissions-only/unparsable PDFs rejected; F5 CSP on all app pages; auth tables follow §7 conventions |
 | **Changes in 1.2** | Tasks 4–6 grooming: §7 conventions (keys, nullability, no cascades), `job_runs` id and statuses, `master_data.picklist_key` check, `files.original_name` (cleared by RT4), `offers` approver check allows `WITHDRAWN`, currency format check |
 | **Changes in 1.1** | Decisions from `open-questions.md` (Q1–Q27) applied |
 
@@ -99,7 +100,7 @@ Each user has exactly one role. Users are created by an Admin before they can si
 ## 5. Functional Modules
 
 ### 5.1 Administration & Master Data
-- **Master data:** CRUD for Departments, Locations, Legal Entities and custom picklists. Records are deactivated, never hard-deleted, once referenced.
+- **Master data:** CRUD for Departments, Locations, Legal Entities and custom picklists. Records are deactivated, never hard-deleted, once referenced; deactivated records can be reactivated. A Department, Location or Legal Entity is referenced when a requisition points to it; a picklist value is referenced when a custom field bound to its `picklist_key` uses its code. `code`, `type` and `picklist_key` can't change after creation; `code` matches `^[A-Z0-9_-]{1,50}$` and `picklist_key` matches `^[a-z0-9_]{1,50}$`. Pickers offer active records only.
 - **Templates** (English only):
   - *Requisition templates* define custom fields (contract in §7, `templates.schema_json`).
   - *Email templates* have a subject, body and optional `trigger_status` (E8). Active templates without `trigger_status` are the ones offered for bulk email (§5.4).
@@ -108,17 +109,20 @@ Each user has exactly one role. Users are created by an Admin before they can si
 - **Tokens:** `[[CANDIDATE_FULL_NAME]]`, `[[JOB_TITLE]]`, `[[REQ_NUMBER]]`, `[[HIRING_MGR_FULL_NAME]]`, `[[RECRUITER_FULL_NAME]]`, `[[RECRUITER_EMAIL]]`, `[[INTERVIEW_DATETIME]]`, `[[INTERVIEW_LOCATION]]`, `[[OFFER_SALARY]]`, `[[OFFER_CURRENCY]]`, `[[START_DATE]]`, `[[LEGAL_ENTITY]]`, `[[LOGO]]`. An unknown token is an error, never output as raw text.
 - **Settings** (Admin-editable; defaults in brackets):
 
-| Setting | Default |
-|---|---|
-| `RETENTION_DAYS` | 180 |
-| `REJECTION_EMAIL_DELAY_HOURS` | 24 |
-| `APPROVAL_REMINDER_DAYS` | 3 |
-| `MAX_UPLOAD_MB` | 5 |
-| `SENDER_EMAIL` | `careers@ats-demo.local` |
-| `FALLBACK_REPLY_TO_EMAIL` | `recruiting@ats-demo.local` |
-| `PRIVACY_STATEMENT_VERSION` + text | `1.0` + demo statement |
+| Setting | Default | Allowed values |
+|---|---|---|
+| `RETENTION_DAYS` | 180 | integer 1–3650 |
+| `REJECTION_EMAIL_DELAY_HOURS` | 24 | integer 0–168 |
+| `APPROVAL_REMINDER_DAYS` | 3 | integer 1–30 |
+| `MAX_UPLOAD_MB` | 5 | integer 1–10 (MiB) |
+| `SENDER_EMAIL` | `careers@ats-demo.local` | valid email |
+| `FALLBACK_REPLY_TO_EMAIL` | `recruiting@ats-demo.local` | valid email |
+| `PRIVACY_STATEMENT_VERSION` | `1.0` | 1–20 characters |
+| `PRIVACY_STATEMENT_TEXT` | demo statement | plain text, 1–20,000 characters |
 
-- **User management:** create a user (email, name, one role), change role, deactivate. Deactivation is blocked while the user is the approver of a pending item (A5) and ends all their sessions. Other references to an inactive user stay in place: E2 falls back to `FALLBACK_REPLY_TO_EMAIL` when the requisition's recruiter is inactive; invite, update and cancel emails skip inactive participants (I2–I5); the requisition page shows a warning when its recruiter or hiring manager is inactive. All user pickers (approver, recruiter, hiring manager, interviewer) list **active users only**.
+Settings are read through one typed reader that returns the default above when no row exists. Changing the privacy statement text requires a new version, so `consent_version` always identifies the text the candidate saw. Each changed key writes one `SETTING_CHANGED` audit row with `details_json = { key }` only; unchanged keys write nothing.
+
+- **User management:** create a user (email, name, one role), edit the name (the email can't change), change role, deactivate and reactivate. Deactivation is blocked while the user is the approver of a pending item (A5) and ends all their sessions. An Admin can't change their own role or deactivate themselves, and the last active Admin can't be demoted or deactivated. Audit actions: `USER_CREATED`, `USER_ROLE_CHANGED` (`fromRole`, `toRole`), `USER_DEACTIVATED`, `USER_REACTIVATED`. Other references to an inactive user stay in place: E2 falls back to `FALLBACK_REPLY_TO_EMAIL` when the requisition's recruiter is inactive; invite, update and cancel emails skip inactive participants (I2–I5); the requisition page shows a warning when its recruiter or hiring manager is inactive. All user pickers (approver, recruiter, hiring manager, interviewer) list **active users only**, optionally filtered by one or more roles.
 - **Admin tools:** Outbox (`/admin/outbox`), background jobs and daily-task runs.
 
 ### 5.2 Job Requisitions
@@ -143,7 +147,7 @@ DRAFT ──submit──► PENDING_APPROVAL ──approve──► APPROVED ⇄
 | A2 Segregation of duties | `approver_id` must differ from `submitted_by_user_id`. Enforced in the backend on submission and on reassignment; no role can bypass it. |
 | A3 Decision | The approver approves or rejects; a comment is required to reject. **Requisition, first approval** (`approved_at IS NULL`): approve → `APPROVED`, `approved_at = now()`, `is_published = true`; reject → `DRAFT`. **Requisition re-approval** (`approved_at IS NOT NULL`): approve → `APPROVED`, clear `previous_l2_values_json`, keep the original `approved_at`; reject → restore the L2 fields from `previous_l2_values_json`, clear it, `APPROVED`. **Offer:** approve → `APPROVED` (P7 renders the letter); reject → `REJECTED`, editable and resubmittable as `PENDING` only while it is the latest offer on the application (§5.6). |
 | A4 Reassignment | Recruiters and Admins can reassign a pending approval to another eligible approver; a reason is required and A2 applies. |
-| A5 Deactivation guard | A user who is the approver of any pending item (a requisition in `PENDING_APPROVAL` or an offer in `PENDING`) can't be deactivated until those items are reassigned. Other references don't block deactivation (§5.1). |
+| A5 Deactivation guard | A user who is the approver of any pending item (a requisition in `PENDING_APPROVAL` or an offer in `PENDING`) can't be deactivated, or have their role changed to one that can't approve (anything other than Hiring Manager or Admin), until those items are reassigned. Other references don't block deactivation (§5.1). |
 | A6 Reminders | Daily: for each pending item, send a reminder when `now − last_event_at ≥ APPROVAL_REMINDER_DAYS`, where `last_event_at` is the latest `SUBMITTED`, `REASSIGNED` or `REMINDED` event for that item. To: approver; Cc: submitter. |
 | A7 Audit | Every submission, approval, rejection, withdrawal, reassignment and reminder is written to `approval_events`. |
 | A8 Offer re-approval | An offer can be edited only while `candidate_response = PENDING`; once `ACCEPTED` or `DECLINED` it is locked (after a decline, the recruiter creates a new offer). Changing the salary, currency or start date of an `APPROVED` offer requires the editor to pick an approver (A1, A2), sets `approval_status = PENDING` and clears `sent_at`; `candidate_response` stays `PENDING`. After re-approval, P7 renders a new letter and sends the updated offer email; the earlier PDF stays in history. |
@@ -189,10 +193,10 @@ DRAFT ──submit──► PENDING_APPROVAL ──approve──► APPROVED ⇄
 | Rule | Behaviour |
 |---|---|
 | F1 Formats | CV, cover letter and interview notes: **PDF only**. |
-| F2 Size | Max `MAX_UPLOAD_MB` per file, checked in the browser and on the server. |
-| F3 Content check | The server verifies the `%PDF-` file signature (not just the extension) and rejects encrypted or password-protected PDFs. |
+| F2 Size | Max `MAX_UPLOAD_MB` per file (1 MB = 1 MiB), checked in the browser and on the server. Empty files are rejected. |
+| F3 Content check | The server verifies the `%PDF-` file signature at byte 0 and ignores the file extension and the browser-sent MIME type. It rejects any encrypted PDF (including permissions-only encryption) and any file that can't be parsed as a PDF. |
 | F4 Storage | Files are stored in a private container under random keys and are reachable only through signed links (V11). |
-| F5 Viewing | PDFs open inline through direct signed Blob links; the signed link sets the response headers `Content-Type: application/pdf` and `Content-Disposition: inline`. The restrictive Content Security Policy and `X-Content-Type-Options: nosniff` apply to the **app pages** that embed the PDF viewer; their `frame-src` allows only the configured Blob endpoint (never `*`). |
+| F5 Viewing | PDFs open inline through direct signed Blob links; the signed link sets the response headers `Content-Type: application/pdf` and `Content-Disposition: inline`. The restrictive Content Security Policy and `X-Content-Type-Options: nosniff` apply to all **app pages**, including those that embed the PDF viewer; `frame-src` allows only the configured Blob origin (never `*`). |
 | F6 Anti-spam | The apply endpoint is rate-limited to 5 submissions per IP per hour (counted in the `rate_limits` table; client IP resolved as in `tech-stack.md` §3), protected by Cloudflare Turnstile, and includes a hidden honeypot field. |
 | F7 Duplicate submission | Same `email_hash` + same requisition within 24 hours → rejected with "You have already applied for this position." |
 | F8 Deletion | Files are deleted from storage by the retention purge (RT4). |
@@ -317,10 +321,10 @@ Timing is best-effort: the application sleeps when idle and is woken hourly, so 
 | 15 | **offers** | `id`, `application_id`, `template_id`, `created_by_user_id`, `submitted_by_user_id` (nullable), `submitted_at` (nullable), `approver_id` (nullable; check: `approval_status IN ('DRAFT', 'WITHDRAWN') OR approver_id IS NOT NULL`, because a discarded or auto-withdrawn draft (§5.6, L6) never had an approver), `job_title`, `salary` (`numeric(12,2)`), `currency` (ISO 4217; check `^[A-Z]{3}$`, the code list is validated in the offer service), `start_date`, `approval_status`, `candidate_response`, `sent_at`, `responded_at`. |
 | 16 | **approval_events** | `id`, `subject_type` (`REQUISITION`, `OFFER`), `subject_id`, `event` (`SUBMITTED`, `APPROVED`, `REJECTED`, `WITHDRAWN`, `REASSIGNED`, `REMINDED`), `actor_user_id` (nullable = system), `from_approver_id`, `to_approver_id`, `comment`, `created_at`. Index `(subject_type, subject_id, created_at)`. |
 | 17 | **email_log** | `id`, `application_id` (nullable), `template_id` (nullable), `job_id` (nullable), `recipient` (nullable after purge), `cc` (`text`, nullable), `reply_to`, `subject` (nullable), `body_rendered` (nullable), `ics_content` (nullable), `attachment_file_ids` (uuid[], default `{}`), `status` (`QUEUED`, `SENT`, `CAPTURED`, `FAILED`, `CANCELLED`), `scheduled_for`, `sent_at`, `provider_message_id`, `ics_uid`, `ics_sequence`, `direction` (`OUTBOUND`), `error`. |
-| 18 | **audit_log** | `id`, `actor_user_id` (nullable = system), `action` (free text, no check constraint; e.g. `EXPORT_HIRES`, `USER_DEACTIVATED`, `SETTING_CHANGED`, `OFFER_DISCARDED`), `subject_type` (nullable, no check), `subject_id` (nullable), `details_json` (IDs and counts only, never personal data), `created_at`. |
+| 18 | **audit_log** | `id`, `actor_user_id` (nullable = system), `action` (free text, no check constraint; e.g. `EXPORT_HIRES`, `USER_CREATED`, `USER_ROLE_CHANGED`, `USER_DEACTIVATED`, `USER_REACTIVATED`, `ADMIN_SEEDED`, `SETTING_CHANGED`, `OFFER_DISCARDED`), `subject_type` (nullable, no check), `subject_id` (nullable), `details_json` (IDs and counts only, never personal data), `created_at`. |
 | 19 | **job_runs** | `id`, `job_name`, `run_date` (`date`, Europe/Warsaw calendar date), `started_at`, `finished_at` (nullable), `status` (`RUNNING`, `COMPLETED`, `FAILED`). `UNIQUE (job_name, run_date)`. |
 | 20 | **rate_limits** | `key`, `window_start`, `count`. Primary key `(key, window_start)`. Rows older than 2 hours are deleted by the daily purge (§6). |
-| — | **Authentication tables** | `session`, `account`, `verification`: owned by the authentication library (`tech-stack.md` §4). |
+| — | **Authentication tables** | `session`, `account`, `verification`: owned by the authentication library (`tech-stack.md` §4), but follow the conventions above (snake_case, UUID keys, timestamps, indexed foreign keys, no `ON DELETE CASCADE`). |
 | — | **Job queue tables** | Owned by pg-boss in its own schema (`tech-stack.md` §5). |
 
 ---

@@ -147,6 +147,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 10. Staff sessions and dev sign-in
 
+**Issue:** [#16](https://github.com/mikolajniezbecki-bit/ats-app/issues/16)
+
 **Goal:** Staff can sign in locally and in CI with real database sessions, and every request knows the current user and role.
 
 **Description:** Configure Better Auth with the Drizzle adapter: map its `user` model to `users` with `role` and `is_active` as fields not settable through the auth API, UUID IDs, and generate the `session`, `account` and `verification` tables into the Drizzle schema (AU10). Enable `emailAndPassword` with `disableSignUp` only when `AUTH_DEV_LOGIN=true` (AU7), use 8 h sliding database sessions with secure cookies (AU6), refuse sessions for inactive users and reload role and `is_active` on every request (AU5). Add a sign-in page, a server helper that returns the current user, `proxy.ts` that only checks cookie presence (§3 rule 6) and never redirects public routes such as `/api/internal/tick` (it has its own secret, W4), the career pages or `/api/health` to sign-in, and Playwright sign-in state saved per role (T4). Also set up the serial `time-travel` Playwright project for specs that send `x-test-now`, with the `pnpm verify` check that keeps `x-test-now` inside `tests/e2e/time-travel/**` (T2).
@@ -162,6 +164,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 11. Microsoft Entra ID sign-in
 
+**Issue:** [#17](https://github.com/mikolajniezbecki-bit/ats-app/issues/17)
+
 **Goal:** Staff sign in with Entra accounts from the project tenant, but only if an Admin created them first.
 
 **Description:** Add the Better Auth Microsoft provider for the single project tenant with redirect `{BETTER_AUTH_URL}/api/auth/callback/microsoft` (AU1), `disableImplicitSignUp` and the message "Access not granted, contact your ATS admin." for unknown or inactive users (AU2), `mapProfileToUser` with the `preferred_username` fallback and `image = null` (AU3), and account linking with `trustedProviders: ['microsoft']` (AU4). Document the owner's one-time Entra setup (`tech-stack.md` §4) in the README; the manual check in Azure (Sprint 0 proof #6) happens during deployment.
@@ -175,6 +179,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 12. Policy module, back-office shell and first Admin
 
+**Issue:** [#18](https://github.com/mikolajniezbecki-bit/ats-app/issues/18)
+
 **Goal:** All authorization goes through one policy module, and an environment can get its first Admin.
 
 **Description:** Implement `can(user, action, resource)` in `src/server/policy` plus the pattern for reusable row-level query filters (V9, D6), covering role-level permissions and V1 (Admin full access) and V2 (Recruiter sees all requisitions, applications, scorecards and offers). Add the back-office layout with role-aware navigation and a 403 page. Add `pnpm seed:admin --email <upn>` to create an active Admin with `email_verified = true` (AU8).
@@ -182,15 +188,18 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Depends on:** 10
 
 **Done when:**
-- `V1:` / `V2:` API tests: Admin and Recruiter reach their endpoints; Hiring Manager and Interviewer get 403 from an Admin-only API route, not just a hidden link (T5).
+- `V1:` / `V2:` policy and row-filter tests, plus a handler-level guard test; Hiring Manager and Interviewer get a real HTTP 403 on `/admin`. No Admin-only API exists yet, so the T5 API checks are in task 14 (Admin) and task 20 (Recruiter V2).
+- `seed:admin` on an existing user promotes and reactivates them and writes `ADMIN_SEEDED`.
 - `AU9:` test: a signed-in user with no matching permission is denied by the policy module even though authenticated.
 - `seed:admin` creates the Admin, and running it again creates no duplicate.
 
 ## 13. File storage and secure PDF viewing
 
+**Issue:** [#19](https://github.com/mikolajniezbecki-bit/ats-app/issues/19)
+
 **Goal:** PDFs are validated, stored privately and viewed inline through short-lived signed links.
 
-**Description:** Implement `StorageService` (`upload`, `delete`, `getSignedUrl` with a 5-minute default) on `@azure/storage-blob`, using account-key SAS for Azurite and a user delegation key with managed identity in Azure (`tech-stack.md` §8), random UUID keys in the private `files` container (F4), and SAS headers `rsct=application/pdf`, `rscd=inline` (F5). With Azurite, signed links use the browser-facing `AZURE_STORAGE_PUBLIC_URL` when set (`http://localhost:10000` in Compose) while the app itself talks to `http://azurite:10000` (`tech-stack.md` §8). Add a PDF upload validator (PDF only, `%PDF-` signature, no encrypted PDFs, `MAX_UPLOAD_MB`, F1–F3), a viewer component whose page sets a CSP with `frame-src` limited to the configured Blob endpoint and `nosniff`, and `GET /api/health` checking database and storage (M5).
+**Description:** Implement `StorageService` (`upload`, `delete`, `getSignedUrl` with a 5-minute default) on `@azure/storage-blob`, using account-key SAS for Azurite and a user delegation key with managed identity in Azure (`tech-stack.md` §8), random UUID keys in the private `files` container (F4), and SAS headers `rsct=application/pdf`, `rscd=inline` (F5). With Azurite, signed links use the browser-facing `AZURE_STORAGE_PUBLIC_URL` when set (`http://localhost:10000` in Compose) while the app itself talks to `http://azurite:10000` (`tech-stack.md` §8). Add a PDF upload validator (PDF only, `%PDF-` signature, no encrypted PDFs, `MAX_UPLOAD_MB`, F1–F3), a viewer page `/files/[id]` and `GET /api/files/[id]/url` (Admin and Recruiter only for now), the nonce-based CSP with `frame-src` limited to the Blob origin and `nosniff` set by `proxy.ts` (§3 rule 6), the typed `getSetting()` reader with §5.1 defaults, and `GET /api/health` checking database and storage (M5).
 
 **Depends on:** 4, 12
 
@@ -201,27 +210,31 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 14. Settings and master data administration
 
+**Issue:** [#20](https://github.com/mikolajniezbecki-bit/ats-app/issues/20)
+
 **Goal:** Admins maintain settings, Departments, Locations, Legal Entities and picklists.
 
 **Description:** Build Admin pages and server actions for the settings in `ats-project-scope.md` §5.1 (Zod-validated, each change written to `audit_log` as `SETTING_CHANGED` with IDs only) and CRUD for master data of type `DEPARTMENT`, `LOCATION`, `LEGAL_ENTITY` and `PICKLIST`. Records that are referenced can only be deactivated, never hard-deleted, and inactive records are not offered in pickers. Add `getRetentionDays()` as the single reader of `RETENTION_DAYS`.
 
-**Depends on:** 12
+**Depends on:** 12, 13 (`getSetting()`)
 
 **Done when:**
 - An Admin changes a setting; the new value is used and an `audit_log` row without personal data exists.
 - A referenced master data record cannot be deleted but can be deactivated, after which it no longer appears in picker APIs.
-- Non-Admin users get 403 from the settings and master data APIs.
+- Non-Admin users get 403 from the settings and master data APIs: the first T5 API check of the task 12 guard.
 
 ## 15. User management
 
+**Issue:** [#21](https://github.com/mikolajniezbecki-bit/ats-app/issues/21)
+
 **Goal:** Admins create users, change roles and deactivate users.
 
-**Description:** Build the Admin user pages: create a user (lower-cased email, name, exactly one role, `email_verified = true`), change role, and deactivate, which deletes all of the user's sessions and writes `USER_DEACTIVATED` to `audit_log` (`ats-project-scope.md` §5.1). Add a reusable user-picker query that returns active users only, optionally filtered by role. The guard that blocks deactivating a user who is approver of a pending item (A5) is added with approval reassignment.
+**Description:** Build the Admin user pages: create a user (lower-cased email, name, exactly one role, `email_verified = true`), edit the name, change role, reactivate (`USER_REACTIVATED`), and deactivate, which deletes all of the user's sessions and writes `USER_DEACTIVATED` to `audit_log` (`ats-project-scope.md` §5.1). Add the lock-out guards (no self role change or self-deactivation; the last active Admin stays) and a reusable user-picker query that returns active users only, optionally filtered by one or more roles (§5.1). The guard that blocks deactivating a user who is approver of a pending item (A5) is added with approval reassignment.
 
 **Depends on:** 12
 
 **Done when:**
-- An Admin creates a user who can then sign in with dev sign-in; a duplicate email is rejected.
+- An Admin creates a user who can then sign in with dev sign-in after the test sets a dev password with the task 10 helper (there is no password UI); a duplicate email is rejected.
 - Deactivating a signed-in user ends their session on the next request.
 - The user-picker API returns only active users, filtered by role when asked.
 
@@ -243,6 +256,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Goal:** `pnpm db:seed` sets up any environment with defaults, templates, master data and demo users.
 
 **Description:** Implement an idempotent, non-destructive seed (D8) that inserts only missing records by natural key: settings defaults, master data, a requisition template, the `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", a default offer letter, and four demo users (one per role). Dev passwords are created only when `AUTH_DEV_LOGIN=true`. Synthetic requisitions and applications are added in a later task. Like `db:migrate` (task 5), `db:seed` and `seed:admin` (task 12) get compiled entry points in the production image, so the Azure `db-seed` job runs them from the same image (`tech-stack.md` §3 rule 8, D8, G5).
+
+**Grooming notes:** the seed reuses `ensureDevUser()` from task 10. How demo-user dev passwords are provided is not yet specified, and the `AGENTS.md` exception covers `docker-compose.yml` only; settle this when grooming.
 
 **Depends on:** 15, 16
 
@@ -271,6 +286,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Build `/admin/outbox` listing messages with recipient, subject, status, time and application link, showing the HTML body in a sandboxed iframe without scripts, with `.ics` download through `GET /api/admin/outbox/[id]/ics` and PDF attachments through signed links (`tech-stack.md` §9). Build the jobs page listing queued, active and failed jobs per queue and the last 30 days of `job_runs` (J6). Both are Admin-only through the policy module.
 
+**Grooming notes:** the `srcdoc` iframe inherits the page CSP (task 13), so inline styles and `data:` images in email HTML need `style-src`/`img-src` allowances on the Outbox page.
+
 **Depends on:** 18
 
 **Done when:**
@@ -283,6 +300,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Goal:** Recruiters and Hiring Managers create and edit draft requisitions.
 
 **Description:** Build the requisition list and form: create from a template, blank, or by duplicating an existing requisition, with all fields from `ats-project-scope.md` §7 and custom fields validated against the template's `schema_json`. Generate a 32-hex `private_slug` on save for `PRIVATE` postings (L9), write every state and L2-field change to `requisition_history` (L11), use optimistic locking, and warn on the page when the recruiter or hiring manager is inactive. The list respects visibility: Hiring Managers see only requisitions where they are hiring manager, approver or creator (V3a).
+
+**Grooming notes:** includes the Recruiter `V2:` API test moved from task 12. The form keeps showing a currently selected master data record or user that is now inactive. Check that each master data foreign key points to a record of the right type.
 
 **Depends on:** 13, 15, 16
 
@@ -310,6 +329,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Implement submit (submitter picks an active Hiring Manager or Admin as approver, A1; approver must differ from submitter, A2), approve or reject with required reject comment (A3, first-approval branch: approve sets `APPROVED`, `approved_at`, `is_published = true`; reject returns to `DRAFT`), and withdraw (A9). Write every event to `approval_events` (A7), send the approval-request email to the approver (E7), add a "My approvals" page, and block all edits while a requisition is in first-approval `PENDING_APPROVAL` (L8).
 
+**Grooming notes:** add the A2 and current-approver condition to the `approval.decide` policy action from task 12.
+
 **Depends on:** 18, 20
 
 **Done when:**
@@ -324,6 +345,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Build server-rendered (`force-dynamic`) `/jobs` with keyword search and Location and Department filters, listing requisitions where `posting_type = 'EXTERNAL' AND is_published = true`, plus job detail pages (`ats-project-scope.md` §5.3). Private postings are reachable only at `/jobs/p/{private_slug}`, carry `noindex`, and are excluded from the list, search and `sitemap.xml`. Unpublished jobs show "This position is no longer accepting applications."; pages are mobile-friendly, keyboard-navigable and meet WCAG 2.1 AA contrast.
 
+**Grooming notes:** the Location and Department filters come from published requisitions (which can reference deactivated records), not from the picker API.
+
 **Depends on:** 22
 
 **Done when:**
@@ -337,6 +360,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Build the single-page Quick Apply form (name, email, phone, required PDF CV, optional cover letter, active pre-screening questions, privacy consent showing the current statement) with server-side Zod validation and the PDF upload rules (`ats-project-scope.md` §5.3). On submit, in one transaction: compute `email_hash` (HMAC-SHA-256 with `EMAIL_HASH_KEY`), store files and answers, score them (S1–S4), and create the application as `APPLIED` with the acknowledgement email, or as `REJECTED` with `reason_code = DISQUALIFIED` and the rejection email delayed by `REJECTION_EMAIL_DELAY_HOURS`. Record source, consent timestamp and version, and reject a duplicate from the same `email_hash` for the same requisition within 24 h (F7).
 
+**Grooming notes:** add the F2 browser-side size check. The upload path must accept two files of up to 10 MiB plus overhead: raise the Next.js server-action body limit (1 MB by default) and the `proxy.ts` body limit accordingly.
+
 **Depends on:** 21, 23
 
 **Done when:**
@@ -349,6 +374,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Goal:** The apply endpoint is protected by CAPTCHA, a honeypot and a per-IP rate limit.
 
 **Description:** Add a `CaptchaService` adapter for Cloudflare Turnstile (official test keys locally and in CI), a hidden honeypot field, and a limit of 5 submissions per IP per hour counted in `rate_limits` (F6). Resolve the client IP with one helper: `x-envoy-external-address`, otherwise the last `x-forwarded-for` entry, otherwise `127.0.0.1`; never the first entry (`tech-stack.md` §3 rule 9). With `AUTH_DEV_LOGIN=true` the limit is bypassed unless the request sends `x-enforce-rate-limit: true`.
+
+**Grooming notes:** add the Turnstile origin `https://challenges.cloudflare.com` to the CSP `script-src` and `frame-src` (task 13).
 
 **Depends on:** 24
 
@@ -428,13 +455,13 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Goal:** Pending approvals can be reassigned, never orphaned, and approvers are reminded.
 
-**Description:** Recruiters and Admins can reassign a pending requisition or offer approval to another eligible approver with a required reason, with segregation of duties enforced (A4). A user who is the approver of any pending item cannot be deactivated until it is reassigned (A5). The daily `approvals.remind` task sends a reminder to the approver, Cc the submitter, when the last `SUBMITTED`, `REASSIGNED` or `REMINDED` event is at least `APPROVAL_REMINDER_DAYS` old (A6).
+**Description:** Recruiters and Admins can reassign a pending requisition or offer approval to another eligible approver with a required reason, with segregation of duties enforced (A4). A user who is the approver of any pending item cannot be deactivated, or have their role changed away from Hiring Manager or Admin, until it is reassigned (A5). The daily `approvals.remind` task sends a reminder to the approver, Cc the submitter, when the last `SUBMITTED`, `REASSIGNED` or `REMINDED` event is at least `APPROVAL_REMINDER_DAYS` old (A6).
 
 **Depends on:** 22
 
 **Done when:**
 - `A4:` test: reassignment without a reason fails, to the submitter fails, and with a valid approver writes a `REASSIGNED` event.
-- `A5:` test: deactivating a user with a pending approval is refused, and succeeds after reassignment.
+- `A5:` test: deactivating a user with a pending approval, or changing their role to Recruiter or Interviewer, is refused, and succeeds after reassignment.
 - `A6:` test using the tick and `TEST_NOW`: a reminder is sent after the configured days with the submitter in Cc, recorded as `REMINDED`, and not repeated on the same day.
 
 ## 32. Interview scheduling and calendar invites
@@ -471,6 +498,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Implement the row-level filters and response shaping for V3–V6: Hiring Managers see full application data on requisitions where they are hiring manager, approver or creator, read-only (V3a, V4); Interviewers see only open applications where they are an active participant of a non-cancelled interview, limited to CV, cover letter, contact details, interview details and their own scorecards (V5, V6). Add an Interviewer "My interviews" page. All checks are asserted on API responses (T5); offer-approver access (V3b) is added with offer approval.
 
+**Grooming notes:** fill in the Hiring Manager and Interviewer row filters and the `file.view` policy, which deny by default until now (D6).
+
 **Depends on:** 33
 
 **Done when:**
@@ -497,6 +526,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Goal:** Offers go through the same single-step approval as requisitions, including re-approval of changed terms.
 
 **Description:** Reuse the approval flow for offers: submit with approver (A1, A2), approve to `APPROVED` or reject to `REJECTED` with comment (A3), withdraw the request back to `DRAFT` (A9), reassign and remind (A4, A6), all blocked while the requisition is `ON_HOLD` or `PENDING_APPROVAL` (L8). A rejected offer is editable and resubmittable only while it is the latest offer; editing salary, currency or start date of an `APPROVED` offer requires a new approver, sets `PENDING` and clears `sent_at`, and accepted or declined offers are locked (A8). The current offer approver can see that offer, that single application and the requisition header, and loses access on reassignment (V3b).
+
+**Grooming notes:** fill in the offer-approver row filter and `file.view` for V3b, which deny by default until now (D6).
 
 **Depends on:** 31, 34, 35
 
@@ -592,6 +623,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Add `.github/workflows/main.yml` (push to `main` and manual): run `pnpm verify`, build the image once tagged with the commit SHA, start the Compose stack with that image, migrate and seed from that image, run `pnpm test:integration` against the Compose PostgreSQL, run the full Playwright suite with one retry and trace, video and screenshot kept on failure (T6), then push the image to GHCR with `GITHUB_TOKEN` (G2, G4). Deployment steps are added later.
 
+**Grooming notes:** add a Compose app healthcheck on `/api/health` so the workflow waits for the app; run `pnpm test:e2e` (parallel, then `time-travel`); set `E2E_*` overrides only if needed; add an Azurite service wherever integration tests run (task 13 adds it to `ci.yml`).
+
 **Depends on:** 42
 
 **Done when:**
@@ -605,6 +638,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Write `/infra/main.bicep` with every resource in G5: Log Analytics (0.1 GB/day cap, 30-day retention), Container Apps environment, web app (0–1 replicas, Key Vault secret references, user-assigned identity, `APP_ENV=azure`), `tick`, `db-migrate` and `db-seed` jobs, PostgreSQL Flexible Server 17 B1MS with TLS and a least-privilege app login (which still needs rights to create and use the `pgboss` schema, since app start runs `boss.start()` and `createQueue()`, J5), storage with private `files` container, Key Vault, role assignments and the EUR 10 budget alert. Add `infra.yml` (manual: what-if → approval → deploy) authenticating with OIDC on a service principal scoped to the resource group (G3), and document the one-time owner setup including the GHCR classic PAT with `read:packages` only (G9).
 
+**Grooming notes:** use `/api/health` for the readiness and startup probes, not liveness (M5); Bicep creates the `files` container; `MICROSOFT_TENANT_ID` must be the tenant GUID (AU1).
+
 **Depends on:** 43
 
 **Done when:**
@@ -617,6 +652,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Goal:** `main` deploys automatically to Azure and the cloud-only proofs pass.
 
 **Description:** Extend `main.yml` after the image push: Azure login with OIDC, run the `db-migrate` job, update the web Container App to the new tag, and smoke-test `GET /api/health`. Run the remaining manual Sprint 0 proofs in Azure (#6 Entra sign-in and refusal, #7 signed links with a user delegation key, #8 Outbox, #9 client IP header) and record the results. Document the rebuild order from an empty resource group (G6) and how to stop the database and the tick job between demos (G10).
+
+**Grooming notes:** this task runs the cloud halves of Sprint 0 proofs #6 and #7, whose local halves are in tasks 11 and 13.
 
 **Depends on:** 44
 
