@@ -337,6 +337,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 22. Requisition first approval
 
+**Issue:** [#28](https://github.com/mikolajniezbecki-bit/ats-app/issues/28)
+
 **Goal:** A draft requisition goes through single-step approval with segregation of duties.
 
 **Description:** Implement submit (submitter picks an active Hiring Manager or Admin as approver, A1; approver must differ from submitter, A2), approve or reject with required reject comment (A3, first-approval branch: approve sets `APPROVED`, `approved_at`, `is_published = true`; reject returns to `DRAFT`), and withdraw (A9). Write every event to `approval_events` (A7), send the approval-request email to the approver (E7), add a "My approvals" page, and block all edits while a requisition is in first-approval `PENDING_APPROVAL` (L8).
@@ -353,6 +355,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 23. Public job board and job pages
 
+**Issue:** [#29](https://github.com/mikolajniezbecki-bit/ats-app/issues/29)
+
 **Goal:** Candidates browse published external jobs and open private postings by link.
 
 **Description:** Build server-rendered (`force-dynamic`) `/jobs` with keyword search and Location and Department filters, listing requisitions where `posting_type = 'EXTERNAL' AND is_published = true`, plus job detail pages (`ats-project-scope.md` §5.3). Private postings are reachable only at `/jobs/p/{private_slug}`, carry `noindex`, and are excluded from the list, search and `sitemap.xml`. Unpublished jobs show "This position is no longer accepting applications."; pages are mobile-friendly, keyboard-navigable and meet WCAG 2.1 AA contrast.
@@ -367,6 +371,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - An unpublished job page shows the "no longer accepting applications" message and no form.
 
 ## 24. Quick Apply
+
+**Issue:** [#30](https://github.com/mikolajniezbecki-bit/ats-app/issues/30)
 
 **Goal:** Candidates apply without an account and the application is scored and acknowledged.
 
@@ -383,6 +389,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 25. Apply anti-spam
 
+**Issue:** [#31](https://github.com/mikolajniezbecki-bit/ats-app/issues/31)
+
 **Goal:** The apply endpoint is protected by CAPTCHA, a honeypot and a per-IP rate limit.
 
 **Description:** Add a `CaptchaService` adapter for Cloudflare Turnstile (official test keys locally and in CI), a hidden honeypot field, and a limit of 5 submissions per IP per hour counted in `rate_limits` (F6). Resolve the client IP with one helper: `x-envoy-external-address`, otherwise the last `x-forwarded-for` entry, otherwise `127.0.0.1`; never the first entry (`tech-stack.md` §3 rule 9). With `AUTH_DEV_LOGIN=true` the limit is bypassed unless the request sends `x-enforce-rate-limit: true`.
@@ -397,6 +405,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Unit tests for the IP helper cover each header case and show a client-set first `x-forwarded-for` entry is ignored.
 
 ## 26. Pipeline status transitions
+
+**Issue:** [#32](https://github.com/mikolajniezbecki-bit/ats-app/issues/32)
 
 **Goal:** Recruiters move applications through the fixed pipeline with full history and correct emails.
 
@@ -413,6 +423,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - A Hiring Manager calling the status-change API gets 403.
 
 ## 27. Recruiter workbench
+
+**Issue:** [#33](https://github.com/mikolajniezbecki-bit/ats-app/issues/33)
 
 **Goal:** Recruiters review applications and their full history in one place.
 
@@ -433,7 +445,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Add selection to the application list with two bulk actions: move status, and send a templated email using only active `EMAIL` templates with `trigger_status IS NULL`, sent as-is with tokens resolved (`ats-project-scope.md` §5.4). Each application is validated individually against the pipeline rules and the result (success or reason) is reported per application.
 
-**Grooming notes:** bulk email uses `listActiveTemplates({ bulk: true })`; token or send errors are reported per application.
+**Grooming notes:** bulk email uses `listActiveTemplates({ bulk: true })`; token or send errors are reported per application. call the task 26 status service once per application, each in its own transaction, so one failure doesn't roll back the rest; reuse `checkTransition` to report a reason per application.
 
 **Depends on:** 27
 
@@ -447,6 +459,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Goal:** Approved requisitions can be paused, resumed, closed and reopened with correct paused time and side effects.
 
 **Description:** Implement free edits while `APPROVED`, `ON_HOLD` or in re-approval (L1), hold (L4: unpublish, set `on_hold_since`), resume (L5: add hold time to `paused_days` with 2 decimals, republish), manual close with `close_reason = CANCELLED` and comment (L6: add any hold time, reject open applications with `REQ_CANCELLED` and the rejection email, mark non-final offers `WITHDRAWN`, unpublish, set `closed_at`), and Admin-only reopen with comment (L7: add closed time to `paused_days`, clear close fields, republish, no automatic restoration of applications). Recruiters can unpublish and republish manually while `APPROVED` (L9); every change is in `requisition_history`.
+
+**Grooming notes:** L6 close rejects open applications through the task 26 service internals (R7, R8, R11, E8) with `REQ_CANCELLED`; L1 free edits keep the first-approval lock from task 22; add hold and close checks against the job board.
 
 **Depends on:** 26
 
@@ -462,6 +476,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** From `APPROVED`, increasing `openings_count` or changing department, hiring manager or legal entity saves the old values in `previous_l2_values_json`, applies the change and starts a new approval (L2); the posting stays published and applications keep flowing. Approval clears the saved values and keeps the original `approved_at`; rejection or withdrawal restores the saved values and returns to `APPROVED` (A3, A9). The four fields are locked outside `DRAFT` and `APPROVED`; decreasing openings needs no approval, can't go below the hired count, and lowering it to equal the hired count (≥ 1) closes the requisition as `FILLED` in the same transaction.
 
+**Grooming notes:** extend the task 22 approval service for re-approval (`approved_at` set) and remove the 409 it returns for re-approval decisions; re-approval submissions send the same approval email; the L8 full lock applies to first approval only.
+
 **Depends on:** 22, 29
 
 **Done when:**
@@ -475,7 +491,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Recruiters and Admins can reassign a pending requisition or offer approval to another eligible approver with a required reason, with segregation of duties enforced (A4). A user who is the approver of any pending item cannot be deactivated, or have their role changed away from Hiring Manager or Admin, until it is reassigned (A5). The daily `approvals.remind` task sends a reminder to the approver, Cc the submitter, when the last `SUBMITTED`, `REASSIGNED` or `REMINDED` event is at least `APPROVAL_REMINDER_DAYS` old (A6).
 
-**Grooming notes:** leave out the Cc when the submitter is inactive; the reminder text comes from `messages/en.json` (system email, §5.1).
+**Grooming notes:** leave out the Cc when the submitter is inactive; the reminder text comes from `messages/en.json` (system email, §5.1). A4 reassignment updates `approver_id` and sends the approval email to the new approver (E7); the reminder uses the same system-email builder.
 
 **Depends on:** 22
 
@@ -490,7 +506,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Implement a `CalendarService` `.ics` builder and interview scheduling with start time (UTC), duration, IANA time zone, location or link, status, stable UID and sequence, and participants (I1). Creating sends a separate `METHOD:REQUEST` email to the candidate and each active interviewer listing only that recipient (I2); rescheduling, cancelling and participant changes increment the sequence and send `REQUEST` or `CANCEL` with the same UID (I3–I5). Show staff times in their browser zone, emails in the interview's zone, `.ics` in UTC (I6); flag past interviews as "Awaiting outcome" for `COMPLETED`/`NO_SHOW` (I7); never change the application status (I8); and cancel future `SCHEDULED` interviews when an application reaches a final status (R12).
 
-**Grooming notes:** interview emails are built in code with the interview tokens; `audience` is `CANDIDATE` for the candidate and `STAFF` for interviewers.
+**Grooming notes:** interview emails are built in code with the interview tokens; `audience` is `CANDIDATE` for the candidate and `STAFF` for interviewers. add R12 as a step in the task 26 status service; R7 cancels queued invites literally; interview timeline entries already read from `interviews` (task 27).
 
 **Depends on:** 27
 
@@ -506,6 +522,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Interviewers submit one scorecard per interview (thumbs up/down, rating 1–5, comments, optional PDF notes) only for a `SCHEDULED` or `COMPLETED` interview that has started (I9). Other interviewers' scorecards are visible only after the viewer has submitted their own and none of theirs is reopened (V7); submitted scorecards are read-only, an Admin can reopen one, and submission is impossible once the application is final (V8). Recruiters and Hiring Managers see the average rating and thumbs count per application (I10).
 
+**Grooming notes:** interview-notes uploads reuse the task 24 browser size check and body-limit approach.
+
 **Depends on:** 32
 
 **Done when:**
@@ -520,7 +538,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Implement the row-level filters and response shaping for V3–V6: Hiring Managers see full application data on requisitions where they are hiring manager, approver or creator, read-only (V3a, V4); Interviewers see only open applications where they are an active participant of a non-cancelled interview, limited to CV, cover letter, contact details, interview details and their own scorecards (V5, V6). Add an Interviewer "My interviews" page. All checks are asserted on API responses (T5); offer-approver access (V3b) is added with offer approval.
 
-**Grooming notes:** fill in the Hiring Manager and Interviewer row filters and the `file.view` policy, which deny by default until now (D6).
+**Grooming notes:** fill in the Hiring Manager and Interviewer row filters and the `file.view` policy, which deny by default until now (D6). open the task 27 list and page to Hiring Managers and add V6 shaping in `src/server/applications/` read models; approvers keep V3a access because `approver_id` is kept after the decision.
 
 **Depends on:** 33
 
@@ -549,7 +567,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Reuse the approval flow for offers: submit with approver (A1, A2), approve to `APPROVED` or reject to `REJECTED` with comment (A3), withdraw the request back to `DRAFT` (A9), reassign and remind (A4, A6), all blocked while the requisition is `ON_HOLD` or `PENDING_APPROVAL` (L8). A rejected offer is editable and resubmittable only while it is the latest offer; editing salary, currency or start date of an `APPROVED` offer requires a new approver, sets `PENDING` and clears `sent_at`, and accepted or declined offers are locked (A8). The current offer approver can see that offer, that single application and the requisition header, and loses access on reassignment (V3b).
 
-**Grooming notes:** fill in the offer-approver row filter and `file.view` for V3b, which deny by default until now (D6).
+**Grooming notes:** fill in the offer-approver row filter and `file.view` for V3b, which deny by default until now (D6). add offers to `/approvals` and the `approval.decide` resource rule for offers in the shared approval service (task 22).
 
 **Depends on:** 31, 34, 35
 
@@ -581,6 +599,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Recruiters record `ACCEPTED` or `DECLINED` on a sent offer; a declined offer leaves the application in `OFFER`. Moving to `HIRED` requires an accepted offer (R2), is blocked when hires already equal `openings_count` or the requisition is `ON_HOLD` or `PENDING_APPROVAL` (R5, L8), sets `hired_at`, and when hires reach `openings_count` closes the requisition as `FILLED` in the same transaction, rejecting the remaining open applications (R6). An Admin can correct `HIRED` to `OFFER`, `REJECTED` or `WITHDRAWN` with a comment, clearing `hired_at` without reopening the requisition (R4).
 
+**Grooming notes:** add R5, the L8 hire block, R6 and the R4 Admin correction to `checkTransition` and the status service; `hired_at` is already set (task 26).
+
 **Depends on:** 37
 
 **Done when:**
@@ -608,7 +628,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Implement the daily `retention.purge` task (RT1–RT5): select final applications past `RETENTION_DAYS` since `dispositioned_at` (hires only after export), null the personal fields, set `anonymized_at`, delete pre-screening answers, clear comments and email content, delete linked files from storage (F8), and clear offer approval comments, in batches with one transaction per application. The same task deletes `rate_limits` rows older than 2 hours.
 
-**Grooming notes:** cancel the application's queued emails before anonymizing (RT4).
+**Grooming notes:** cancel the application's queued emails before anonymizing (RT4). also deletes `rate_limits` rows older than 2 h (keys `apply:<ip or /64>`, one-minute buckets); anonymized applications already refuse status changes (RT3).
 
 **Depends on:** 39
 
@@ -636,7 +656,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Extend `pnpm db:seed` (D8) to create synthetic requisitions in several states and applications in every pipeline status, with sample PDF files uploaded through `StorageService`, only when no requisitions exist yet. All data is clearly synthetic (`ats-project-scope.md` C3).
 
-**Grooming notes:** extend the task 17 seed module and keep its rules (D8).
+**Grooming notes:** extend the task 17 seed module and keep its rules (D8). seed applications use `computeEmailHash`, set `dispositioned_at` for final statuses, store `prescreen_answers` only for answered questions, and queue no emails.
 
 **Depends on:** 38
 
@@ -651,7 +671,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Add `.github/workflows/main.yml` (push to `main` and manual): run `pnpm verify`, build the image once tagged with the commit SHA, start the Compose stack with that image, migrate and seed from that image, run `pnpm test:integration` against the Compose PostgreSQL, run the full Playwright suite with one retry and trace, video and screenshot kept on failure (T6), then push the image to GHCR with `GITHUB_TOKEN` (G2, G4). Deployment steps are added later.
 
-**Grooming notes:** add a Compose app healthcheck on `/api/health` so the workflow waits for the app; run `pnpm test:e2e` (parallel, then `time-travel`); set `E2E_*` overrides only if needed; add an Azurite service wherever integration tests run (task 13 adds it to `ci.yml`). the seed step gets `DEMO_USER_*` from Compose; Mailpit is already in the stack.
+**Grooming notes:** add a Compose app healthcheck on `/api/health` so the workflow waits for the app; run `pnpm test:e2e` (parallel, then `time-travel`); set `E2E_*` overrides only if needed; add an Azurite service wherever integration tests run (task 13 adds it to `ci.yml`). the seed step gets `DEMO_USER_*` from Compose; Mailpit is already in the stack. CI Playwright needs internet access to `challenges.cloudflare.com` (Turnstile test keys, browser and server); `@axe-core/playwright` is a dev dependency.
 
 **Depends on:** 42
 
@@ -666,7 +686,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Write `/infra/main.bicep` with every resource in G5: Log Analytics (0.1 GB/day cap, 30-day retention), Container Apps environment, web app (0–1 replicas, Key Vault secret references, user-assigned identity, `APP_ENV=azure`), `tick`, `db-migrate` and `db-seed` jobs, PostgreSQL Flexible Server 17 B1MS with TLS and a least-privilege app login (which still needs rights to create and use the `pgboss` schema, since app start runs `boss.start()` and `createQueue()`, J5), storage with private `files` container, Key Vault, role assignments and the EUR 10 budget alert. Add `infra.yml` (manual: what-if → approval → deploy) authenticating with OIDC on a service principal scoped to the resource group (G3), and document the one-time owner setup including the GHCR classic PAT with `read:packages` only (G9).
 
-**Grooming notes:** use `/api/health` for the readiness and startup probes, not liveness (M5); Bicep creates the `files` container; `MICROSOFT_TENANT_ID` must be the tenant GUID (AU1). the `db-seed` job runs the compiled entry points (no pnpm in the image), sets `DEMO_USER_DOMAIN` to the tenant domain and never sets `DEMO_USER_PASSWORD` or `AUTH_DEV_LOGIN`; `EMAIL_PROVIDER=outbox` is required (§3 rule 10).
+**Grooming notes:** use `/api/health` for the readiness and startup probes, not liveness (M5); Bicep creates the `files` container; `MICROSOFT_TENANT_ID` must be the tenant GUID (AU1). the `db-seed` job runs the compiled entry points (no pnpm in the image), sets `DEMO_USER_DOMAIN` to the tenant domain and never sets `DEMO_USER_PASSWORD` or `AUTH_DEV_LOGIN`; `EMAIL_PROVIDER=outbox` is required (§3 rule 10). real Turnstile keys go in Key Vault; `BETTER_AUTH_URL` is used for sitemap URLs and approval-email links.
 
 **Depends on:** 43
 
@@ -681,7 +701,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Extend `main.yml` after the image push: Azure login with OIDC, run the `db-migrate` job, update the web Container App to the new tag, and smoke-test `GET /api/health`. Run the remaining manual Sprint 0 proofs in Azure (#6 Entra sign-in and refusal, #7 signed links with a user delegation key, #8 Outbox, #9 client IP header) and record the results. Document the rebuild order from an empty resource group (G6) and how to stop the database and the tick job between demos (G10).
 
-**Grooming notes:** this task runs the cloud halves of Sprint 0 proofs #6 and #7, whose local halves are in tasks 11 and 13. also runs the Azure half of the Outbox proof (#8).
+**Grooming notes:** this task runs the cloud halves of Sprint 0 proofs #6 and #7, whose local halves are in tasks 11 and 13. also runs the Azure half of the Outbox proof (#8). Sprint 0 proof #9 confirms the header `getClientIp` relies on; check the Turnstile widget on the Azure hostname.
 
 **Depends on:** 44
 
@@ -696,6 +716,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Goal:** Every required rule ID has a named test and the full role journeys pass.
 
 **Description:** Fill any remaining gaps so `tests/rules-pending.json` is empty and `pnpm test:rules` enforces T1 with no exceptions, then remove the pending-list mechanism. Add end-to-end journeys for every role covering apply → screen → interview → scorecard → offer → hire → export, approvals and re-approval, hold/close/reopen and purge (`tech-stack.md` §11).
+
+**Grooming notes:** the journeys can reuse the Playwright flows from tasks 22, 24 and 27.
 
 **Depends on:** 45
 
