@@ -100,9 +100,11 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 7. Transactional job queue adapter
 
+**Issue:** [#12](https://github.com/mikolajniezbecki-bit/ats-app/issues/12)
+
 **Goal:** Background jobs are created and cancelled inside the same database transaction as the business change.
 
-**Description:** Define the `JobQueue` interface (`enqueue`, `cancel`) and implement it with pg-boss 12 as the only module importing pg-boss (J4). `send` and `cancel` use `fromDrizzle(tx, sql)` so that a rollback removes the job (J1, J2), with a small `executeSql` fallback if the types don't match. Create the four queues from `tech-stack.md` §5 with their retry and singleton options in an idempotent setup function that `db:migrate` and app start both call (J5). This covers Sprint 0 proofs #1 and #2.
+**Description:** Define the `JobQueue` interface (`enqueue`, `cancel`) and implement it with pg-boss 12 as the only module importing pg-boss (J4). `send` and `cancel` use `fromDrizzle(tx, sql)` so that a rollback removes the job (J1, J2), with a small `executeSql` fallback if the types don't match. pg-boss shares the D5 pool, and job payloads hold IDs only (J4). Create the four queues from `tech-stack.md` §5 with their retry and singleton options in an idempotent `ensureJobQueues()` that `db:migrate`, the integration-test setup and app start all call; it updates retry options of existing queues and fails loudly on a policy change (J5). This covers Sprint 0 proofs #1 and #2.
 
 **Depends on:** 6
 
@@ -113,6 +115,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 8. In-process worker startup
 
+**Issue:** [#13](https://github.com/mikolajniezbecki-bit/ats-app/issues/13)
+
 **Goal:** Job handlers start with the web app, and the build never needs a database or secrets.
 
 **Description:** Add `instrumentation.ts` that runs only when `NEXT_RUNTIME === 'nodejs'` and not during the production build, calls `getConfig()`, starts pg-boss, ensures the queues and registers handlers only when `WORKER_ENABLED === 'true'` (W1). Handlers live in `src/worker` with a standalone `pnpm worker` entry point (W2), stop gracefully on SIGTERM (W6), and tests can process all due jobs synchronously through a helper (J7). This covers Sprint 0 proof #3.
@@ -121,27 +125,31 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Done when:**
 - `W1:` test: `next build` succeeds with no database reachable and no secrets set.
-- `W1:` test: with `WORKER_ENABLED=false` no handlers are registered; with `true` a queued test job is processed; a missing required variable stops startup.
-- `pnpm worker` starts and processes a queued test job.
+- `W1:` test: with `WORKER_ENABLED=false` no handlers are registered; with `true` a job on a test-only queue is processed; a missing required variable stops startup.
+- `pnpm worker` starts, always registers handlers (regardless of `WORKER_ENABLED`) and stops gracefully on SIGTERM. Processing a real job moves to task 9, where the first handlers exist; until then tests use a test-only queue they create themselves.
+- Startup exits non-zero when PostgreSQL is unreachable.
 
 ## 9. Hourly tick and daily tasks
 
+**Issue:** [#14](https://github.com/mikolajniezbecki-bit/ats-app/issues/14)
+
 **Goal:** An authenticated tick endpoint runs daily tasks once per day and drains due jobs, testable with a fake clock.
 
-**Description:** Implement `POST /api/internal/tick` protected by `x-tick-secret` (W4): it queues each daily task (`approvals.remind` after 08:00, `retention.purge` after 02:00 Europe/Warsaw, stub handlers for now) that has no `job_runs` row for today's Warsaw date (W5), then polls every second until no due job remains or 180 s pass. Add the Europe/Warsaw run-date helper (DST-safe) and the test clock `TEST_NOW`, honoured only when `AUTH_DEV_LOGIN=true`, whose clock shift makes due delayed jobs run immediately via one function in the job adapter (T3). This covers Sprint 0 proof #4.
+**Description:** Implement `POST /api/internal/tick` protected by `x-tick-secret` (W4): it queues each daily task (`approvals.remind` after 08:00, `retention.purge` after 02:00 Europe/Warsaw, stub handlers for now) that has no `job_runs` row for today's Warsaw date (W5), then polls every second until no due job remains or 180 s pass. Add the Europe/Warsaw run-date helper (DST-safe) and the test clock `TEST_NOW`, sent as the `x-test-now` header on the tick (and a `now` option on the J7 helper) and honoured only when `AUTH_DEV_LOGIN=true`. It drives the due check, run date and the `now` in daily task payloads, and its clock shift makes due delayed jobs run immediately via one function in the job adapter (T3). With `WORKER_ENABLED` off the tick doesn't wait; a failed daily task runs again the next day (W4, W5). This covers Sprint 0 proof #4.
 
 **Depends on:** 8
 
 **Done when:**
 - `W4:` tests: a wrong or missing secret returns 401; a tick queues due daily tasks, waits for due jobs, ignores future-dated jobs and returns 200.
 - `W5:` tests: two overlapping ticks run a daily task only once; the Warsaw run date is correct around both DST changes.
-- A test shows a job delayed by 24 h runs on a tick with `TEST_NOW` 25 h ahead, and `TEST_NOW` is ignored when `AUTH_DEV_LOGIN` is not `true`.
+- A test shows a job delayed by 24 h runs on a tick with `x-test-now` 25 h ahead, and `TEST_NOW` is ignored when `AUTH_DEV_LOGIN` is not `true`.
+- `pnpm worker` processes a queued daily-task job (moved from task 8).
 
 ## 10. Staff sessions and dev sign-in
 
 **Goal:** Staff can sign in locally and in CI with real database sessions, and every request knows the current user and role.
 
-**Description:** Configure Better Auth with the Drizzle adapter: map its `user` model to `users` with `role` and `is_active` as fields not settable through the auth API, UUID IDs, and generate the `session`, `account` and `verification` tables into the Drizzle schema (AU10). Enable `emailAndPassword` with `disableSignUp` only when `AUTH_DEV_LOGIN=true` (AU7), use 8 h sliding database sessions with secure cookies (AU6), refuse sessions for inactive users and reload role and `is_active` on every request (AU5). Add a sign-in page, a server helper that returns the current user, `proxy.ts` that only checks cookie presence (§3 rule 6), and Playwright sign-in state saved per role (T4).
+**Description:** Configure Better Auth with the Drizzle adapter: map its `user` model to `users` with `role` and `is_active` as fields not settable through the auth API, UUID IDs, and generate the `session`, `account` and `verification` tables into the Drizzle schema (AU10). Enable `emailAndPassword` with `disableSignUp` only when `AUTH_DEV_LOGIN=true` (AU7), use 8 h sliding database sessions with secure cookies (AU6), refuse sessions for inactive users and reload role and `is_active` on every request (AU5). Add a sign-in page, a server helper that returns the current user, `proxy.ts` that only checks cookie presence (§3 rule 6) and never redirects public routes such as `/api/internal/tick` (it has its own secret, W4), the career pages or `/api/health` to sign-in, and Playwright sign-in state saved per role (T4). Also set up the serial `time-travel` Playwright project for specs that send `x-test-now`, with the `pnpm verify` check that keeps `x-test-now` inside `tests/e2e/time-travel/**` (T2).
 
 **Depends on:** 6
 
@@ -149,6 +157,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `AU7:` Playwright test: a dev user signs in, a session row is created and later requests are authenticated; the password sign-in endpoint is unavailable when `AUTH_DEV_LOGIN` is not `true`.
 - `AU5:` tests: an inactive user cannot sign in; a role change applies on the next request without signing in again.
 - `AU6:` test: the session cookie is HTTP-only, Secure and SameSite=Lax with an 8 h expiry; `AU10:` test: sign-up and setting `role` through the auth API are refused.
+- `POST /api/internal/tick` without a session is not redirected to sign-in.
+- The `time-travel` Playwright project runs with one worker after the parallel projects; a unit-tested check fails when a spec outside `tests/e2e/time-travel/**` sends `x-test-now`.
 
 ## 11. Microsoft Entra ID sign-in
 
@@ -593,7 +603,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Goal:** The whole Azure environment is defined in Bicep and deployable from GitHub.
 
-**Description:** Write `/infra/main.bicep` with every resource in G5: Log Analytics (0.1 GB/day cap, 30-day retention), Container Apps environment, web app (0–1 replicas, Key Vault secret references, user-assigned identity, `APP_ENV=azure`), `tick`, `db-migrate` and `db-seed` jobs, PostgreSQL Flexible Server 17 B1MS with TLS and a least-privilege app login, storage with private `files` container, Key Vault, role assignments and the EUR 10 budget alert. Add `infra.yml` (manual: what-if → approval → deploy) authenticating with OIDC on a service principal scoped to the resource group (G3), and document the one-time owner setup including the GHCR classic PAT with `read:packages` only (G9).
+**Description:** Write `/infra/main.bicep` with every resource in G5: Log Analytics (0.1 GB/day cap, 30-day retention), Container Apps environment, web app (0–1 replicas, Key Vault secret references, user-assigned identity, `APP_ENV=azure`), `tick`, `db-migrate` and `db-seed` jobs, PostgreSQL Flexible Server 17 B1MS with TLS and a least-privilege app login (which still needs rights to create and use the `pgboss` schema, since app start runs `boss.start()` and `createQueue()`, J5), storage with private `files` container, Key Vault, role assignments and the EUR 10 budget alert. Add `infra.yml` (manual: what-if → approval → deploy) authenticating with OIDC on a service principal scoped to the resource group (G3), and document the one-time owner setup including the GHCR classic PAT with `read:packages` only (G9).
 
 **Depends on:** 43
 
