@@ -546,6 +546,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 34. Hiring Manager and Interviewer visibility
 
+**Issue:** [#40](https://github.com/mikolajniezbecki-bit/ats-app/issues/40)
+
 **Goal:** Hiring Managers and Interviewers see exactly the data their role allows, enforced in the API.
 
 **Description:** Implement the row-level filters and response shaping for V3–V6: Hiring Managers see full application data on requisitions where they are hiring manager, approver or creator, read-only (V3a, V4); Interviewers see only open applications where they are an active participant of a non-cancelled interview, limited to CV, cover letter, contact details, interview details and their own scorecards (V5, V6). Add an Interviewer "My interviews" page. All checks are asserted on API responses (T5); offer-approver access (V3b) is added with offer approval.
@@ -560,6 +562,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `V6:` API test: Interviewer responses never contain salary, offers, pre-screening answers, score, status comments or other applications by the same person.
 
 ## 35. Offer drafting
+
+**Issue:** [#41](https://github.com/mikolajniezbecki-bit/ats-app/issues/41)
 
 **Goal:** Recruiters create and manage one active offer per application.
 
@@ -577,9 +581,11 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 36. Offer approval
 
+**Issue:** [#42](https://github.com/mikolajniezbecki-bit/ats-app/issues/42)
+
 **Goal:** Offers go through the same single-step approval as requisitions, including re-approval of changed terms.
 
-**Description:** Reuse the approval flow for offers: submit with approver (A1, A2), approve to `APPROVED` or reject to `REJECTED` with comment (A3), withdraw the request back to `DRAFT` (A9), reassign and remind (A4, A6), all blocked while the requisition is `ON_HOLD` or `PENDING_APPROVAL` (L8). A rejected offer is editable and resubmittable only while it is the latest offer; editing salary, currency or start date of an `APPROVED` offer requires a new approver, sets `PENDING` and clears `sent_at`, and accepted or declined offers are locked (A8). The current offer approver can see that offer, that single application and the requisition header, and loses access on reassignment (V3b).
+**Description:** Reuse the approval flow for offers: submit with approver (A1, A2), approve to `APPROVED` or reject to `REJECTED` with comment (A3), withdraw the request back to `DRAFT` (A9), reassign and remind (A4, A6); submitting and approving are blocked while the requisition is `ON_HOLD` or `PENDING_APPROVAL` (L8). A rejected offer is editable and resubmittable only while it is the latest offer; editing salary, currency or start date of an `APPROVED` offer requires a new approver, sets `PENDING` and clears `sent_at`, and accepted or declined offers are locked (A8). The current offer approver can see that offer, that single application and the requisition header, and loses access on reassignment (V3b).
 
 **Grooming notes:** fill in the offer-approver row filter and `file.view` for V3b, which deny by default until now (D6). add offers to `/approvals` and the `approval.decide` resource rule for offers in the shared approval service (task 22). add the offer adapter for A4/A6, list offers in "All pending approvals" and in the A5 message (requisition number and candidate), lock the approver's user row on offer submit (A5 race); L8 checks cover re-approval too.
 
@@ -592,6 +598,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `V3:` API test: the approver sees only that application on the requisition and loses access after reassignment.
 
 ## 37. Offer letter PDF and offer email
+
+**Issue:** [#43](https://github.com/mikolajniezbecki-bit/ats-app/issues/43)
 
 **Goal:** An approved offer produces a PDF letter that is emailed to the candidate.
 
@@ -609,6 +617,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 38. Candidate response and hiring
 
+**Issue:** [#44](https://github.com/mikolajniezbecki-bit/ats-app/issues/44)
+
 **Goal:** Recruiters record the candidate's answer and hire, with openings enforced and automatic close.
 
 **Description:** Recruiters record `ACCEPTED` or `DECLINED` on a sent offer; a declined offer leaves the application in `OFFER`. Moving to `HIRED` requires an accepted offer (R2), is blocked when hires already equal `openings_count` or the requisition is `ON_HOLD` or `PENDING_APPROVAL` (R5, L8), sets `hired_at`, and when hires reach `openings_count` closes the requisition as `FILLED` in the same transaction, rejecting the remaining open applications (R6). An Admin can correct `HIRED` to `OFFER`, `REJECTED` or `WITHDRAWN` with a comment, clearing `hired_at` without reopening the requisition (R4).
@@ -624,6 +634,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `R4:` test: only an Admin can correct `HIRED`, a comment is required and `hired_at` is cleared.
 
 ## 39. Hire export
+
+**Issue:** [#45](https://github.com/mikolajniezbecki-bit/ats-app/issues/45)
 
 **Goal:** Recruiters export new hires to CSV for hand-off.
 
@@ -642,7 +654,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Implement the daily `retention.purge` task (RT1–RT5): select final applications past `RETENTION_DAYS` since `dispositioned_at` (hires only after export), null the personal fields, set `anonymized_at`, delete pre-screening answers, clear comments and email content, delete linked files from storage (F8), and clear offer approval comments, in batches with one transaction per application. The same task deletes `rate_limits` rows older than 2 hours.
 
-**Grooming notes:** cancel the application's queued emails before anonymizing (RT4). also deletes `rate_limits` rows older than 2 h (keys `apply:<ip or /64>`, one-minute buckets); anonymized applications already refuse status changes (RT3). include scorecard notes files (`owner_type = SCORECARD`) and queued interview emails in the test.
+**Grooming notes:** cancel the application's queued emails before anonymizing (RT4). also deletes `rate_limits` rows older than 2 h (keys `apply:<ip or /64>`, one-minute buckets); anonymized applications already refuse status changes (RT3). include scorecard notes files (`owner_type = SCORECARD`) and queued interview emails in the test. offer approval and reminder emails set `application_id`, so RT4 clears them; include `OFFER_LETTER` files and offer `approval_events` comments in the purge test; check hires corrected by R4 (`exported_at` cleared, no longer `HIRED`).
 
 **Depends on:** 39
 
@@ -657,7 +669,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Build the KPI dashboard: open requisitions, active applications per status, average Time to Fill (only `FILLED`), average Time to Hire (`hired_at − applied_at`) and Age of Requisition per open requisition, using the paused-time formulas in L10. Add CSV exports for the requisition list and pipeline data, Recruiter and Admin only (V10).
 
-**Grooming notes:** L10 uses `paused_days` from task 29; re-approval doesn't pause the clock (TO-10).
+**Grooming notes:** L10 uses `paused_days` from task 29; re-approval doesn't pause the clock (TO-10). reuse `src/server/exports/csv.ts` (BOM, quoting, formula prefix, V10) for the requisition and pipeline exports on `/exports`.
 
 **Depends on:** 38
 
@@ -672,7 +684,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Extend `pnpm db:seed` (D8) to create synthetic requisitions in several states and applications in every pipeline status, with sample PDF files uploaded through `StorageService`, only when no requisitions exist yet. All data is clearly synthetic (`ats-project-scope.md` C3).
 
-**Grooming notes:** extend the task 17 seed module and keep its rules (D8). seed applications use `computeEmailHash`, set `dispositioned_at` for final statuses, store `prescreen_answers` only for answered questions, and queue no emails. seeded `ON_HOLD` and `CLOSED` requisitions need consistent `on_hold_since`, `closed_at`, `close_reason` and `paused_days`; seeded interviews queue no emails.
+**Grooming notes:** extend the task 17 seed module and keep its rules (D8). seed applications use `computeEmailHash`, set `dispositioned_at` for final statuses, store `prescreen_answers` only for answered questions, and queue no emails. seeded `ON_HOLD` and `CLOSED` requisitions need consistent `on_hold_since`, `closed_at`, `close_reason` and `paused_days`; seeded interviews queue no emails. every seeded `HIRED` application has exactly one `ACCEPTED` offer with `sent_at`; hires per requisition stay within `openings_count` and `FILLED` requisitions match R6; seeded offers have `version` and, unless `DRAFT`/`WITHDRAWN`, an `approver_id`; mix of `exported_at` on hires; seeded offers queue no render jobs or emails.
 
 **Depends on:** 38
 
@@ -687,7 +699,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Add `.github/workflows/main.yml` (push to `main` and manual): run `pnpm verify`, build the image once tagged with the commit SHA, start the Compose stack with that image, migrate and seed from that image, run `pnpm test:integration` against the Compose PostgreSQL, run the full Playwright suite with one retry and trace, video and screenshot kept on failure (T6), then push the image to GHCR with `GITHUB_TOKEN` (G2, G4). Deployment steps are added later.
 
-**Grooming notes:** add a Compose app healthcheck on `/api/health` so the workflow waits for the app; run `pnpm test:e2e` (parallel, then `time-travel`); set `E2E_*` overrides only if needed; add an Azurite service wherever integration tests run (task 13 adds it to `ci.yml`). the seed step gets `DEMO_USER_*` from Compose; Mailpit is already in the stack. CI Playwright needs internet access to `challenges.cloudflare.com` (Turnstile test keys, browser and server); `@axe-core/playwright` is a dev dependency.
+**Grooming notes:** add a Compose app healthcheck on `/api/health` so the workflow waits for the app; run `pnpm test:e2e` (parallel, then `time-travel`); set `E2E_*` overrides only if needed; add an Azurite service wherever integration tests run (task 13 adds it to `ci.yml`). the seed step gets `DEMO_USER_*` from Compose; Mailpit is already in the stack. CI Playwright needs internet access to `challenges.cloudflare.com` (Turnstile test keys, browser and server); `@axe-core/playwright` is a dev dependency. keep the task 37 Playwright preview test in the main suite: it proves the fonts and `/public/logo.png` are in the image.
 
 **Depends on:** 42
 
@@ -733,7 +745,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Fill any remaining gaps so `tests/rules-pending.json` is empty and `pnpm test:rules` enforces T1 with no exceptions, then remove the pending-list mechanism. Add end-to-end journeys for every role covering apply → screen → interview → scorecard → offer → hire → export, approvals and re-approval, hold/close/reopen and purge (`tech-stack.md` §11).
 
-**Grooming notes:** the journeys can reuse the Playwright flows from tasks 22, 24 and 27. also reuse the flows from tasks 29, 30, 32 and 33.
+**Grooming notes:** the journeys can reuse the Playwright flows from tasks 22, 24 and 27. also reuse the flows from tasks 29, 30, 32 and 33. also reuse the flows from tasks 34–39 (Hiring Manager read-only view, My interviews, offer create/approve/reject, preview, response, hire, auto-close, export).
 
 **Depends on:** 45
 

@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.8 |
+| **Version** | 1.9 |
 | **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.9** | Tasks 34–39 grooming: optimistic locking on `offers` (D7); P6 preview rendered on request, not stored (§8); stored letter exempt from the upload limit (P7); fonts committed with their licence (P4); `unpdf` for P8 snapshots (§2) |
 | **Changes in 1.8** | Tasks 22–27 grooming: `/sitemap.xml` and `/robots.txt` public (§3 rule 6); Turnstile origin in the CSP on `/apply/**`; 21 MB body limits (§3 rule 7); invalid IP header values ignored, rate-limit key IPv4 or IPv6 /64 (§3 rule 9); `@axe-core/playwright` (§2) |
 | **Changes in 1.7** | Tasks 16–21 grooming: `DEMO_USER_PASSWORD` and `DEMO_USER_DOMAIN` (§3, D8, T4); seed rules (D8); app refuses `APP_ENV=azure` without `EMAIL_PROVIDER=outbox` (§3 rule 10); render-then-send email pipeline and Outbox lists every row (§9); `StorageService.download` (§8); read-only job listing SQL allowed (T3); Tiptap and `sanitize-html` (§2); Azurite and Mailpit service containers in `ci.yml` (§12) |
 | **Changes in 1.6** | Tasks 10–15 grooming: `proxy.ts` protects every route except a public list, returns 401 JSON on protected APIs and sets the nonce-based CSP (§3 rule 6, §8); Microsoft variables set together with a GUID tenant (§3, AU1); `disableSignUp`, profile mapping, cookie cache off, built-in rate limiter off, self-service endpoints disabled, auth tables follow scope §7 (AU2–AU5, AU7, AU10); `seed:admin` promotes or reactivates (AU8); deny-by-default row filters (D6); `pdf-lib` (§2); Azurite container creation and SAS shape (§8); e2e users, two-step `test:e2e`, Chromium only (T2, T4, §11); health timeouts (M5) |
@@ -112,6 +113,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 | next-intl | latest stable |
 | Playwright / Vitest | latest stable (Playwright runs Chromium only) |
 | pdf-lib | latest stable (PDF parsing and encryption check, F3) |
+| unpdf | latest stable, dev only (PDF text extraction for P8 snapshots) |
 | @axe-core/playwright | latest stable, dev only (accessibility checks) |
 | Tiptap / sanitize-html | latest stable (requisition description editor; allowlist sanitizing on save and display) |
 | Linter | ESLint with `eslint-config-next` (called directly; Next.js 16 removed `next lint`) |
@@ -257,7 +259,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | D4 Transaction proof | A test proves J1: a status change and `enqueue` in one transaction; on rollback no job exists, on commit the job exists. |
 | D5 Pool | One `pg.Pool` per process, max 10 connections; TLS in Azure. pg-boss uses this pool through its custom `db` option instead of opening its own. |
 | D6 Row-level filters | Visibility rules are implemented as reusable query helpers (e.g. `scopeApplicationsFor(user)`), never written ad hoc in handlers. They deny by default: a filter for a role without a rule returns no rows. |
-| D7 Optimistic locking | Updates to `applications` and `requisitions` include `WHERE version = :v` and increment `version`. |
+| D7 Optimistic locking | Updates to `applications`, `requisitions` and `offers` include `WHERE version = :v` and increment `version`. |
 | D8 Seed | `pnpm db:seed` runs in every environment (in Azure through the `db-seed` job from the production image, §3 rule 8, G6). **Idempotent and non-destructive:** it inserts missing records only, by natural key (template type + name, setting key, master data type + code, user email), and never overwrites settings or templates an Admin has changed; synthetic data is created only if no requisitions exist yet. **Contents:** settings defaults; email, offer and requisition templates (incl. `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", and a default offer letter); master data; the four demo users matching the Entra demo accounts; synthetic requisitions and applications with sample PDF files uploaded through `StorageService`. Dev passwords for demo users (AU7) are created **only when `AUTH_DEV_LOGIN=true`**, from `DEMO_USER_PASSWORD` (a rerun updates it); in Azure, demo users sign in through Entra only. Demo user emails use `DEMO_USER_DOMAIN`. The seed never changes an existing user's role, name or active flag, and writes `USER_CREATED` (no actor) for users it inserts. A seeded stage template is skipped if any `EMAIL` template already has that trigger status. The seed runs in one transaction and prints counts only. |
 | D9 Real database in tests | Integration tests run against the PostgreSQL container, never mocks. |
 
@@ -271,7 +273,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 - **Azurite host names:** the app talks to Azurite through the endpoint in the connection string (`http://azurite:10000/devstoreaccount1` inside Compose, `http://127.0.0.1:10000/devstoreaccount1` for `pnpm dev`), but signed links handed to the browser use `AZURE_STORAGE_PUBLIC_URL` when set (`http://localhost:10000/devstoreaccount1` in Compose). The SAS signature doesn't include the host, so only the link's origin changes.
 - **Azure:** otherwise the adapter uses `DefaultAzureCredential` (user-assigned managed identity via `AZURE_CLIENT_ID`) and signs links with a **user delegation key**. The identity has **Storage Blob Data Contributor** on the **storage account**, which includes permission to request user delegation keys.
 - Container `files` is private; object keys are random UUIDs; the original file name is stored only in the database.
-- **PDF viewing** (`ats-project-scope.md` F5): signed links for inline viewing set the response headers through the SAS (`rsct=application/pdf`, `rscd=inline`); PDFs are never streamed through the app. The restrictive, nonce-based CSP and `X-Content-Type-Options: nosniff` are set by `proxy.ts` on all HTML pages (§3 rule 6), including those that embed the viewer; `frame-src` includes only the origin of the browser-facing Blob endpoint (a CSP source with a path would match only that exact path) taken from configuration (`AZURE_STORAGE_ACCOUNT_URL` in Azure; locally/CI `AZURE_STORAGE_PUBLIC_URL`, or the Azurite endpoint from the connection string when it is not set), never `*` and never the Compose-internal `azurite` host.
+- **PDF viewing** (`ats-project-scope.md` F5): signed links for inline viewing set the response headers through the SAS (`rsct=application/pdf`, `rscd=inline`); PDFs are never streamed through the app. The restrictive, nonce-based CSP and `X-Content-Type-Options: nosniff` are set by `proxy.ts` on all HTML pages (§3 rule 6), including those that embed the viewer; `frame-src` includes only the origin of the browser-facing Blob endpoint (a CSP source with a path would match only that exact path) taken from configuration (`AZURE_STORAGE_ACCOUNT_URL` in Azure; locally/CI `AZURE_STORAGE_PUBLIC_URL`, or the Azurite endpoint from the connection string when it is not set), never `*` and never the Compose-internal `azurite` host. Exception: the P6 preview isn't stored; the app renders it on request and returns it (`Content-Type: application/pdf`, `Content-Disposition: inline`, `Cache-Control: no-store`), and it opens in a new tab, so `frame-src` is unchanged.
 
 ---
 
@@ -295,10 +297,10 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | P1 Content vs layout | The offer template body holds the text with tokens. Layout (A4, margins, logo, font, footer, page numbers) is the React component `/src/server/pdf/OfferLetter.tsx`. |
 | P2 Tokens | Tokens are resolved and escaped before rendering; an unknown token fails the render. |
 | P3 Markup | Supported: `#`/`##` headings, paragraphs, `**bold**`, `*italic*`, `-` lists, line breaks. Anything else is rendered as plain text. |
-| P4 Font | Noto Sans (open licence) is bundled, so Polish and other diacritics render correctly. |
+| P4 Font | Noto Sans (open licence) is bundled, so Polish and other diacritics render correctly. The font files and their OFL licence are committed under `src/server/pdf/fonts/` and included in the standalone output. |
 | P5 Logo | A static PNG bundled at `/public/logo.png` (replaced in the repository for branding). Also used for `[[LOGO]]` in emails. |
 | P6 Preview | "Preview PDF" renders on demand without storing. |
-| P7 Final letter | On approval, `offer.render-pdf` renders the letter, stores it as a file of kind `OFFER_LETTER`, then queues the offer email with the PDF attached. A re-approved offer (A8) gets a new file; older versions are kept until purge. |
+| P7 Final letter | On approval, `offer.render-pdf` renders the letter, stores it as a file of kind `OFFER_LETTER`, then queues the offer email with the PDF attached. A re-approved offer (A8) gets a new file; older versions are kept until purge. The stored letter isn't subject to the `MAX_UPLOAD_MB` upload limit. |
 | P8 Tests | A text snapshot of a sample letter; every token in the default template resolves. |
 
 ---
