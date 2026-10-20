@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.6 |
+| **Version** | 1.7 |
 | **Date** | 2026-10-20 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.7** | Tasks 16–21 grooming: `DEMO_USER_PASSWORD` and `DEMO_USER_DOMAIN` (§3, D8, T4); seed rules (D8); app refuses `APP_ENV=azure` without `EMAIL_PROVIDER=outbox` (§3 rule 10); render-then-send email pipeline and Outbox lists every row (§9); `StorageService.download` (§8); read-only job listing SQL allowed (T3); Tiptap and `sanitize-html` (§2); Azurite and Mailpit service containers in `ci.yml` (§12) |
 | **Changes in 1.6** | Tasks 10–15 grooming: `proxy.ts` protects every route except a public list, returns 401 JSON on protected APIs and sets the nonce-based CSP (§3 rule 6, §8); Microsoft variables set together with a GUID tenant (§3, AU1); `disableSignUp`, profile mapping, cookie cache off, built-in rate limiter off, self-service endpoints disabled, auth tables follow scope §7 (AU2–AU5, AU7, AU10); `seed:admin` promotes or reactivates (AU8); deny-by-default row filters (D6); `pdf-lib` (§2); Azurite container creation and SAS shape (§8); e2e users, two-step `test:e2e`, Chromium only (T2, T4, §11); health timeouts (M5) |
 | **Changes in 1.5** | Tasks 7–9 grooming: pg-boss shares the D5 pool; job payloads hold IDs only; queue setup updates retry options and fails on a policy change (J4, J5, D5, M2); `pnpm worker` always registers handlers, startup exits when PostgreSQL is unreachable (W1, W2); `TEST_NOW` is the `x-test-now` header on the tick (and a `now` option on the J7 helper) and drives the due check, run date and handler "now"; only the clock shift writes to pg-boss tables; tick doesn't wait when the worker is disabled; failed daily tasks rerun the next day (W4, W5, J7, T3); time-travel Playwright specs run serially in their own project (T2) |
 | **Changes in 1.4** | Tasks 4–6 grooming: fake local-only values committed in `docker-compose.yml` (§1); browser-facing Azurite endpoint `AZURE_STORAGE_PUBLIC_URL` for signed links and `frame-src` (§3, §8); migrations and seeds run from the production image (§3 rule 8, D2, D8); integration tests in `tests/integration/**` via `pnpm test:integration`, run in `ci.yml` (PostgreSQL 17 service) and `main.yml` (§11, §12, G7) |
@@ -110,6 +111,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 | next-intl | latest stable |
 | Playwright / Vitest | latest stable (Playwright runs Chromium only) |
 | pdf-lib | latest stable (PDF parsing and encryption check, F3) |
+| Tiptap / sanitize-html | latest stable (requisition description editor; allowlist sanitizing on save and display) |
 | Linter | ESLint with `eslint-config-next` (called directly; Next.js 16 removed `next lint`) |
 | Package manager | pnpm (version pinned in `package.json` `packageManager`) |
 
@@ -150,6 +152,7 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
 7. `next.config.ts`: `output: 'standalone'`; `serverExternalPackages: ['pg', 'pg-boss', 'pino', '@react-pdf/renderer']`.
 8. One container image runs everything; `pnpm worker` (standalone worker) exists for future scaling but isn't deployed. Besides the standalone server, the image contains the committed SQL migrations and compiled JavaScript entry points for `db:migrate`, `db:seed` and `seed:admin` (runtime dependencies only, no pnpm or `drizzle-kit`), so the Azure `db-migrate` and `db-seed` jobs run the same image (G2, G5).
 9. **Client IP and rate limit** (`ats-project-scope.md` F6): one helper resolves the client IP as (1) `x-envoy-external-address` (set by the Container Apps ingress), if present; (2) otherwise the **last** entry of `x-forwarded-for`; (3) otherwise `127.0.0.1` (local). The first `x-forwarded-for` entry is never used, because the client can set it. Counts are stored in the `rate_limits` table. When `AUTH_DEV_LOGIN=true`, the limit is bypassed unless the request sends `x-enforce-rate-limit: true` (used by the `F6:` test), so parallel Playwright tests don't throttle each other.
+10. **Email safety (C4):** the app refuses to start with `APP_ENV=azure` unless `EMAIL_PROVIDER=outbox`.
 
 **Environment variables** (secrets marked ●; Azure values come from Key Vault)
 
@@ -163,13 +166,15 @@ All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Depen
 | `APP_ENV` | `local`, `ci` or `azure`; `azure` is set only in Bicep (AU7) |
 | `AUTH_DEV_LOGIN` | `true` only locally/CI (AU7) |
 | `EMAIL_HASH_KEY` ● | HMAC key for `email_hash` |
-| `EMAIL_PROVIDER` | `smtp` (local/CI) or `outbox` (Azure) |
+| `EMAIL_PROVIDER` | `smtp` (local/CI) or `outbox` (Azure; required there, §3 rule 10) |
 | `SMTP_HOST`, `SMTP_PORT` | Mailpit (local/CI) |
 | `AZURE_STORAGE_CONNECTION_STRING` ● | Azurite only (local/CI) |
 | `AZURE_STORAGE_PUBLIC_URL` | Azurite only, optional: browser-facing Blob endpoint (e.g. `http://localhost:10000/devstoreaccount1`) used in signed links and `frame-src` when the app reaches Azurite under another host (Compose: `http://azurite:10000`); defaults to the endpoint in the connection string (§8) |
 | `AZURE_STORAGE_ACCOUNT_URL`, `AZURE_CLIENT_ID` | Azure Blob via managed identity |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` ● | CAPTCHA (official test keys locally/CI) |
 | `TICK_SECRET` ● | Shared secret for `/api/internal/tick` |
+| `DEMO_USER_PASSWORD` ● | Dev password for the seeded demo users, used only when `AUTH_DEV_LOGIN=true` (at least 12 characters; the seed fails without it). An obviously fake local-only value in `docker-compose.yml`; never set in Azure |
+| `DEMO_USER_DOMAIN` | Email domain of the seeded demo users: `ats-demo.local` locally/CI, the `<tenant>.onmicrosoft.com` domain in Azure |
 | `WORKER_ENABLED` | `true` to register job handlers in the web process |
 | `LOG_LEVEL` | `info` (Azure) / `debug` (local) |
 
@@ -251,14 +256,14 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | D5 Pool | One `pg.Pool` per process, max 10 connections; TLS in Azure. pg-boss uses this pool through its custom `db` option instead of opening its own. |
 | D6 Row-level filters | Visibility rules are implemented as reusable query helpers (e.g. `scopeApplicationsFor(user)`), never written ad hoc in handlers. They deny by default: a filter for a role without a rule returns no rows. |
 | D7 Optimistic locking | Updates to `applications` and `requisitions` include `WHERE version = :v` and increment `version`. |
-| D8 Seed | `pnpm db:seed` runs in every environment (in Azure through the `db-seed` job from the production image, §3 rule 8, G6). **Idempotent and non-destructive:** it inserts missing records only, by natural key (template type + name, setting key, master data type + code, user email), and never overwrites settings or templates an Admin has changed; synthetic data is created only if no requisitions exist yet. **Contents:** settings defaults; email, offer and requisition templates (incl. `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", and a default offer letter); master data; the four demo users matching the Entra demo accounts; synthetic requisitions and applications with sample PDF files uploaded through `StorageService`. Dev passwords for demo users (AU7) are created **only when `AUTH_DEV_LOGIN=true`**; in Azure, demo users sign in through Entra only. |
+| D8 Seed | `pnpm db:seed` runs in every environment (in Azure through the `db-seed` job from the production image, §3 rule 8, G6). **Idempotent and non-destructive:** it inserts missing records only, by natural key (template type + name, setting key, master data type + code, user email), and never overwrites settings or templates an Admin has changed; synthetic data is created only if no requisitions exist yet. **Contents:** settings defaults; email, offer and requisition templates (incl. `APPLIED` and `REJECTED` stage emails, the bulk-email templates "Application update" and "Interview preparation", and a default offer letter); master data; the four demo users matching the Entra demo accounts; synthetic requisitions and applications with sample PDF files uploaded through `StorageService`. Dev passwords for demo users (AU7) are created **only when `AUTH_DEV_LOGIN=true`**, from `DEMO_USER_PASSWORD` (a rerun updates it); in Azure, demo users sign in through Entra only. Demo user emails use `DEMO_USER_DOMAIN`. The seed never changes an existing user's role, name or active flag, and writes `USER_CREATED` (no actor) for users it inserts. A seeded stage template is skipped if any `EMAIL` template already has that trigger status. The seed runs in one transaction and prints counts only. |
 | D9 Real database in tests | Integration tests run against the PostgreSQL container, never mocks. |
 
 ---
 
 ## 8. File Storage
 
-- One adapter, `StorageService`, built on `@azure/storage-blob`, with: `upload`, `delete`, `getSignedUrl(key, ttl = 5 min)`.
+- One adapter, `StorageService`, built on `@azure/storage-blob`, with: `upload`, `download` (for email attachments), `delete`, `getSignedUrl(key, ttl = 5 min)`.
 - **Local/CI:** if `AZURE_STORAGE_CONNECTION_STRING` is set (Azurite), signed links use a `StorageSharedKeyCredential` (account-key SAS), and the app creates the private `files` container if it is missing (Azurite mode only; in Azure, Bicep creates it).
 - **SAS shape:** one blob, read-only, no start time, expiry 5 minutes, HTTPS-only in Azure. Signed URLs are never logged.
 - **Azurite host names:** the app talks to Azurite through the endpoint in the connection string (`http://azurite:10000/devstoreaccount1` inside Compose, `http://127.0.0.1:10000/devstoreaccount1` for `pnpm dev`), but signed links handed to the browser use `AZURE_STORAGE_PUBLIC_URL` when set (`http://localhost:10000/devstoreaccount1` in Compose). The SAS signature doesn't include the host, so only the link's origin changes.
@@ -270,14 +275,14 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 
 ## 9. Email Capture & Outbox
 
-`EmailService` builds the complete message (headers, Reply-To, optional Cc, HTML and text body, `.ics`, PDF attachments) the same way in every environment; only the transport differs. `EmailService.send()` accepts `cc`, which is stored in `email_log.cc`.
+`EmailService` builds the complete message (headers, Reply-To, optional Cc, HTML and text body, `.ics`, PDF attachments) the same way in every environment; only the transport differs. `EmailService.send()` accepts `cc`, which is stored in `email_log.cc`. **Pipeline:** the subject and body are rendered (markup, then tokens) when the email is queued and stored in `email_log`; the `email.send` handler adds From, Reply-To and the recruiter footer at send time (E1–E3) and is guarded so a message is sent at most once (J3). Payloads carry only the `email_log` ID (J4).
 
 | `EMAIL_PROVIDER` | Behaviour |
 |---|---|
 | `smtp` (local/CI) | Nodemailer → Mailpit (`localhost:1025`), web UI at `http://localhost:8025`; end-to-end tests read messages through Mailpit's API; `email_log.status = SENT` |
 | `outbox` (Azure) | Nothing leaves the system: the full message is stored in `email_log` with status `CAPTURED` |
 
-**Outbox page** (`/admin/outbox`, Admin only through the normal session and policy check): lists messages with recipient, subject, status, time and a link to the application; shows the HTML body in a sandboxed iframe without scripts; downloads the `.ics` from the Admin-only route `GET /api/admin/outbox/[id]/ics` (`Content-Type: text/calendar; charset=utf-8`, `Content-Disposition: attachment`) and PDF attachments (`attachment_file_ids`) through signed Blob links.
+**Outbox page** (`/admin/outbox`, Admin only through the normal session and policy check): lists every `email_log` row (all statuses, not only `CAPTURED`) with recipient, subject, status, time and a link to the application; shows the HTML body in a sandboxed iframe without scripts; downloads the `.ics` from the Admin-only route `GET /api/admin/outbox/[id]/ics` (`Content-Type: text/calendar; charset=utf-8`, `Content-Disposition: attachment`) and PDF attachments (`attachment_file_ids`) through signed Blob links.
 
 ---
 
@@ -310,8 +315,8 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 |---|---|
 | T1 Rule traceability | Every rule ID listed below has at least one test whose title starts with the ID and a colon (e.g. `R7: status change cancels pending rejection email`). IDs are matched exactly (`A2:` is not `AU2:`). **Required:** all business rules in `ats-project-scope.md` (A, L, S, F, R, I, E, RT, V except V9) and AU1–AU10 except AU8, J1–J3, J5, W1, W4, W5, D4, D7, P2, P3, P5–P8. **Not required** (structural): V9, AU8, J4, J6, J7, W2, W3, W6–W9, D1–D3, D5, D6, D8, D9, P1, P4, and all T, G and M rules. `pnpm test:rules` scans Vitest and Playwright test titles and fails if a required ID has no test; it runs in CI on every pull request. |
 | T2 Isolation | Each test creates its own data; the integration-test database is reset per test worker. Playwright shares one Compose database, so **time-travel specs** (those that send `x-test-now` or depend on daily tasks, which act on the whole database) live in `tests/e2e/time-travel/**` and run in a separate Playwright project with `workers: 1` that starts only after the parallel projects finish. `pnpm test:e2e` runs the parallel projects and then `time-travel` as two Playwright invocations and fails if either failed (project dependencies would skip every time-travel spec when one parallel test fails). A unit-tested check in `pnpm verify` scans every file under `tests/e2e` (any letter case) and fails if a file outside that folder sends `x-test-now` or imports from it. Each time-travel spec uses its own `TEST_NOW` date or asserts only on data it created. Set up in task 10. |
-| T3 Time | Delays and daily tasks are tested with the tick endpoint and a test-only clock (`TEST_NOW`), never by sleeping. `TEST_NOW` is supplied per request as the `x-test-now` header on the tick (ISO 8601 with `Z` or an offset), and as a `now` option on the J7 helper; it is not an environment variable. It is honoured only when `AUTH_DEV_LOGIN=true` (otherwise ignored and real time is used; an unparsable value returns `400`). When honoured, it drives the due check, the Europe/Warsaw run date and the `now` passed in daily task payloads, which handlers compare against instead of the system clock. **Clock shift:** because pg-boss compares start times with the database `now()`, the tick endpoint and the J7 helper first set the start time of every `created` or `retry` job whose start time is ≤ `TEST_NOW` to the database `now()`, so it runs immediately. This SQL against pg-boss's internal table lives in one function in the job adapter and runs only in test mode; it is the only code that writes to pg-boss tables. The only other direct SQL is the read-only W4 count, also in the job adapter. The pg-boss 12 table and column names are confirmed in Sprint 0 proof #4. |
-| T4 Sign-in | Tests sign in through AU7 and reuse saved sign-in state per role, created by a Playwright `setup` project for four `e2e-*@example.com` users with a random password per run (no dev password is committed). Playwright reads `TICK_SECRET` and the PostgreSQL credentials from `docker-compose.yml`, overridable by environment variables. |
+| T3 Time | Delays and daily tasks are tested with the tick endpoint and a test-only clock (`TEST_NOW`), never by sleeping. `TEST_NOW` is supplied per request as the `x-test-now` header on the tick (ISO 8601 with `Z` or an offset), and as a `now` option on the J7 helper; it is not an environment variable. It is honoured only when `AUTH_DEV_LOGIN=true` (otherwise ignored and real time is used; an unparsable value returns `400`). When honoured, it drives the due check, the Europe/Warsaw run date and the `now` passed in daily task payloads, which handlers compare against instead of the system clock. **Clock shift:** because pg-boss compares start times with the database `now()`, the tick endpoint and the J7 helper first set the start time of every `created` or `retry` job whose start time is ≤ `TEST_NOW` to the database `now()`, so it runs immediately. This SQL against pg-boss's internal table lives in one function in the job adapter and runs only in test mode; it is the only code that writes to pg-boss tables. The only other direct SQL is read-only, also in the job adapter: the W4 count and, if pg-boss's public API can't list jobs by state, the J6 job listing. The pg-boss 12 table and column names are confirmed in Sprint 0 proof #4. |
+| T4 Sign-in | Tests sign in through AU7 and reuse saved sign-in state per role, created by a Playwright `setup` project for four `e2e-*@example.com` users with a random password per run (their passwords are never committed; the demo users' local password is the fake `DEMO_USER_PASSWORD` in `docker-compose.yml`). Playwright reads `TICK_SECRET` and the PostgreSQL credentials from `docker-compose.yml`, overridable by environment variables. |
 | T5 API visibility | V-rules are asserted on API responses, not only on rendered pages. |
 | T6 Flakiness | One retry in CI; trace, video and screenshot kept on failure; flaky tests are fixed, not skipped. |
 | T7 Agent loop | The agent runs `pnpm verify` (lint, typecheck, Vitest unit tests, rule scan; no `next build`) on every change and the Playwright specs for the affected rule IDs (`--grep`) before pushing; the full suite runs on `main`. |
@@ -323,7 +328,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | Pull request | Install (pnpm, cached) → the `pnpm verify` checks (lint → typecheck → unit tests → `pnpm test:rules`) → `pnpm db:migrate` + `pnpm test:integration` against a `postgres:17` service container → `next build`. No Playwright (G4). |
+| `ci.yml` | Pull request | Install (pnpm, cached) → the `pnpm verify` checks (lint → typecheck → unit tests → `pnpm test:rules`) → `pnpm db:migrate` + `pnpm test:integration` against `postgres:17`, Azurite and Mailpit service containers → `next build`. No Playwright (G4). |
 | `main.yml` | Push to `main`, manual | `pnpm verify` → build the image once (tag = commit SHA) → start the Compose stack with that image → migrate + seed (run from that image) → `pnpm test:integration` against the Compose PostgreSQL → Playwright suite → push image to GHCR → Azure login (OIDC) → run `db-migrate` job → update the web Container App to the new tag → smoke test `GET /api/health`. Each step runs only if the previous one succeeded. |
 | `infra.yml` | Manual | `az deployment group what-if` → manual approval → `az deployment group create` with `/infra/main.bicep` |
 
