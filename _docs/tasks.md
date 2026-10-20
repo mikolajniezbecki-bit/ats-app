@@ -441,6 +441,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 28. Bulk actions
 
+**Issue:** [#34](https://github.com/mikolajniezbecki-bit/ats-app/issues/34)
+
 **Goal:** Recruiters move or email several applications at once with a per-application result.
 
 **Description:** Add selection to the application list with two bulk actions: move status, and send a templated email using only active `EMAIL` templates with `trigger_status IS NULL`, sent as-is with tokens resolved (`ats-project-scope.md` §5.4). Each application is validated individually against the pipeline rules and the result (success or reason) is reported per application.
@@ -455,6 +457,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Bulk actions are unavailable to Hiring Managers and Interviewers at API level.
 
 ## 29. Requisition hold, resume, close, reopen and publishing
+
+**Issue:** [#35](https://github.com/mikolajniezbecki-bit/ats-app/issues/35)
 
 **Goal:** Approved requisitions can be paused, resumed, closed and reopened with correct paused time and side effects.
 
@@ -472,6 +476,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 30. Requisition re-approval
 
+**Issue:** [#36](https://github.com/mikolajniezbecki-bit/ats-app/issues/36)
+
 **Goal:** Material changes to a live requisition go through re-approval without stopping the pipeline.
 
 **Description:** From `APPROVED`, increasing `openings_count` or changing department, hiring manager or legal entity saves the old values in `previous_l2_values_json`, applies the change and starts a new approval (L2); the posting stays published and applications keep flowing. Approval clears the saved values and keeps the original `approved_at`; rejection or withdrawal restores the saved values and returns to `APPROVED` (A3, A9). The four fields are locked outside `DRAFT` and `APPROVED`; decreasing openings needs no approval, can't go below the hired count, and lowering it to equal the hired count (≥ 1) closes the requisition as `FILLED` in the same transaction.
@@ -486,6 +492,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `L2:` tests: the four fields are refused in `ON_HOLD`, `PENDING_APPROVAL` and `CLOSED`; lowering openings to the hired count closes the requisition as `FILLED`.
 
 ## 31. Approval reassignment, deactivation guard and reminders
+
+**Issue:** [#37](https://github.com/mikolajniezbecki-bit/ats-app/issues/37)
 
 **Goal:** Pending approvals can be reassigned, never orphaned, and approvers are reminded.
 
@@ -502,6 +510,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ## 32. Interview scheduling and calendar invites
 
+**Issue:** [#38](https://github.com/mikolajniezbecki-bit/ats-app/issues/38)
+
 **Goal:** Recruiters schedule interviews and every participant receives a correct `.ics` invite.
 
 **Description:** Implement a `CalendarService` `.ics` builder and interview scheduling with start time (UTC), duration, IANA time zone, location or link, status, stable UID and sequence, and participants (I1). Creating sends a separate `METHOD:REQUEST` email to the candidate and each active interviewer listing only that recipient (I2); rescheduling, cancelling and participant changes increment the sequence and send `REQUEST` or `CANCEL` with the same UID (I3–I5). Show staff times in their browser zone, emails in the interview's zone, `.ics` in UTC (I6); flag past interviews as "Awaiting outcome" for `COMPLETED`/`NO_SHOW` (I7); never change the application status (I8); and cancel future `SCHEDULED` interviews when an application reaches a final status (R12).
@@ -517,6 +527,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `R12:` test: rejecting an application cancels its future scheduled interviews.
 
 ## 33. Scorecards and feedback summary
+
+**Issue:** [#39](https://github.com/mikolajniezbecki-bit/ats-app/issues/39)
 
 **Goal:** Interviewers submit scorecards, and feedback stays hidden until they have given their own.
 
@@ -538,7 +550,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Implement the row-level filters and response shaping for V3–V6: Hiring Managers see full application data on requisitions where they are hiring manager, approver or creator, read-only (V3a, V4); Interviewers see only open applications where they are an active participant of a non-cancelled interview, limited to CV, cover letter, contact details, interview details and their own scorecards (V5, V6). Add an Interviewer "My interviews" page. All checks are asserted on API responses (T5); offer-approver access (V3b) is added with offer approval.
 
-**Grooming notes:** fill in the Hiring Manager and Interviewer row filters and the `file.view` policy, which deny by default until now (D6). open the task 27 list and page to Hiring Managers and add V6 shaping in `src/server/applications/` read models; approvers keep V3a access because `approver_id` is kept after the decision.
+**Grooming notes:** fill in the Hiring Manager and Interviewer row filters and the `file.view` policy, which deny by default until now (D6). open the task 27 list and page to Hiring Managers and add V6 shaping in `src/server/applications/` read models; approvers keep V3a access because `approver_id` is kept after the decision. open the application pages to Hiring Managers with the I10 summary and scorecards from the task 33 read model; reuse the Interviewer filter in `scopeScorecardsFor`; staff invite emails link to `/applications/[id]` and "My interviews" links to `/interviews/[id]/scorecard`; a Hiring Manager participant who leaves V3a scope loses access like a removed participant.
 
 **Depends on:** 33
 
@@ -552,6 +564,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 **Goal:** Recruiters create and manage one active offer per application.
 
 **Description:** Add the offer form (job title, salary, ISO 4217 currency, start date, offer template), allowed only when the application is in `OFFER` (R10) and the requisition is not `ON_HOLD` or `PENDING_APPROVAL` (L8). A new offer may be created only when every earlier offer is `REJECTED`, `WITHDRAWN` or declined, and creating one freezes all earlier offers (`ats-project-scope.md` §5.6). Recruiters and Admins can discard an offer from `DRAFT` or `REJECTED`, which sets it `WITHDRAWN` and writes `OFFER_DISCARDED` to `audit_log`.
+
+**Grooming notes:** add real tests for L6 withdrawing offers (task 29 tests it with inserted offers).
 
 **Depends on:** 30
 
@@ -567,7 +581,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Reuse the approval flow for offers: submit with approver (A1, A2), approve to `APPROVED` or reject to `REJECTED` with comment (A3), withdraw the request back to `DRAFT` (A9), reassign and remind (A4, A6), all blocked while the requisition is `ON_HOLD` or `PENDING_APPROVAL` (L8). A rejected offer is editable and resubmittable only while it is the latest offer; editing salary, currency or start date of an `APPROVED` offer requires a new approver, sets `PENDING` and clears `sent_at`, and accepted or declined offers are locked (A8). The current offer approver can see that offer, that single application and the requisition header, and loses access on reassignment (V3b).
 
-**Grooming notes:** fill in the offer-approver row filter and `file.view` for V3b, which deny by default until now (D6). add offers to `/approvals` and the `approval.decide` resource rule for offers in the shared approval service (task 22).
+**Grooming notes:** fill in the offer-approver row filter and `file.view` for V3b, which deny by default until now (D6). add offers to `/approvals` and the `approval.decide` resource rule for offers in the shared approval service (task 22). add the offer adapter for A4/A6, list offers in "All pending approvals" and in the A5 message (requisition number and candidate), lock the approver's user row on offer submit (A5 race); L8 checks cover re-approval too.
 
 **Depends on:** 31, 34, 35
 
@@ -583,7 +597,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Build `/src/server/pdf/OfferLetter.tsx` with `@react-pdf/renderer`: A4 layout, bundled Noto Sans, logo from `/public/logo.png`, footer and page numbers (P1, P4, P5), rendering the template body with tokens resolved and escaped (P2) and the supported markup subset (P3). On approval the `offer.render-pdf` job renders and stores an `OFFER_LETTER` file and queues the offer email with the PDF attached (P7); a re-approved offer gets a new file and the old one is kept. Add "Preview PDF" that renders without storing (P6).
 
-**Grooming notes:** reuse the P3 markup parser in `src/server/domain/markup` (task 16) and provide the offer token values.
+**Grooming notes:** reuse the P3 markup parser in `src/server/domain/markup` (task 16) and provide the offer token values. the `offer.render-pdf` handler skips offers a close has set to `WITHDRAWN` (J3).
 
 **Depends on:** 36
 
@@ -599,7 +613,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Recruiters record `ACCEPTED` or `DECLINED` on a sent offer; a declined offer leaves the application in `OFFER`. Moving to `HIRED` requires an accepted offer (R2), is blocked when hires already equal `openings_count` or the requisition is `ON_HOLD` or `PENDING_APPROVAL` (R5, L8), sets `hired_at`, and when hires reach `openings_count` closes the requisition as `FILLED` in the same transaction, rejecting the remaining open applications (R6). An Admin can correct `HIRED` to `OFFER`, `REJECTED` or `WITHDRAWN` with a comment, clearing `hired_at` without reopening the requisition (R4).
 
-**Grooming notes:** add R5, the L8 hire block, R6 and the R4 Admin correction to `checkTransition` and the status service; `hired_at` is already set (task 26).
+**Grooming notes:** add R5, the L8 hire block, R6 and the R4 Admin correction to `checkTransition` and the status service; `hired_at` is already set (task 26). bulk hires (task 28) inherit R5, R6 and L8; test R6 auto-closing the requisition partway through a batch with the rest reported as refused; R6 reuses `closeRequisition` (task 29) with `FILLED`/`REQ_FILLED`.
 
 **Depends on:** 37
 
@@ -628,7 +642,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Implement the daily `retention.purge` task (RT1–RT5): select final applications past `RETENTION_DAYS` since `dispositioned_at` (hires only after export), null the personal fields, set `anonymized_at`, delete pre-screening answers, clear comments and email content, delete linked files from storage (F8), and clear offer approval comments, in batches with one transaction per application. The same task deletes `rate_limits` rows older than 2 hours.
 
-**Grooming notes:** cancel the application's queued emails before anonymizing (RT4). also deletes `rate_limits` rows older than 2 h (keys `apply:<ip or /64>`, one-minute buckets); anonymized applications already refuse status changes (RT3).
+**Grooming notes:** cancel the application's queued emails before anonymizing (RT4). also deletes `rate_limits` rows older than 2 h (keys `apply:<ip or /64>`, one-minute buckets); anonymized applications already refuse status changes (RT3). include scorecard notes files (`owner_type = SCORECARD`) and queued interview emails in the test.
 
 **Depends on:** 39
 
@@ -643,6 +657,8 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Build the KPI dashboard: open requisitions, active applications per status, average Time to Fill (only `FILLED`), average Time to Hire (`hired_at − applied_at`) and Age of Requisition per open requisition, using the paused-time formulas in L10. Add CSV exports for the requisition list and pipeline data, Recruiter and Admin only (V10).
 
+**Grooming notes:** L10 uses `paused_days` from task 29; re-approval doesn't pause the clock (TO-10).
+
 **Depends on:** 38
 
 **Done when:**
@@ -656,7 +672,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Extend `pnpm db:seed` (D8) to create synthetic requisitions in several states and applications in every pipeline status, with sample PDF files uploaded through `StorageService`, only when no requisitions exist yet. All data is clearly synthetic (`ats-project-scope.md` C3).
 
-**Grooming notes:** extend the task 17 seed module and keep its rules (D8). seed applications use `computeEmailHash`, set `dispositioned_at` for final statuses, store `prescreen_answers` only for answered questions, and queue no emails.
+**Grooming notes:** extend the task 17 seed module and keep its rules (D8). seed applications use `computeEmailHash`, set `dispositioned_at` for final statuses, store `prescreen_answers` only for answered questions, and queue no emails. seeded `ON_HOLD` and `CLOSED` requisitions need consistent `on_hold_since`, `closed_at`, `close_reason` and `paused_days`; seeded interviews queue no emails.
 
 **Depends on:** 38
 
@@ -717,7 +733,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 **Description:** Fill any remaining gaps so `tests/rules-pending.json` is empty and `pnpm test:rules` enforces T1 with no exceptions, then remove the pending-list mechanism. Add end-to-end journeys for every role covering apply → screen → interview → scorecard → offer → hire → export, approvals and re-approval, hold/close/reopen and purge (`tech-stack.md` §11).
 
-**Grooming notes:** the journeys can reuse the Playwright flows from tasks 22, 24 and 27.
+**Grooming notes:** the journeys can reuse the Playwright flows from tasks 22, 24 and 27. also reuse the flows from tasks 29, 30, 32 and 33.
 
 **Depends on:** 45
 
