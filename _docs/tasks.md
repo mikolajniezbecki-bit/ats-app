@@ -37,7 +37,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - The scanner fails when an ID in `rules-pending.json` already has a test.
 - `ci.yml` runs green on a pull request; `.github/dependabot.yml` covers npm and GitHub Actions weekly.
 
-## 3. Typed configuration and structured logging
+## 3. Typed configuration and structured logging ✅
 
 **Issue:** [#3](https://github.com/mikolajniezbecki-bit/ats-app/issues/3)
 
