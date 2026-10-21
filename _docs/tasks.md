@@ -22,7 +22,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `pnpm build` succeeds and produces `.next/standalone`.
 - The home page renders a placeholder string read from `messages/en.json`.
 
-## 2. Pull-request CI and rule-traceability scanner
+## 2. Pull-request CI and rule-traceability scanner ✅
 
 **Issue:** [#2](https://github.com/mikolajniezbecki-bit/ats-app/issues/2)
 
