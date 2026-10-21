@@ -29,6 +29,8 @@ A task number from _docs/tasks.md. Read the specs in _docs
   reference the tradeoff ID instead of filing an issue.
 - If the specs contradict each other or something is unclear, stop and
   ask me instead of guessing.
+- For each task, list "Owner prerequisites": anything the human must do outside the repo
+  (accounts, Azure resources, secrets, GitHub settings) before the task can start
 
 ## Definition of done
 - The issue has all four template sections filled in.
@@ -36,3 +38,5 @@ A task number from _docs/tasks.md. Read the specs in _docs
 - Everything moved out of scope links to a follow-up issue or a tradeoff ID.
 - An engineer who has never spoken to you could implement it from the
   issue and the documents it links.
+
+  

@@ -16,3 +16,9 @@ Mark a task as done in _docs/tasks.md when its "Done when" criteria pass.
 Doc-only changes during setup: commit directly to main.
 Each task from _docs/tasks.md: create a branch named task-<number>-<short-name>, push regularly, and open a pull request when the "Done when" criteria pass.
 Never merge a pull request without my approval.
+
+## Roles
+- PM - grooms a task before anyone implements it, follows .claude/agents/pm.md
+- Engineer - implements one groomed task, follows .claude/agents/software-engineer.md
+
+Act in one role at a time. The PM doesn't write code; the Engineer doesn't edit issue descriptions or acceptance criteria.
