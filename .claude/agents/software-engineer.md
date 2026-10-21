@@ -17,6 +17,7 @@ While implementing:
 - Work on a branch per issue and commit regularly
 - Reference the issue with "Refs #<number>", never "Closes" or "Fixes"
 - Do not close the issue
+- If the task adds or changes Playwright specs, run them locally and report the result in the issue comment.
 
 Definition of done:
 - Every acceptance criterion in the issue is implemented
