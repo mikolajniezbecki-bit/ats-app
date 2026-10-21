@@ -1,0 +1,14 @@
+# Keep the build context small and free of secrets (Dockerfile).
+node_modules
+.next
+.git
+.env
+.env.*
+coverage
+test-results
+playwright-report
+blob-report
+tsconfig.tsbuildinfo
+Dockerfile
+.dockerignore
+docker-compose.yml
