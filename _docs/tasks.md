@@ -6,7 +6,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 
 ---
 
-## 1. Empty project skeleton
+## 1. Empty project skeleton ✅
 
 **Issue:** [#1](https://github.com/mikolajniezbecki-bit/ats-app/issues/1)
 
