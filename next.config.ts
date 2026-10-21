@@ -7,6 +7,8 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["pg", "pg-boss", "pino", "@react-pdf/renderer"],
+  // AGENTS.md is owner-maintained; stop `next dev` from writing into it.
+  agentRules: false,
   turbopack: {
     rules: {
       "*.css": {
