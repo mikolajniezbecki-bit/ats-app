@@ -1,0 +1,44 @@
+# Pull-request checks (tech-stack.md §12 ci.yml, G4, G7). Runs `pnpm verify`
+# as one step so CI and the local check cannot drift apart. No Playwright and
+# no secrets: the build must pass without them (Sprint 0 proof 3).
+name: ci
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # Version comes from package.json `packageManager`.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm verify
+
+      # Next.js build cache (G4): exact hit when lockfile and sources are
+      # unchanged, otherwise fall back to the latest cache for this lockfile.
+      - uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**', 'messages/**', 'public/**', 'next.config.ts', 'tsconfig.json') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - run: pnpm build
