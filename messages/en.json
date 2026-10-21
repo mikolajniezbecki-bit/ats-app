@@ -1,5 +1,11 @@
 {
   "Home": {
     "title": "ATS – coming soon"
+  },
+  "Error": {
+    "title": "Something went wrong",
+    "description": "An unexpected error occurred. Please try again; if the problem persists, contact support.",
+    "requestId": "Please quote this request ID: {requestId}",
+    "retry": "Try again"
   }
 }
