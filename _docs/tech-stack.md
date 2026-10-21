@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.10 |
-| **Date** | 2026-10-20 |
+| **Version** | 1.11 |
+| **Date** | 2026-10-21 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.11** | Task 1: pnpm 11 pinned, because pnpm 12 doesn't enforce the root project's `engines`; Node version enforced by `engineStrict: true` in `pnpm-workspace.yaml` (pnpm 11 no longer reads `.npmrc` settings), `.npmrc` kept for npm (owner decision, #1) (§2) |
 | **Changes in 1.10** | Tasks 40–46 grooming: synthetic seed rules (D8); backward-compatible migrations (D2); `main.yml` deploy updates job images, never cancels deployments, branch runs don't push (§12, G4); RBAC Administrator with a role condition and `main`-only federation (G3); Bicep stages, logins, storage/Key Vault/PostgreSQL cost-safe settings, compiled job entry points (G5, G6); `DATABASE_ADMIN_URL`, `SEED_ADMIN_EMAIL` (§3); IP source logging (§3 rule 9); budget notifies only (M8); `infra.yml` what-if and deploy as two manual runs (owner decision, §12, TO-21); restart notes (G10); manual proof records (§15) |
 | **Changes in 1.9** | Tasks 34–39 grooming: optimistic locking on `offers` (D7); P6 preview rendered on request, not stored (§8); stored letter exempt from the upload limit (P7); fonts committed with their licence (P4); `unpdf` for P8 snapshots (§2) |
 | **Changes in 1.8** | Tasks 22–27 grooming: `/sitemap.xml` and `/robots.txt` public (§3 rule 6); Turnstile origin in the CSP on `/apply/**`; 21 MB body limits (§3 rule 7); invalid IP header values ignored, rate-limit key IPv4 or IPv6 /64 (§3 rule 9); `@axe-core/playwright` (§2) |
@@ -103,7 +104,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 
 | Component | Version |
 |---|---|
-| Node.js | 24 LTS (`engines.node` in `package.json`; `engine-strict=true` in `.npmrc` makes install fail on another version) |
+| Node.js | 24 LTS (`engines.node` in `package.json`; `engineStrict: true` in `pnpm-workspace.yaml` makes `pnpm install` fail on another version; `engine-strict=true` in `.npmrc` does the same for npm) |
 | Next.js | 16.x |
 | React | version required by Next.js 16 |
 | TypeScript | 5.x, strict |
@@ -118,7 +119,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 | @axe-core/playwright | latest stable, dev only (accessibility checks) |
 | Tiptap / sanitize-html | latest stable (requisition description editor; allowlist sanitizing on save and display) |
 | Linter | ESLint with `eslint-config-next` (called directly; Next.js 16 removed `next lint`) |
-| Package manager | pnpm (version pinned in `package.json` `packageManager`) |
+| Package manager | pnpm 11 (exact version pinned in `package.json` `packageManager`; pnpm 12 ignores the root project's `engines`) |
 
 All dependencies are pinned through `pnpm-lock.yaml` and updated weekly by Dependabot (G8).
 
