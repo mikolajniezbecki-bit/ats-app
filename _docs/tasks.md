@@ -52,7 +52,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `AU7:` tests: startup is refused with `AUTH_DEV_LOGIN=true` plus `APP_ENV=azure`, and with `EMAIL_PROVIDER=outbox`; it is accepted with `NODE_ENV=production`, `APP_ENV=ci`, `EMAIL_PROVIDER=smtp`.
 - A test shows the logger redacts email, name and phone fields; responses carry an `x-request-id` header.
 
-## 4. Docker Compose stack and production image
+## 4. Docker Compose stack and production image ✅
 
 **Issue:** [#8](https://github.com/mikolajniezbecki-bit/ats-app/issues/8)
 

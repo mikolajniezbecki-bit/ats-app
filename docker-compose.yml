@@ -1,0 +1,78 @@
+# Local and CI stack (tech-stack.md §1 "Local and CI topology").
+#
+# Every secret-looking value in this file is an obviously fake, local-only
+# placeholder or a publicly documented development value (Azurite's default
+# account key, Cloudflare's Turnstile test keys). They are for this local/CI
+# Compose stack only and must never be used in Azure (AGENTS.md "Commits").
+
+services:
+  app:
+    build: .
+    init: true # forwards SIGTERM so `docker compose stop` is fast
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      APP_ENV: ci
+      AUTH_DEV_LOGIN: "true"
+      DATABASE_URL: postgres://ats:local-only-not-secret-postgres@postgres:5432/ats
+      BETTER_AUTH_SECRET: local-only-not-secret-better-auth
+      BETTER_AUTH_URL: http://localhost:3000
+      EMAIL_HASH_KEY: local-only-not-secret-email-hash
+      EMAIL_PROVIDER: smtp
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      # Azurite's publicly documented development account and key.
+      AZURE_STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;
+      # Browser-facing endpoint for signed links and frame-src (§8).
+      AZURE_STORAGE_PUBLIC_URL: http://localhost:10000/devstoreaccount1
+      # Cloudflare's published Turnstile test keys (always pass).
+      TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+      TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+      TICK_SECRET: local-only-not-secret-tick
+      DEMO_USER_PASSWORD: local-only-not-secret-demo
+      DEMO_USER_DOMAIN: ats-demo.local
+      WORKER_ENABLED: "true"
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_started
+      mailpit:
+        condition: service_started
+
+  postgres:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ats
+      POSTGRES_PASSWORD: local-only-not-secret-postgres
+      POSTGRES_DB: ats
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ats -d ats"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  azurite:
+    # No major-version tag is published for Azurite, so it is pinned exactly.
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    command: azurite-blob --blobHost 0.0.0.0 --location /data --skipApiVersionCheck
+    ports:
+      - "127.0.0.1:10000:10000"
+    volumes:
+      - azurite-data:/data
+
+  mailpit:
+    image: axllent/mailpit:v1
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  postgres-data:
+  azurite-data:

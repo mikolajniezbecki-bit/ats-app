@@ -25,6 +25,33 @@ Rule traceability (`pnpm test:rules`, tech-stack.md §11 T1):
 - Required IDs that have no test yet are listed in `tests/rules-pending.json`. Every task that adds the first test for an ID removes that ID from the list in the same change; the scan fails if a pending ID already has a test, if a required ID is neither tested nor pending, or if a title starts with an unknown rule-shaped ID.
 - Pull requests run the same checks in `.github/workflows/ci.yml` (`pnpm verify`, then `pnpm build`).
 
+## Local stack (Docker Compose)
+
+Requires Docker with Compose v2 (`docker compose`). `docker-compose.yml` starts the production image of the app (the same image CI and Azure use) with `postgres:17`, Azurite and Mailpit. It works on a fresh clone without `.env`: the file holds obviously fake, local-only values that must never be used in Azure.
+
+```sh
+docker compose up --build -d   # build the image and start all four services
+docker compose logs -f app     # follow the app's logs
+docker compose down            # stop and remove the containers (data is kept)
+docker compose down -v         # also delete the PostgreSQL and Azurite data
+```
+
+| Service | Address (bound to `127.0.0.1`) |
+|---|---|
+| App | http://localhost:3000 |
+| PostgreSQL 17 | `postgres://ats:local-only-not-secret-postgres@localhost:5432/ats` |
+| Azurite Blob | http://localhost:10000/devstoreaccount1 |
+| Mailpit SMTP / web UI | `localhost:1025` / http://localhost:8025 |
+
+The `app` container runs like CI: `NODE_ENV=production`, `APP_ENV=ci`, `AUTH_DEV_LOGIN=true` (dev sign-in) and `EMAIL_PROVIDER=smtp` (Mailpit). Inside the stack it uses Compose host names (`postgres`, `azurite`, `mailpit`); signed Blob links for the browser use `AZURE_STORAGE_PUBLIC_URL=http://localhost:10000/devstoreaccount1`. The app doesn't migrate the database on start.
+
+`pnpm dev` on the host is the alternative for day-to-day work: it reads `.env` (copied from `.env.example`) with `localhost` host names and `APP_ENV=local`, and can use the Compose services without the app container:
+
+```sh
+docker compose up -d postgres azurite mailpit
+pnpm dev
+```
+
 ## Configuration
 
 All configuration goes through `getConfig()` in `src/server/config.ts` (tech-stack.md §3 rule 5). It validates every variable with Zod on the first call (never at import time, so `pnpm build` needs no secrets) and caches the result. Errors name the missing or invalid variables, never their values. An empty value (`KEY=`) counts as missing.
