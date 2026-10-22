@@ -2,3 +2,8 @@
 // drizzle.config.ts reads this file; generated SQL goes to ../migrations.
 export * from "./administration";
 export * from "./operations";
+export * from "./requisitions";
+export * from "./applications";
+export * from "./interviews";
+export * from "./offers";
+export * from "./email";

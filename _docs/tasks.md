@@ -83,7 +83,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Integration tests run in parallel workers without interfering with each other.
 - `ci.yml` runs `pnpm test:integration` against a `postgres:17` service container; a failing integration test turns the pull-request check red.
 
-## 6. Recruiting tables
+## 6. Recruiting tables ✅
 
 **Issue:** [#11](https://github.com/mikolajniezbecki-bit/ats-app/issues/11)
 
