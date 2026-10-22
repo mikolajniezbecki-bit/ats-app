@@ -3,5 +3,6 @@ engineStrict: true
 allowBuilds:
   '@parcel/watcher': false
   '@swc/core': false
+  esbuild: false
   sharp: false
   unrs-resolver: false

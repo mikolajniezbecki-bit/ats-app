@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     "test-results/**",
     "playwright-report/**",
     "blob-report/**",
+    // Bundled db:migrate entry point (pnpm db:build):
+    "dist/**",
   ]),
 ]);
 
