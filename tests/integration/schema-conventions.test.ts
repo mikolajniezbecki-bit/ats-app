@@ -1,0 +1,68 @@
+// §7 conventions checked against the PostgreSQL catalog of the migrated
+// database. The checks cover every table in `public`, so tables added by
+// later tasks are held to the same rules.
+import { sql } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+import { getDb } from "@/server/db";
+
+async function rows<T>(query: ReturnType<typeof sql>): Promise<T[]> {
+  return (await getDb().execute(query)).rows as T[];
+}
+
+describe("schema conventions", () => {
+  it("D1: every foreign-key column is the leading column of an index", async () => {
+    const unindexed = await rows<{ table_name: string; column_name: string }>(sql`
+      SELECT c.conrelid::regclass::text AS table_name, a.attname AS column_name
+      FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+      WHERE c.contype = 'f'
+        AND c.connamespace = 'public'::regnamespace
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indkey[0] = c.conkey[1]
+        )
+      ORDER BY 1, 2`);
+    expect(unindexed).toEqual([]);
+  });
+
+  it("D1: no foreign key cascades on delete", async () => {
+    const cascading = await rows<{ name: string }>(sql`
+      SELECT conname AS name FROM pg_constraint
+      WHERE contype = 'f' AND connamespace = 'public'::regnamespace AND confdeltype = 'c'`);
+    expect(cascading).toEqual([]);
+  });
+
+  it("D1: every table has created_at and updated_at as timestamptz NOT NULL DEFAULT now()", async () => {
+    const tables = await rows<{ table_name: string; columns: number }>(sql`
+      SELECT t.table_name, count(c.column_name)::int AS columns
+      FROM information_schema.tables t
+      LEFT JOIN information_schema.columns c
+        ON c.table_schema = t.table_schema AND c.table_name = t.table_name
+        AND c.column_name IN ('created_at', 'updated_at')
+        AND c.data_type = 'timestamp with time zone' AND c.is_nullable = 'NO' AND c.column_default = 'now()'
+      WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+      GROUP BY t.table_name`);
+    expect(tables.length).toBeGreaterThanOrEqual(7);
+    expect(tables.filter((t) => t.columns !== 2)).toEqual([]);
+  });
+
+  it("D1: the administration tables have exactly the nullable columns of §7", async () => {
+    const nullable = await rows<{ column: string }>(sql`
+      SELECT table_name || '.' || column_name AS column FROM information_schema.columns
+      WHERE table_schema = 'public' AND is_nullable = 'YES'
+        AND table_name IN ('users', 'master_data', 'templates', 'settings', 'audit_log', 'job_runs', 'rate_limits')
+      ORDER BY 1`);
+    expect(nullable.map((r) => r.column)).toEqual([
+      "audit_log.actor_user_id",
+      "audit_log.subject_id",
+      "audit_log.subject_type",
+      "job_runs.finished_at",
+      "master_data.picklist_key",
+      "settings.updated_by",
+      "templates.body",
+      "templates.schema_json",
+      "templates.subject",
+      "templates.trigger_status",
+      "users.image",
+    ]);
+  });
+});
