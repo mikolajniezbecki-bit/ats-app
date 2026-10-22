@@ -129,7 +129,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `pnpm worker` starts, always registers handlers (regardless of `WORKER_ENABLED`) and stops gracefully on SIGTERM. Processing a real job moves to task 9, where the first handlers exist; until then tests use a test-only queue they create themselves.
 - Startup exits non-zero when PostgreSQL is unreachable.
 
-## 9. Hourly tick and daily tasks
+## 9. Hourly tick and daily tasks ✅
 
 **Issue:** [#14](https://github.com/mikolajniezbecki-bit/ats-app/issues/14)
 
