@@ -1,6 +1,8 @@
 # Pull-request checks (tech-stack.md §12 ci.yml, G4, G7). Runs `pnpm verify`
-# as one step so CI and the local check cannot drift apart. No Playwright and
-# no secrets: the build must pass without them (Sprint 0 proof 3).
+# as one step so CI and the local check cannot drift apart, then the database
+# integration tests against a postgres:17 service container. No Playwright and
+# no secrets: the build must pass without them (Sprint 0 proof 3). The values
+# below are obviously fake, CI-only test values (AGENTS.md "Commits").
 name: ci
 
 on:
@@ -17,6 +19,22 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ats
+          POSTGRES_PASSWORD: local-only-not-secret-postgres
+          POSTGRES_DB: ats
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ats -d ats"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://ats:local-only-not-secret-postgres@localhost:5432/ats
     steps:
       - uses: actions/checkout@v7
 
@@ -31,6 +49,25 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm verify
+
+      # db:migrate validates the whole configuration (getConfig()), so it gets
+      # the same kind of fake values as docker-compose.yml.
+      - run: pnpm db:migrate
+        env:
+          APP_ENV: ci
+          BETTER_AUTH_SECRET: local-only-not-secret-better-auth
+          BETTER_AUTH_URL: http://localhost:3000
+          EMAIL_HASH_KEY: local-only-not-secret-email-hash
+          EMAIL_PROVIDER: smtp
+          SMTP_HOST: localhost
+          SMTP_PORT: "1025"
+          AZURE_STORAGE_CONNECTION_STRING: UseDevelopmentStorage=true
+          TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+          TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+          TICK_SECRET: local-only-not-secret-tick
+
+      # Each worker clones a freshly migrated template database (T2).
+      - run: pnpm test:integration --reporter=verbose
 
       # Next.js build cache (G4): exact hit when lockfile and sources are
       # unchanged, otherwise fall back to the latest cache for this lockfile.
