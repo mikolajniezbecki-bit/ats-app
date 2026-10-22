@@ -1,12 +1,13 @@
 // J7 test helper: processes every job that is due now, synchronously, so
 // tests never wait in real time for a worker (W9). Test-only: production code
-// never imports it. The TEST_NOW clock shift (`now` option) arrives in task 9.
+// never imports it. The `now` option applies the T3 clock shift first.
 import {
   type JobHandler,
   completeJob,
   failJob,
   fetchDueJobs,
   isWorking,
+  shiftJobClock,
 } from "@/server/adapters/job-queue";
 import { handlers as productionHandlers } from "@/worker/handlers";
 import { withJobLoggingAll } from "@/worker/run-job";
@@ -16,6 +17,8 @@ export type ProcessDueJobsOptions = {
   handlers?: Readonly<Record<string, JobHandler | undefined>>;
   /** Stops with an error after this many jobs, so a handler that keeps enqueueing can't loop forever. */
   maxJobs?: number;
+  /** The test clock (T3): jobs due at this time are made runnable first. */
+  now?: Date;
 };
 
 export type ProcessDueJobsResult = {
@@ -35,8 +38,10 @@ export type ProcessDueJobsResult = {
 export async function processDueJobs({
   handlers = productionHandlers,
   maxJobs = 1000,
+  now,
 }: ProcessDueJobsOptions = {}): Promise<ProcessDueJobsResult> {
   if (isWorking()) throw new Error("processDueJobs() can't run while a worker runs in this process (W9)");
+  if (now) await shiftJobClock(now);
   const wrapped = withJobLoggingAll(handlers);
   const failedQueues = new Set<string>();
   const result = { processed: 0, failed: 0 };

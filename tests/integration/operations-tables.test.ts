@@ -68,9 +68,15 @@ describe("updated_at", () => {
     // Outside a transaction: now() is fixed for the length of one.
     const db = getDb();
     const key = unique("updated-at");
-    const [created] = await db.insert(settings).values({ key, value: "1" }).returning();
+    // An hour in the past, so the check never depends on the insert and the
+    // update landing in different milliseconds (T6: it flaked in CI).
+    const past = new Date(Date.now() - 60 * 60 * 1000);
+    const [created] = await db.insert(settings).values({ key, value: "1", updatedAt: past }).returning();
+    expect(created.updatedAt).toEqual(past);
+    const before = Date.now();
     const [updated] = await db.update(settings).set({ value: "2" }).where(eq(settings.key, key)).returning();
     expect(updated.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
+    expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(before);
     expect(updated.createdAt).toEqual(created.createdAt);
   });
 });

@@ -1,12 +1,17 @@
 // The in-process worker (W1, W2, W6, M3) against the test database. Each test
-// uses a test-only queue it creates, since the production registry is still
-// empty (task 9 adds the first handlers). These tests run a real worker, so
-// they wait for it with a deadline instead of using the J7 helper.
+// uses a test-only queue it creates, so jobs other files leave in the real
+// queues never reach its handlers. These tests run a real worker, so they
+// wait for it with a deadline instead of using the J7 helper.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { Writable } from "node:stream";
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { getConfig } from "@/server/config";
+import { getDb } from "@/server/db";
+import { jobRuns } from "@/server/db/schema";
+import { handleTick } from "@/server/domain/tick";
 import { shutdown, startWorker } from "@/worker/worker";
 import { createTestQueue, jobState, sendTestJob } from "../support/jobs";
 
@@ -153,6 +158,35 @@ describe("pnpm worker", () => {
       expect(await worker.exited).toBe(0);
       expect(Date.now() - begin).toBeLessThan(10_000);
       expect(worker.output()).toContain('"msg":"worker stopped"');
+    } finally {
+      worker.child.kill("SIGKILL");
+    }
+  });
+
+  it("processes a daily task the tick queued: its job_runs row becomes COMPLETED", { timeout: 30_000 }, async () => {
+    // The web process doesn't run handlers here (WORKER_ENABLED=false), so
+    // the tick queues without waiting and only the worker process can finish it.
+    const base = getConfig();
+    const response = await handleTick(
+      new Request("http://localhost/api/internal/tick", {
+        method: "POST",
+        headers: { "x-tick-secret": base.tickSecret, "x-test-now": "2032-01-12T09:00:00Z" },
+      }),
+      { config: { ...base, auth: { ...base.auth, devLogin: true }, workerEnabled: false } },
+    );
+    expect(await response.json()).toMatchObject({ queued: ["retention.purge", "approvals.remind"], waited: false });
+
+    const worker = runWorker({ WORKER_ENABLED: "false" });
+    try {
+      const runs = () => getDb().select().from(jobRuns).where(eq(jobRuns.runDate, "2032-01-12"));
+      await vi.waitFor(async () => expect((await runs()).map((run) => run.status)).toEqual(["COMPLETED", "COMPLETED"]), {
+        timeout: 20_000,
+        interval: 200,
+      });
+      expect(worker.output()).toContain('"queue":"approvals.remind"');
+      expect(worker.output()).toContain('"msg":"job completed"');
+      worker.child.kill("SIGTERM");
+      expect(await worker.exited).toBe(0);
     } finally {
       worker.child.kill("SIGKILL");
     }
