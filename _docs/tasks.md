@@ -98,7 +98,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Integration tests prove: `req_number` is generated as `REQ-00001`, `REQ-00002`; the `applications` check rejects a NULL email unless `anonymized_at` is set; the `offers` check rejects a NULL `approver_id` unless `approval_status` is `DRAFT` or `WITHDRAWN`.
 - `D7:` test: an update with a stale `version` fails with the message above and changes nothing.
 
-## 7. Transactional job queue adapter
+## 7. Transactional job queue adapter ✅
 
 **Issue:** [#12](https://github.com/mikolajniezbecki-bit/ats-app/issues/12)
 
