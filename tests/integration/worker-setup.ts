@@ -4,6 +4,7 @@
 import { afterAll, inject } from "vitest";
 import { stopJobQueue } from "@/server/adapters/job-queue";
 import { closeDb } from "@/server/db";
+import { logger } from "@/server/logger";
 import { TEMPLATE_DATABASE, WORKER_DATABASE_PREFIX, databaseUrlFor, quoteIdent, withAdminClient } from "./database";
 
 // Test-only placeholders so getConfig() validates; DATABASE_URL is set below.
@@ -34,6 +35,8 @@ await withAdminClient(baseUrl, async (client) => {
 
 process.env.DATABASE_URL = databaseUrlFor(baseUrl, database);
 for (const [key, value] of Object.entries(TEST_ENV)) process.env[key] ??= value;
+// The logger was created on import, before LOG_LEVEL was set above.
+logger.level = process.env.LOG_LEVEL!;
 
 afterAll(async () => {
   await stopJobQueue();
