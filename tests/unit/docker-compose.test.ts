@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "@/server/config";
 
 type ComposeFile = {
-  services: Record<string, { environment?: Record<string, string | number | boolean> }>;
+  services: Record<
+    string,
+    { environment?: Record<string, string | number | boolean>; healthcheck?: { test: string[] } }
+  >;
 };
 
 const compose: ComposeFile = parse(readFileSync(path.resolve("docker-compose.yml"), "utf8"));
@@ -27,6 +30,10 @@ describe("docker-compose.yml", () => {
       publicUrl: "http://localhost:10000/devstoreaccount1",
     });
     expect(config.auth.microsoft).toBeNull();
+  });
+
+  it("reports PostgreSQL healthy only once it accepts TCP connections, so the app starts on a fresh volume", () => {
+    expect(compose.services.postgres.healthcheck?.test.join(" ")).toMatch(/pg_isready -h 127\.0\.0\.1 /);
   });
 
   it("runs the app as the CI-style production image (Sprint 0 proof 5)", () => {

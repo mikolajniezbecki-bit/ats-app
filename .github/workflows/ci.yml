@@ -1,8 +1,10 @@
 # Pull-request checks (tech-stack.md §12 ci.yml, G4, G7). Runs `pnpm verify`
 # as one step so CI and the local check cannot drift apart, then the database
 # integration tests against a postgres:17 service container. No Playwright and
-# no secrets: the build must pass without them (Sprint 0 proof 3). The values
-# below are obviously fake, CI-only test values (AGENTS.md "Commits").
+# no secrets: the build must pass without them (Sprint 0 proof 3, W1), so the
+# database URL and the configuration are set only on the steps that need them,
+# never on the job or the build step. The values below are obviously fake,
+# CI-only test values (AGENTS.md "Commits").
 name: ci
 
 on:
@@ -33,8 +35,6 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
-    env:
-      DATABASE_URL: postgres://ats:local-only-not-secret-postgres@localhost:5432/ats
     steps:
       - uses: actions/checkout@v7
 
@@ -54,6 +54,7 @@ jobs:
       # the same kind of fake values as docker-compose.yml.
       - run: pnpm db:migrate
         env:
+          DATABASE_URL: postgres://ats:local-only-not-secret-postgres@localhost:5432/ats
           APP_ENV: ci
           BETTER_AUTH_SECRET: local-only-not-secret-better-auth
           BETTER_AUTH_URL: http://localhost:3000
@@ -68,6 +69,8 @@ jobs:
 
       # Each worker clones a freshly migrated template database (T2).
       - run: pnpm test:integration --reporter=verbose
+        env:
+          DATABASE_URL: postgres://ats:local-only-not-secret-postgres@localhost:5432/ats
 
       # Next.js build cache (G4): exact hit when lockfile and sources are
       # unchanged, otherwise fall back to the latest cache for this lockfile.
@@ -78,4 +81,5 @@ jobs:
           restore-keys: |
             nextjs-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
 
+      # W1: no database and no configuration in this step's environment.
       - run: pnpm build

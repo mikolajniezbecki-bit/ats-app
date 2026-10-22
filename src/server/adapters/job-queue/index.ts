@@ -65,19 +65,30 @@ export const jobQueue: JobQueue = {
   },
 };
 
+/** A claimed job as handlers see it: the queue name and the ID-only payload. */
+export type Job = { id: string; queue: string; data: JobPayload };
+
+export type JobHandler = (job: Job) => Promise<void>;
+
+/** Queue name to handler. Tests may add test-only queues they create themselves. */
+export type HandlerMap = Readonly<Record<string, JobHandler>>;
+
+type BossState = { promise: Promise<PgBoss>; supervise: boolean; working: boolean };
+
 // One instance per process, created on first use and never at import time
 // (W1). Outside production it lives on globalThis so hot reload reuses it.
-const globalForBoss = globalThis as typeof globalThis & { __atsBoss?: Promise<PgBoss> };
-let bossPromise: Promise<PgBoss> | undefined = globalForBoss.__atsBoss;
+const globalForBoss = globalThis as typeof globalThis & { __atsBoss?: BossState };
+let bossState: BossState | undefined = globalForBoss.__atsBoss;
 
 /** pg-boss runs its statements on our pool instead of opening its own (D5). */
 function poolDatabase(pool: pg.Pool) {
   return { executeSql: (text: string, values?: unknown[]) => pool.query(text, values) };
 }
 
-async function startBoss(pool: pg.Pool): Promise<PgBoss> {
-  // W3: never pg-boss cron; daily tasks come from the tick.
-  const boss = new PgBoss({ db: poolDatabase(pool), schedule: false });
+async function startBoss(pool: pg.Pool, supervise = false): Promise<PgBoss> {
+  // W3: never pg-boss cron; daily tasks come from the tick. Maintenance
+  // (supervision) runs only in a process that also runs handlers.
+  const boss = new PgBoss({ db: poolDatabase(pool), schedule: false, supervise });
   // Without a listener an emitted error would crash the process.
   boss.on("error", (err: Error & { code?: string }) => {
     logger.error({ err: { message: err.message, code: err.code } }, "pg-boss error");
@@ -89,31 +100,79 @@ async function startBoss(pool: pg.Pool): Promise<PgBoss> {
 
 /**
  * The started pg-boss instance of this process, on the D5 pool. Exported for
- * the worker (task 8) and tests; domain code uses `jobQueue`.
+ * the worker and tests; domain code uses `jobQueue`. Started without
+ * maintenance unless `startJobQueue({ supervise: true })` ran first.
  */
 export function getBoss(): Promise<PgBoss> {
-  if (!bossPromise) {
-    const promise = startBoss(getPool());
-    bossPromise = promise;
-    if (process.env.NODE_ENV !== "production") globalForBoss.__atsBoss = promise;
-    // A failed start must not be cached, so the next call tries again.
-    promise.catch(() => {
-      if (bossPromise === promise) {
-        bossPromise = undefined;
-        globalForBoss.__atsBoss = undefined;
-      }
-    });
-  }
-  return bossPromise;
+  return (bossState ?? createBossState(false)).promise;
 }
 
-/** Stops this process's instance, so scripts and test teardown can exit. The pool stays open. */
-export async function stopJobQueue(): Promise<void> {
-  const current = bossPromise;
-  bossPromise = undefined;
+/**
+ * Starts this process's instance; `supervise` turns on pg-boss maintenance,
+ * which only a process that runs handlers needs (W1). Fails if the instance
+ * already runs with the other setting.
+ */
+export async function startJobQueue({ supervise }: { supervise: boolean }): Promise<void> {
+  const state = bossState ?? createBossState(supervise);
+  if (state.supervise !== supervise) {
+    throw new Error(`pg-boss already started with supervise=${state.supervise}`);
+  }
+  await state.promise;
+}
+
+function createBossState(supervise: boolean): BossState {
+  const state: BossState = { promise: startBoss(getPool(), supervise), supervise, working: false };
+  bossState = state;
+  if (process.env.NODE_ENV !== "production") globalForBoss.__atsBoss = state;
+  // A failed start must not be cached, so the next call tries again.
+  state.promise.catch(() => {
+    if (bossState === state) {
+      bossState = undefined;
+      globalForBoss.__atsBoss = undefined;
+    }
+  });
+  return state;
+}
+
+export type WorkOptions = {
+  /** How often an idle queue is polled; pg-boss default 2 s. */
+  pollingIntervalSeconds?: number;
+};
+
+/**
+ * Registers one pg-boss worker per queue in `handlers` (W1). A handler that
+ * resolves completes its job; one that throws fails it, and pg-boss retries
+ * it according to the queue's options. Returns the registered queue names.
+ */
+export async function workQueues(handlers: HandlerMap, options: WorkOptions = {}): Promise<string[]> {
+  const boss = await getBoss();
+  bossState!.working = true;
+  const names = Object.keys(handlers);
+  for (const name of names) {
+    const handler = handlers[name];
+    await boss.work<JobPayload>(name, { pollingIntervalSeconds: options.pollingIntervalSeconds }, async ([job]) => {
+      await handler({ id: job.id, queue: job.name, data: job.data });
+    });
+  }
+  return names;
+}
+
+export type StopOptions = {
+  /**
+   * Stop fetching, then wait up to `timeoutMs` for active handlers (W6).
+   * pg-boss fails jobs still active after that, so they are retried (J3).
+   * Without it, active jobs are failed at once.
+   */
+  timeoutMs?: number;
+};
+
+/** Stops this process's instance, so the process can exit. The pool stays open. */
+export async function stopJobQueue({ timeoutMs }: StopOptions = {}): Promise<void> {
+  const current = bossState;
+  bossState = undefined;
   globalForBoss.__atsBoss = undefined;
-  const boss = await current?.catch(() => undefined);
-  await boss?.stop({ graceful: false, close: false });
+  const boss = await current?.promise.catch(() => undefined);
+  await boss?.stop({ graceful: timeoutMs !== undefined, timeout: timeoutMs, close: false });
 }
 
 export type QueueSetupOptions = {
@@ -175,4 +234,29 @@ export function inspectJobQueues({ pool }: Pick<QueueSetupOptions, "pool"> = {})
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   });
+}
+
+// Test support for the J7 helper (tests/support/process-due-jobs.ts): claim
+// due jobs and settle them by hand, without a running worker.
+
+/** True while handlers registered with workQueues() run in this process. */
+export function isWorking(): boolean {
+  return bossState?.working ?? false;
+}
+
+/** Claims up to `limit` jobs of `queue` whose start time has passed (state becomes `active`). */
+export async function fetchDueJobs(queue: string, limit: number): Promise<Job[]> {
+  const boss = await getBoss();
+  const jobs = await boss.fetch<JobPayload>(queue, { batchSize: limit });
+  return jobs.map((job) => ({ id: job.id, queue: job.name, data: job.data }));
+}
+
+/** Marks a claimed job completed. */
+export async function completeJob(queue: string, jobId: string): Promise<void> {
+  await (await getBoss()).complete(queue, jobId);
+}
+
+/** Marks a claimed job failed; pg-boss retries it according to the queue's options. */
+export async function failJob(queue: string, jobId: string, error: Error): Promise<void> {
+  await (await getBoss()).fail(queue, jobId, { message: error.message });
 }

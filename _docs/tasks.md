@@ -113,7 +113,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `J2:` integration test: a delayed `email.send` job is cancelled inside a transaction, and stays queued if that transaction rolls back.
 - `J5:` test: running queue setup twice succeeds and all four queues exist afterwards.
 
-## 8. In-process worker startup
+## 8. In-process worker startup ✅
 
 **Issue:** [#13](https://github.com/mikolajniezbecki-bit/ats-app/issues/13)
 
