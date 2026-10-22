@@ -14,16 +14,30 @@ pnpm test:rules # rule-ID scan only
 pnpm build     # production build (.next/standalone)
 ```
 
+Database (PostgreSQL 17 from the Compose stack, see below):
+
+```sh
+docker compose up -d postgres   # start PostgreSQL on localhost:5432
+pnpm db:migrate                 # apply the committed migrations (reads .env if present)
+pnpm db:generate                # generate a migration after a schema change
+pnpm test:integration           # Vitest integration tests against PostgreSQL
+```
+
+- The Drizzle schema in `src/server/db/schema/` is the source of truth for the data model (tech-stack.md D1). To change it: edit the schema, run `pnpm db:generate` (optionally `--name=<what_changed>`), review the SQL in `src/server/db/migrations/` and commit it together with the schema change. On a clean checkout `pnpm db:generate` must report no changes. `drizzle-kit push` is allowed only on a local database (D2).
+- `pnpm db:migrate` bundles `src/server/db/migrate.ts` into `dist/db/migrate.mjs` (with the SQL next to it in `dist/db/migrations/`) and runs it with drizzle-orm's runtime migrator, not drizzle-kit. The production image contains the same bundle (see "Local stack"). It uses `DATABASE_ADMIN_URL` when set, otherwise `DATABASE_URL`, and needs a complete configuration (`getConfig()`).
+- Server code gets the database with `getDb()` and runs multi-step changes in `withTransaction(async (tx) => ...)` from `src/server/db`; domain services take the `Tx` handle as their first parameter (D3). The pool (max 10 connections) is created on the first call, and TLS follows `sslmode` in `DATABASE_URL`: none without it (Compose), verified TLS with `sslmode=require` (Azure).
+
 Test files:
 
-- Vitest unit tests: `tests/**/*.test.ts(x)`, run by `pnpm test` (excludes `tests/e2e/**` and `tests/integration/**`).
+- Vitest unit tests: `tests/**/*.test.ts(x)`, run by `pnpm test` (excludes `tests/e2e/**` and `tests/integration/**`). They need no database, so `pnpm verify` works with Docker stopped.
+- Vitest integration tests: `tests/integration/**/*.test.ts`, run only by `pnpm test:integration` against the Compose PostgreSQL (never mocks, D9). A global setup drops the `ats_test_*` databases of earlier runs and migrates `ats_test_template`; each Vitest worker then works in its own clone, `ats_test_<worker id>` (T2). The setup refuses any `DATABASE_URL` host other than `localhost`, `127.0.0.1` or `postgres`, and `APP_ENV=azure`. It defaults to the Compose credentials when `DATABASE_URL` is unset. Run a single file with `pnpm test:integration tests/integration/<file>`.
 - Playwright specs: `tests/e2e/**/*.spec.ts`.
 
 Rule traceability (`pnpm test:rules`, tech-stack.md §11 T1):
 
 - A test covers rule `X` when the title of the `test(...)`/`it(...)` call itself starts with `X:` (e.g. `test("R7: status change cancels pending rejection email", ...)`). IDs match exactly (`AU2:` is not `A2:`), one per test. Titles on `describe(...)` and skipped, todo, fixme or failing tests don't count.
 - Required IDs that have no test yet are listed in `tests/rules-pending.json`. Every task that adds the first test for an ID removes that ID from the list in the same change; the scan fails if a pending ID already has a test, if a required ID is neither tested nor pending, or if a title starts with an unknown rule-shaped ID.
-- Pull requests run the same checks in `.github/workflows/ci.yml` (`pnpm verify`, then `pnpm build`).
+- Pull requests run the same checks in `.github/workflows/ci.yml`: `pnpm verify`, then `pnpm db:migrate` and `pnpm test:integration` against a `postgres:17` service container, then `pnpm build`.
 
 ## Local stack (Docker Compose)
 
@@ -43,7 +57,13 @@ docker compose down -v         # also delete the PostgreSQL and Azurite data
 | Azurite Blob | http://localhost:10000/devstoreaccount1 |
 | Mailpit SMTP / web UI | `localhost:1025` / http://localhost:8025 |
 
-The `app` container runs like CI: `NODE_ENV=production`, `APP_ENV=ci`, `AUTH_DEV_LOGIN=true` (dev sign-in) and `EMAIL_PROVIDER=smtp` (Mailpit). Inside the stack it uses Compose host names (`postgres`, `azurite`, `mailpit`); signed Blob links for the browser use `AZURE_STORAGE_PUBLIC_URL=http://localhost:10000/devstoreaccount1`. The app doesn't migrate the database on start.
+The `app` container runs like CI: `NODE_ENV=production`, `APP_ENV=ci`, `AUTH_DEV_LOGIN=true` (dev sign-in) and `EMAIL_PROVIDER=smtp` (Mailpit). Inside the stack it uses Compose host names (`postgres`, `azurite`, `mailpit`); signed Blob links for the browser use `AZURE_STORAGE_PUBLIC_URL=http://localhost:10000/devstoreaccount1`. The app doesn't migrate the database on start. Apply the migrations from the same image (the Azure `db-migrate` job runs the same command):
+
+```sh
+docker compose run --rm app node db/migrate.mjs
+```
+
+A second run applies nothing. The image holds the bundled entry point and the SQL in `/app/db`, with no pnpm, tsx or drizzle-kit.
 
 `pnpm dev` on the host is the alternative for day-to-day work: it reads `.env` (copied from `.env.example`) with `localhost` host names and `APP_ENV=local`, and can use the Compose services without the app container:
 
@@ -58,7 +78,7 @@ All configuration goes through `getConfig()` in `src/server/config.ts` (tech-sta
 
 Copy `.env.example` to `.env` and fill the empty values you need. `.env` is git-ignored; never commit it. Secrets stay empty in `.env.example`, including publicly documented dev values. Where they come from:
 
-- `DATABASE_URL`: the local PostgreSQL container (task 4 adds the Compose stack).
+- `DATABASE_URL`: the Compose PostgreSQL, `postgres://ats:local-only-not-secret-postgres@localhost:5432/ats`.
 - `BETTER_AUTH_SECRET`, `EMAIL_HASH_KEY`, `TICK_SECRET`: any random local value, e.g. `openssl rand -base64 32`.
 - `AZURE_STORAGE_CONNECTION_STRING`: Azurite's [default development connection string](https://learn.microsoft.com/azure/storage/common/storage-use-azurite#http-connection-strings).
 - `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`: Cloudflare's [Turnstile test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/).
