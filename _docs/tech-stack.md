@@ -344,7 +344,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 
 | Rule | Behaviour |
 |---|---|
-| G1 Branching | Short-lived branches → pull request → `main`. A pull request is merged only after `ci.yml` passes and the owner approves it. This is enforced by the agent and owner workflow (`AGENTS.md`), not by GitHub branch protection, which private repositories on the Free plan don't have (TO-21). |
+| G1 Branching | Short-lived branches → pull request → `main`. A pull request is merged only after `ci.yml` passes and the `reviewer` sub-agent verifies all acceptance criteria and T8 test integrity (or the owner approves it). This is enforced by the agent and owner workflow (`AGENTS.md`), not by GitHub branch protection, which private repositories on the Free plan don't have (TO-21). |
 | G2 One image | The image tested end-to-end is the image deployed. |
 | G3 Azure access | GitHub authenticates to Azure with an OIDC federated credential on a service principal in the project tenant, with Contributor rights on the project resource group only, plus Role Based Access Control Administrator on the same resource group, restricted by a condition to assigning Storage Blob Data Contributor and Key Vault Secrets User. The federated credential accepts only workflow runs on `main`. No Azure secrets in GitHub. |
 | G4 Minutes budget | End-to-end tests only on `main`; dependency and build caching; `concurrency` cancels superseded runs. The Free plan includes 2,000 Linux minutes per month for private repositories. `main.yml` ignores pushes that change only `_docs/**` or Markdown files. Failure artifacts are kept 7 days; GHCR keeps the 10 most recent image versions. |
