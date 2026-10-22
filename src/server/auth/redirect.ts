@@ -12,7 +12,8 @@ const SAME_ORIGIN = "http://same-origin.invalid";
  * newlines and reads `\` as `/`, so `/\t/evil.example` or `/\evil.example`
  * would otherwise slip past a prefix check and leave the site. Anything with
  * whitespace or control characters, or that resolves to another origin, is
- * refused.
+ * refused, and so is a result that the parser's own clean-up turns into
+ * another origin.
  */
 export function safeNextPath(next: string | null | undefined): string {
   if (!next || !next.startsWith("/") || /[\s\u0000-\u001f\u007f\\]/.test(next)) return DEFAULT_SIGNED_IN_PATH;
@@ -23,7 +24,21 @@ export function safeNextPath(next: string | null | undefined): string {
     return DEFAULT_SIGNED_IN_PATH;
   }
   if (url.origin !== SAME_ORIGIN) return DEFAULT_SIGNED_IN_PATH;
-  return `${url.pathname}${url.search}${url.hash}`;
+  // The parser resolves `.` and `..`, so `/.//evil.example` comes out as
+  // `//evil.example`; the result is checked again, as the browser will read it.
+  const path = `${url.pathname}${url.search}${url.hash}`;
+  if (!isSameOriginPath(path)) return DEFAULT_SIGNED_IN_PATH;
+  return path;
+}
+
+/** True when `path` starts with a single `/` and stays on the origin it is resolved against. */
+function isSameOriginPath(path: string): boolean {
+  if (!path.startsWith("/") || path.startsWith("//")) return false;
+  try {
+    return new URL(path, SAME_ORIGIN).origin === SAME_ORIGIN;
+  } catch {
+    return false;
+  }
 }
 
 /** The sign-in URL that returns to `pathWithQuery` afterwards. */
