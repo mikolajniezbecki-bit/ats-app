@@ -148,9 +148,13 @@ export async function workQueues(handlers: HandlerMap, options: WorkOptions = {}
   const boss = await getBoss();
   bossState!.working = true;
   const names = Object.keys(handlers);
+  // pg-boss rejects an explicit `pollingIntervalSeconds: undefined`, so the
+  // key is left out unless set.
+  const workOptions =
+    options.pollingIntervalSeconds === undefined ? {} : { pollingIntervalSeconds: options.pollingIntervalSeconds };
   for (const name of names) {
     const handler = handlers[name];
-    await boss.work<JobPayload>(name, { pollingIntervalSeconds: options.pollingIntervalSeconds }, async ([job]) => {
+    await boss.work<JobPayload>(name, workOptions, async ([job]) => {
       await handler({ id: job.id, queue: job.name, data: job.data });
     });
   }
@@ -234,6 +238,43 @@ export function inspectJobQueues({ pool }: Pick<QueueSetupOptions, "pool"> = {})
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   });
+}
+
+// The only direct SQL against pg-boss's tables (T3). pg-boss 12.38 keeps every
+// job in `pgboss.job` (partitioned by queue name); `state` is the
+// `pgboss.job_state` enum and `start_after` the earliest start time, compared
+// with the database now() when a worker fetches.
+
+/**
+ * W4: the number of jobs, across all queues, that are due or running now:
+ * state `created`, `retry` or `active` with a start time ≤ the database
+ * now(). Future-dated jobs are never counted. Read-only.
+ */
+export async function countDueJobs(): Promise<number> {
+  await getBoss();
+  const { rows } = await getPool().query<{ count: number }>(
+    `SELECT count(*)::int AS count FROM pgboss.job
+     WHERE state IN ('created', 'retry', 'active') AND start_after <= now()`,
+  );
+  return rows[0].count;
+}
+
+/**
+ * T3 clock shift, test clock only: every waiting job (`created` or `retry`)
+ * whose start time is ≤ `testNow` gets the database now() as its start time,
+ * so it runs at once. Callers run it only when the test clock is honoured
+ * (AUTH_DEV_LOGIN=true). The only code that writes to pg-boss tables.
+ * Returns the number of jobs moved.
+ */
+export async function shiftJobClock(testNow: Date): Promise<number> {
+  await getBoss();
+  const { rowCount } = await getPool().query(
+    `UPDATE pgboss.job SET start_after = now()
+     WHERE state IN ('created', 'retry') AND start_after <= $1 AND start_after > now()`,
+    [testNow],
+  );
+  if (rowCount) logger.info({ moved: rowCount }, "test clock shift");
+  return rowCount ?? 0;
 }
 
 // Test support for the J7 helper (tests/support/process-due-jobs.ts): claim
