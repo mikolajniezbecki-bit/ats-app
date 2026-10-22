@@ -9,7 +9,12 @@ export function SignOutButton() {
   const router = useRouter();
 
   async function signOut() {
-    await fetch("/api/auth/sign-out", { method: "POST" }).catch(() => null);
+    // Better Auth accepts JSON POSTs only.
+    await fetch("/api/auth/sign-out", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    }).catch(() => null);
     router.replace("/sign-in");
     router.refresh();
   }
