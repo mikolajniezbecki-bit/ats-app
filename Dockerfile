@@ -16,10 +16,13 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
-RUN pnpm build
+# db:build bundles the db:migrate entry point with its runtime dependencies
+# into dist/db/migrate.mjs and copies the committed SQL to dist/db/migrations.
+RUN pnpm build && pnpm db:build
 
-# Runtime: only the standalone output. Later tasks add the compiled
-# db:migrate / db:seed / seed:admin entry points and migrations here.
+# Runtime: the standalone output plus the compiled db:migrate entry point and
+# its migrations in /app/db (§3 rule 8). No pnpm, tsx or drizzle-kit here.
+# Later tasks add db:seed and seed:admin.
 FROM node:24-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
@@ -31,6 +34,7 @@ ENV NODE_ENV=production \
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
+COPY --from=build /app/dist/db ./db
 RUN mkdir -p .next/cache && chown node:node .next/cache && chmod -R o-w /app
 USER node
 EXPOSE 3000

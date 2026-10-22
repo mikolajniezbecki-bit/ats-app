@@ -1,6 +1,7 @@
 # Keep the build context small and free of secrets (Dockerfile).
 node_modules
 .next
+dist
 .git
 .env
 .env.*
