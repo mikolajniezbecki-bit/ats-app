@@ -53,7 +53,10 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ats -d ats"]
+      # Over TCP: on a fresh volume the image's init server listens only on
+      # the Unix socket and then restarts, so a socket check would let the app
+      # start (and connect, W1) before the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ats -d ats"]
       interval: 2s
       timeout: 5s
       retries: 30

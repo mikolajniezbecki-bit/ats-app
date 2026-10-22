@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.12 |
+| **Version** | 1.13 |
 | **Date** | 2026-10-22 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.13** | Task 8: on shutdown pg-boss 12 fails jobs still active after the 8 s grace timeout, so they are retried per their queue options instead of expiring; the image sets `NEXT_MANUAL_SIG_HANDLE=true` so the app, not Next.js, handles SIGTERM (W6) |
 | **Changes in 1.12** | TypeScript 6.x instead of 5.x: Dependabot PR #58 passes lint, typecheck, unit and integration tests and the build on current `main` (owner decision, §2) |
 | **Changes in 1.11** | Task 1: pnpm 11 pinned, because pnpm 12 doesn't enforce the root project's `engines`; Node version enforced by `engineStrict: true` in `pnpm-workspace.yaml` (pnpm 11 no longer reads `.npmrc` settings), `.npmrc` kept for npm (owner decision, #1) (§2) |
 | **Changes in 1.10** | Tasks 40–46 grooming: synthetic seed rules (D8); backward-compatible migrations (D2); `main.yml` deploy updates job images, never cancels deployments, branch runs don't push (§12, G4); RBAC Administrator with a role condition and `main`-only federation (G3); Bicep stages, logins, storage/Key Vault/PostgreSQL cost-safe settings, compiled job entry points (G5, G6); `DATABASE_ADMIN_URL`, `SEED_ADMIN_EMAIL` (§3); IP source logging (§3 rule 9); budget notifies only (M8); `infra.yml` what-if and deploy as two manual runs (owner decision, §12, TO-21); restart notes (G10); manual proof records (§15) |
@@ -247,7 +248,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 | W3 Daily tasks | Daily tasks are not scheduled with pg-boss cron (it can't fire while the app is asleep). |
 | W4 Tick | The hourly job calls `POST /api/internal/tick` with header `x-tick-secret`. The secret is compared in constant time; a wrong or missing secret returns `401`, other methods `405`. The endpoint: (a) when the test clock is honoured (`x-test-now`, T3), applies the T3 clock shift; queues each daily task whose time has passed and has no `job_runs` row for today's Europe/Warsaw date (W5); (b) waits for due work by polling every 1 s with a count of pg-boss jobs in states `created`, `retry` or `active` whose start time is ≤ now (future-dated jobs, such as delayed rejections not yet due, are excluded); (c) returns `200` when the count is 0 or after **180 s**, whichever comes first. Container Apps' default request timeout is 240 s. Unfinished work continues at the next tick. The count is implemented in one read-only query in the job adapter. The response is a JSON summary (queued tasks, whether it waited). When `WORKER_ENABLED` is not `true`, the tick queues the due tasks, skips (b) and returns `200` with `waited: false` and a logged warning. |
 | W5 Run-once | `job_runs` has `UNIQUE (job_name, run_date)`; a task is recorded before it starts, so overlapping ticks never run it twice. `run_date` is the Europe/Warsaw calendar date (`YYYY-MM-DD`), computed by one helper that handles daylight-saving changes. The `job_runs` insert (skipping on conflict) and the enqueue happen in one transaction. Missed past days are not caught up, and a `FAILED` daily task is not rerun on the same day; it runs again on the next run date (safe because of J3, `ats-project-scope.md` RT5 and A6). |
-| W6 Shutdown | On SIGTERM, `boss.stop({ graceful: true })`; interrupted jobs expire and are retried (J3). |
+| W6 Shutdown | On SIGTERM or SIGINT the process stops fetching jobs, waits up to 8 s for active jobs (under Compose's 10 s stop grace period), runs `boss.stop({ graceful: true })`, closes the pool and exits 0. pg-boss fails jobs still active at the deadline, so they are retried according to their queue's options (J3). The image sets `NEXT_MANUAL_SIG_HANDLE=true`, because Next.js's own handler would otherwise exit at once. |
 | W7 Timing | While the app is awake, jobs run within seconds; while it sleeps, they run at the next tick (up to ~1 h later). |
 | W8 Replicas | Minimum 0, maximum 1 replica; no sidecars. |
 | W9 Tests | Tests call the tick endpoint or the J7 helper and never wait in real time. |
