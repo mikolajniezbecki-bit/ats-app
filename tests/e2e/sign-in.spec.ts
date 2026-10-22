@@ -71,7 +71,7 @@ test("the sign-in form works with the keyboard alone", async ({ page }) => {
 
 test("next accepts relative paths only", async ({ page }) => {
   const user = createThrowawayUser();
-  for (const next of ["https://evil.example", "//evil.example", "/\\evil.example"]) {
+  for (const next of ["https://evil.example", "//evil.example", "/\\evil.example", "/\t/evil.example", "/\n/evil.example"]) {
     await page.context().clearCookies();
     await signInThroughForm(page, user.email, user.password, `/sign-in?next=${encodeURIComponent(next)}`);
     await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/dashboard$/);

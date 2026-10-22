@@ -74,10 +74,24 @@ describe("next after sign-in", () => {
     ["evil", "/dashboard"],
     ["", "/dashboard"],
     [undefined, "/dashboard"],
+    ["/\t/evil.example", "/dashboard"],
+    ["/\n/evil.example", "/dashboard"],
+    ["/\r/evil.example", "/dashboard"],
+    ["/\n\\evil.example", "/dashboard"],
+    [" //evil.example", "/dashboard"],
+    ["/ /evil.example", "/dashboard"],
+    ["/%09/evil.example", "/%09/evil.example"],
     ["/dashboard?x=1", "/dashboard?x=1"],
+    ["/dashboard?x=1#top", "/dashboard?x=1#top"],
     ["/admin/users", "/admin/users"],
   ])("%s goes to %s", (next, expected) => {
     expect(safeNextPath(next)).toBe(expected);
+  });
+
+  it("never resolves to another origin, whatever the input", () => {
+    for (const next of ["/\t/evil.example", "/\\/evil.example", "/\u0000/evil.example", "/\u000b/evil.example"]) {
+      expect(new URL(safeNextPath(next), "http://localhost:3000").origin).toBe("http://localhost:3000");
+    }
   });
 
   it("encodes the path and query into the sign-in URL", () => {
