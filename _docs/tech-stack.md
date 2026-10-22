@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.11 |
-| **Date** | 2026-10-21 |
+| **Version** | 1.12 |
+| **Date** | 2026-10-22 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.12** | TypeScript 6.x instead of 5.x: Dependabot PR #58 passes lint, typecheck, unit and integration tests and the build on current `main` (owner decision, §2) |
 | **Changes in 1.11** | Task 1: pnpm 11 pinned, because pnpm 12 doesn't enforce the root project's `engines`; Node version enforced by `engineStrict: true` in `pnpm-workspace.yaml` (pnpm 11 no longer reads `.npmrc` settings), `.npmrc` kept for npm (owner decision, #1) (§2) |
 | **Changes in 1.10** | Tasks 40–46 grooming: synthetic seed rules (D8); backward-compatible migrations (D2); `main.yml` deploy updates job images, never cancels deployments, branch runs don't push (§12, G4); RBAC Administrator with a role condition and `main`-only federation (G3); Bicep stages, logins, storage/Key Vault/PostgreSQL cost-safe settings, compiled job entry points (G5, G6); `DATABASE_ADMIN_URL`, `SEED_ADMIN_EMAIL` (§3); IP source logging (§3 rule 9); budget notifies only (M8); `infra.yml` what-if and deploy as two manual runs (owner decision, §12, TO-21); restart notes (G10); manual proof records (§15) |
 | **Changes in 1.9** | Tasks 34–39 grooming: optimistic locking on `offers` (D7); P6 preview rendered on request, not stored (§8); stored letter exempt from the upload limit (P7); fonts committed with their licence (P4); `unpdf` for P8 snapshots (§2) |
@@ -107,7 +108,7 @@ Staff ──► Entra ID (personal tenant) ──► web        Candidates ─�
 | Node.js | 24 LTS (`engines.node` in `package.json`; `engineStrict: true` in `pnpm-workspace.yaml` makes `pnpm install` fail on another version; `engine-strict=true` in `.npmrc` does the same for npm) |
 | Next.js | 16.x |
 | React | version required by Next.js 16 |
-| TypeScript | 5.x, strict |
+| TypeScript | 6.x, strict |
 | PostgreSQL | 17 (Docker `postgres:17`; Azure Flexible Server 17) |
 | pg-boss | 12.x |
 | Drizzle ORM / drizzle-kit | latest stable 0.x (no release candidates) |
