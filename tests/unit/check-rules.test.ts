@@ -51,6 +51,10 @@ describe("which files are scanned", () => {
     expect(testedIds(files)).toEqual([]);
   });
 
+  it("counts integration tests under tests/integration, which pnpm test does not run", () => {
+    expect(testedIds([file("it('A2: approver differs', async () => {});", "tests/integration/a.test.ts")])).toEqual(["A2"]);
+  });
+
   it("counts Playwright specs under tests/e2e", () => {
     expect(testedIds([file("test('A2: approver differs', async () => {});", "tests/e2e/a.spec.ts")])).toEqual(["A2"]);
   });
