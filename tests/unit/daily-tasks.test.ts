@@ -74,5 +74,7 @@ describe("test clock", () => {
     expect(parseTestNow("2026-10-25T00:00:00")).toBeNull();
     expect(parseTestNow("2026-10-25")).toBeNull();
     expect(parseTestNow("2026-13-45T00:00:00Z")).toBeNull();
+    expect(parseTestNow("2026-02-30T00:00:00Z")).toBeNull();
+    expect(parseTestNow("2026-10-25T00:00:00+0200")).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 // Daily tasks and the Europe/Warsaw calendar (tech-stack.md W4, W5;
 // ats-project-scope.md §6). Pure: no framework, database or clock reads, so
 // the time maths is unit-tested with fixed instants in any process time zone.
+import { z } from "zod";
 
 export const WARSAW_TIME_ZONE = "Europe/Warsaw";
 
@@ -47,12 +48,14 @@ export function dueDailyTasks(instant: Date): DailyTask[] {
 }
 
 /**
- * Parses a test-clock value (T3): ISO 8601 with a `Z` or an explicit offset.
- * Returns null for anything else, including a date without a time zone,
- * which would otherwise be read in the process time zone.
+ * The test-clock header (T3, §3 rule 2): ISO 8601 with seconds and a `Z` or
+ * an explicit offset. A value without a time zone is refused, because it
+ * would otherwise be read in the process time zone.
  */
+export const testNowSchema = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
+
+/** The parsed test-clock instant, or null when the value doesn't match `testNowSchema`. */
 export function parseTestNow(value: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.test(value)) return null;
-  const instant = new Date(value);
-  return Number.isNaN(instant.getTime()) ? null : instant;
+  const parsed = testNowSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
