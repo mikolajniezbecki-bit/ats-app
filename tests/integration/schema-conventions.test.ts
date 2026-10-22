@@ -41,7 +41,8 @@ describe("schema conventions", () => {
         AND c.data_type = 'timestamp with time zone' AND c.is_nullable = 'NO' AND c.column_default = 'now()'
       WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
       GROUP BY t.table_name`);
-    expect(tables.length).toBe(20);
+    // 20 §7 tables plus Better Auth's session, account and verification (AU10).
+    expect(tables.length).toBe(23);
     expect(tables.filter((t) => t.columns !== 2)).toEqual([]);
   });
 
@@ -66,11 +67,30 @@ describe("schema conventions", () => {
     ]);
   });
 
+  it("AU10: the authentication tables have exactly Better Auth's optional columns", async () => {
+    const nullable = await rows<{ column: string }>(sql`
+      SELECT table_name || '.' || column_name AS column FROM information_schema.columns
+      WHERE table_schema = 'public' AND is_nullable = 'YES' AND table_name IN ('session', 'account', 'verification')
+      ORDER BY 1`);
+    expect(nullable.map((r) => r.column)).toEqual([
+      "account.access_token",
+      "account.access_token_expires_at",
+      "account.id_token",
+      "account.password",
+      "account.refresh_token",
+      "account.refresh_token_expires_at",
+      "account.scope",
+      "session.ip_address",
+      "session.user_agent",
+    ]);
+  });
+
   it("D1: the recruiting tables have exactly the nullable columns of §7", async () => {
     const nullable = await rows<{ column: string }>(sql`
       SELECT table_name || '.' || column_name AS column FROM information_schema.columns
       WHERE table_schema = 'public' AND is_nullable = 'YES'
-        AND table_name NOT IN ('users', 'master_data', 'templates', 'settings', 'audit_log', 'job_runs', 'rate_limits')
+        AND table_name NOT IN ('users', 'master_data', 'templates', 'settings', 'audit_log', 'job_runs', 'rate_limits',
+                               'session', 'account', 'verification')
       ORDER BY 1`);
     expect(nullable.map((r) => r.column)).toEqual([
       "application_history.changed_by_user_id",

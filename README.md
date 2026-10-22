@@ -38,13 +38,22 @@ Test files:
 
 - Vitest unit tests: `tests/**/*.test.ts(x)`, run by `pnpm test` (excludes `tests/e2e/**` and `tests/integration/**`). They need no database, so `pnpm verify` works with Docker stopped.
 - Vitest integration tests: `tests/integration/**/*.test.ts`, run only by `pnpm test:integration` against the Compose PostgreSQL (never mocks, D9). A global setup drops the `ats_test_*` databases of earlier runs and migrates `ats_test_template`; each Vitest worker then works in its own clone, `ats_test_<worker id>` (T2). The setup refuses any `DATABASE_URL` host other than `localhost`, `127.0.0.1` or `postgres`, and `APP_ENV=azure`. It defaults to the Compose credentials when `DATABASE_URL` is unset. Run a single file with `pnpm test:integration tests/integration/<file>`.
-- Playwright specs: `tests/e2e/**/*.spec.ts`.
+- Playwright specs: `tests/e2e/**/*.spec.ts`, run by `pnpm test:e2e` against a running app at `E2E_BASE_URL` (default `http://localhost:3000`, the Compose stack): start it with `docker compose up --build -d` and migrate it first (see "Local stack"). Chromium only; one retry when `CI` is set; trace, video and screenshot are kept on failure in `test-results/`. See "Sign-in and end-to-end tests" below.
 
 Rule traceability (`pnpm test:rules`, tech-stack.md §11 T1):
 
 - A test covers rule `X` when the title of the `test(...)`/`it(...)` call itself starts with `X:` (e.g. `test("R7: status change cancels pending rejection email", ...)`). IDs match exactly (`AU2:` is not `A2:`), one per test. Titles on `describe(...)` and skipped, todo, fixme or failing tests don't count.
 - Required IDs that have no test yet are listed in `tests/rules-pending.json`. Every task that adds the first test for an ID removes that ID from the list in the same change; the scan fails if a pending ID already has a test, if a required ID is neither tested nor pending, or if a title starts with an unknown rule-shaped ID.
 - Pull requests run the same checks in `.github/workflows/ci.yml`: `pnpm verify`, then `pnpm db:migrate` and `pnpm test:integration` against a `postgres:17` service container, then `pnpm build`.
+
+## Sign-in and end-to-end tests
+
+- Staff sign in at `/sign-in`. Locally and in CI (`AUTH_DEV_LOGIN=true`) the page shows an email and password form (dev sign-in, AU7); sign-up is always disabled, so dev users are created with `ensureDevUser()` from `src/server/auth/dev-users.ts` (the Playwright setup, and the demo seed from task 17). Without dev login the form isn't shown (task 11 adds Microsoft sign-in).
+- Sessions are database rows (`session` table) with an 8 h sliding expiry and a Secure, HTTP-only, SameSite=Lax cookie, even on `http://localhost` (AU6). Server code gets the signed-in user with `getCurrentUser()` from `src/server/auth/current-user.ts`, which reloads the role and active flag on every request (AU5); protected route handlers use `requireApiUser(request)`, which returns a 401 response when signed out.
+- `src/proxy.ts` only checks that the session cookie is present. Paths outside its public list (`PUBLIC_PATHS`) redirect to `/sign-in?next=…` (pages) or return 401 JSON (`/api/**`). `/api/internal/tick` is public because it has its own secret.
+- `pnpm test:e2e` runs two Playwright invocations: the `parallel` project, then the `time-travel` project, and fails if either failed. Both depend on the `setup` project, which makes sure four users exist — `e2e-admin@example.com`, `e2e-recruiter@example.com`, `e2e-hiring-manager@example.com` and `e2e-interviewer@example.com` — gives each a fresh random password (never stored), signs them in and saves the state to `tests/e2e/.auth/<role>.json` (gitignored). Specs open a signed-in page with the `asRole(role)` fixture from `tests/e2e/support/fixtures.ts`. Specs that change a user's role or active flag create their own throwaway `e2e-<uuid>@example.com` user and never touch the four shared ones.
+- Playwright reads the database connection and `TICK_SECRET` from the `app` service in `docker-compose.yml` (with the PostgreSQL host changed to `localhost`); `E2E_DATABASE_URL` and `E2E_TICK_SECRET` override them.
+- Time-travel rules (T2): specs that send `x-test-now` or depend on daily tasks live in `tests/e2e/time-travel/` and run alone, one at a time, after the parallel specs, because the clock shift and the daily tasks act on the whole shared database. Every time-travel spec uses a `TEST_NOW` date no other spec uses, or asserts only on data it created, and must pass when rerun against the same database. A unit test in `pnpm verify` fails if any file under `tests/e2e/` outside that folder contains `x-test-now` (any letter case) or imports from it.
 
 ## Local stack (Docker Compose)
 

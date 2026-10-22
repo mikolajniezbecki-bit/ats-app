@@ -7,5 +7,23 @@
     "description": "An unexpected error occurred. Please try again; if the problem persists, contact support.",
     "requestId": "Please quote this request ID: {requestId}",
     "retry": "Try again"
+  },
+  "SignIn": {
+    "title": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "invalidCredentials": "Invalid email or password.",
+    "accessNotGranted": "Access not granted, contact your ATS admin.",
+    "failed": "Sign-in failed. Please try again.",
+    "devOnly": "Dev sign-in (local and CI only)",
+    "unavailable": "Sign-in with email and password is not available in this environment."
+  },
+  "Dashboard": {
+    "title": "Dashboard",
+    "signedInAs": "Signed in as {name}",
+    "role": "Role: {role}",
+    "signOut": "Sign out"
   }
 }

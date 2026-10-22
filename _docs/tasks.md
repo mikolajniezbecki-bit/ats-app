@@ -145,7 +145,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - A test shows a job delayed by 24 h runs on a tick with `x-test-now` 25 h ahead, and `TEST_NOW` is ignored when `AUTH_DEV_LOGIN` is not `true`.
 - `pnpm worker` processes a queued daily-task job (moved from task 8).
 
-## 10. Staff sessions and dev sign-in
+## 10. Staff sessions and dev sign-in ✅
 
 **Issue:** [#16](https://github.com/mikolajniezbecki-bit/ats-app/issues/16)
 

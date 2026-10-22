@@ -15,6 +15,13 @@
       "when": 1792668837919,
       "tag": "0001_recruiting_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792698368467,
+      "tag": "0002_auth_tables",
+      "breakpoints": true
     }
   ]
 }
