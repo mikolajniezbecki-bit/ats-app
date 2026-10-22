@@ -2,6 +2,7 @@
 // worker's own database (ats_test_<pool id>), cloned from the migrated
 // template on the worker's first file. Workers never share a database (T2).
 import { afterAll, inject } from "vitest";
+import { stopJobQueue } from "@/server/adapters/job-queue";
 import { closeDb } from "@/server/db";
 import { TEMPLATE_DATABASE, WORKER_DATABASE_PREFIX, databaseUrlFor, quoteIdent, withAdminClient } from "./database";
 
@@ -34,4 +35,7 @@ await withAdminClient(baseUrl, async (client) => {
 process.env.DATABASE_URL = databaseUrlFor(baseUrl, database);
 for (const [key, value] of Object.entries(TEST_ENV)) process.env[key] ??= value;
 
-afterAll(closeDb);
+afterAll(async () => {
+  await stopJobQueue();
+  await closeDb();
+});

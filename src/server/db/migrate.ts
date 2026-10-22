@@ -2,8 +2,10 @@
 // (runtime dependencies only); the SQL files sit in `migrations/` next to the
 // bundle: dist/db/ locally, /app/db/ in the image.
 import path from "node:path";
+import { ensureJobQueues } from "../adapters/job-queue";
 import { ConfigError, getConfig } from "../config";
 import { logger } from "../logger";
+import { createPool } from "./index";
 import { isConnectionError, rootCause, runMigrations } from "./migrator";
 
 async function main(): Promise<number> {
@@ -20,6 +22,13 @@ async function main(): Promise<number> {
 
   try {
     await runMigrations(connectionString, path.join(import.meta.dirname, "migrations"));
+    // Then the pgboss schema and the four queues (J5), with the same login.
+    const pool = createPool(connectionString, { max: 2 });
+    try {
+      await ensureJobQueues({ pool });
+    } finally {
+      await pool.end();
+    }
   } catch (err) {
     // Only the error code and message: never the connection string.
     const { code, message } = rootCause(err) as { code?: string; message?: string };

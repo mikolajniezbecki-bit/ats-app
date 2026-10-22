@@ -59,3 +59,24 @@ export function quoteIdent(name: string): string {
   if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`Unexpected database name ${name}`);
   return `"${name}"`;
 }
+
+/**
+ * Runs `fn` with the URL of a new database, then drops it. The database is
+ * empty, or a clone of the migrated template; its name starts with the worker
+ * prefix, so the global setup drops it if a run is interrupted.
+ */
+export async function withScratchDatabase<T>(
+  baseUrl: string,
+  suffix: string,
+  options: { fromTemplate: boolean },
+  fn: (url: string) => Promise<T>,
+): Promise<T> {
+  const database = `${WORKER_DATABASE_PREFIX}${suffix}_${process.env.VITEST_POOL_ID ?? "1"}`;
+  const template = options.fromTemplate ? ` TEMPLATE ${quoteIdent(TEMPLATE_DATABASE)}` : "";
+  await withAdminClient(baseUrl, (client) => client.query(`CREATE DATABASE ${quoteIdent(database)}${template}`));
+  try {
+    return await fn(databaseUrlFor(baseUrl, database));
+  } finally {
+    await withAdminClient(baseUrl, (client) => client.query(`DROP DATABASE ${quoteIdent(database)} WITH (FORCE)`));
+  }
+}

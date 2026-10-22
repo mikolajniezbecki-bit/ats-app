@@ -1,6 +1,9 @@
 // Runs once per `pnpm test:integration`: drops the databases of earlier runs,
-// then creates and migrates the template database every worker clones (T2).
+// then creates and migrates the template database every worker clones (T2),
+// including the pgboss schema and queues.
 import type { TestProject } from "vitest/node";
+import { ensureJobQueues } from "@/server/adapters/job-queue";
+import { createPool } from "@/server/db";
 import { runMigrations } from "@/server/db/migrator";
 import {
   TEMPLATE_DATABASE,
@@ -31,7 +34,15 @@ export default async function setup(project: TestProject): Promise<void> {
     await client.query(`CREATE DATABASE ${quoteIdent(TEMPLATE_DATABASE)}`);
   });
 
-  await runMigrations(databaseUrlFor(baseUrl, TEMPLATE_DATABASE), "src/server/db/migrations");
+  const templateUrl = databaseUrlFor(baseUrl, TEMPLATE_DATABASE);
+  await runMigrations(templateUrl, "src/server/db/migrations");
+  // The pgboss schema and the four queues, as db:migrate creates them (J5).
+  const pool = createPool(templateUrl, { max: 2 });
+  try {
+    await ensureJobQueues({ pool });
+  } finally {
+    await pool.end();
+  }
 
   project.provide("integrationDatabaseUrl", baseUrl);
 }
