@@ -25,10 +25,13 @@ RUN pnpm build && pnpm db:build
 # Later tasks add db:seed and seed:admin.
 FROM node:24-slim AS runtime
 WORKDIR /app
+# NEXT_MANUAL_SIG_HANDLE: Next.js would exit on SIGTERM at once; the app's own
+# handler first lets active jobs finish and stops pg-boss (W6).
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    NEXT_MANUAL_SIG_HANDLE=true
 # Files stay owned by root (read-only for the app user); only Next's cache
 # directory is writable.
 COPY --from=build /app/.next/standalone ./
