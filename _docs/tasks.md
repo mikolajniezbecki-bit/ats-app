@@ -67,7 +67,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - The app container starts with `AUTH_DEV_LOGIN=true`, `APP_ENV=ci`, `EMAIL_PROVIDER=smtp` and `NODE_ENV=production` on a fresh clone with no `.env`.
 - Mailpit's web UI is reachable on `localhost:8025`; the README describes how to start and stop the stack.
 
-## 5. Database access and administration tables
+## 5. Database access and administration tables ✅
 
 **Issue:** [#9](https://github.com/mikolajniezbecki-bit/ats-app/issues/9)
 
