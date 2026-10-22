@@ -16,7 +16,7 @@ import {
   offers,
   prescreenQuestions,
 } from "@/server/db/schema";
-import { TEMPLATE_DATABASE, WORKER_DATABASE_PREFIX, databaseUrlFor, quoteIdent, withAdminClient } from "./database";
+import { withScratchDatabase } from "./database";
 import {
   applicationValues,
   insertApplication,
@@ -27,21 +27,16 @@ import {
 } from "./fixtures";
 import { PG, expectPgError, rolledBack, unique } from "./helpers";
 
-/** Runs `fn` against a new database cloned from the migrated template, then drops it. */
-async function inFreshDatabase(fn: (tx: Tx) => Promise<void>): Promise<void> {
-  const baseUrl = inject("integrationDatabaseUrl");
-  // The worker prefix makes the global setup drop it if a run is interrupted.
-  const database = `${WORKER_DATABASE_PREFIX}fresh_${process.env.VITEST_POOL_ID ?? "1"}`;
-  await withAdminClient(baseUrl, (client) =>
-    client.query(`CREATE DATABASE ${quoteIdent(database)} TEMPLATE ${quoteIdent(TEMPLATE_DATABASE)}`),
-  );
-  const pool = createPool(databaseUrlFor(baseUrl, database), { max: 1 });
-  try {
-    await drizzle({ client: pool, schema }).transaction(fn);
-  } finally {
-    await pool.end();
-    await withAdminClient(baseUrl, (client) => client.query(`DROP DATABASE ${quoteIdent(database)} WITH (FORCE)`));
-  }
+/** Runs `fn` in a transaction on a new database cloned from the migrated template. */
+function inFreshDatabase(fn: (tx: Tx) => Promise<void>): Promise<void> {
+  return withScratchDatabase(inject("integrationDatabaseUrl"), "fresh", { fromTemplate: true }, async (url) => {
+    const pool = createPool(url, { max: 1 });
+    try {
+      await drizzle({ client: pool, schema }).transaction(fn);
+    } finally {
+      await pool.end();
+    }
+  });
 }
 
 describe("requisitions.req_number", () => {

@@ -40,6 +40,12 @@ export function getDb(): Db {
   return state.db;
 }
 
+/** The pool behind getDb(); pg-boss runs on it instead of opening its own (D5). */
+export function getPool(): pg.Pool {
+  getDb();
+  return state!.pool;
+}
+
 /** Ends the pool; scripts and test teardown call it so the process can exit. */
 export async function closeDb(): Promise<void> {
   const current = state;
