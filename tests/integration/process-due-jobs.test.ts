@@ -1,6 +1,8 @@
 // The J7 test helper: processes due jobs synchronously, without a worker and
 // without waiting in real time (W9). Each test uses its own test-only queue.
 import { describe, expect, it } from "vitest";
+import { jobQueue } from "@/server/adapters/job-queue";
+import { withTransaction } from "@/server/db";
 import { processDueJobs } from "../support/process-due-jobs";
 import { createTestQueue, jobState, sendTestJob } from "../support/jobs";
 
@@ -68,7 +70,13 @@ describe("processDueJobs", () => {
   });
 
   it("uses the production registry by default", async () => {
-    // Empty until task 9, so nothing in the four declared queues is touched.
-    expect(await processDueJobs()).toEqual({ processed: 0, failed: 0 });
+    // Since task 18 the registry handles email.send. Other files in this
+    // worker leave email.send jobs behind, so drain them first; then exactly
+    // the job sent here is processed (for an unknown row the handler is a
+    // no-op), which a call with no production handlers would not do.
+    await processDueJobs();
+    const jobId = await withTransaction((tx) => jobQueue.enqueue(tx, "email.send", { emailLogId: crypto.randomUUID() }));
+    expect(await processDueJobs()).toEqual({ processed: 1, failed: 0 });
+    expect(await jobState("email.send", jobId)).toBe("completed");
   });
 });

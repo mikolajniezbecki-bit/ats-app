@@ -47,4 +47,11 @@ describe("ci.yml", () => {
     const index = (s: Step | undefined) => job.steps.indexOf(s!);
     expect(index(start)).toBeLessThan(index(job.steps.find((step) => step.run?.startsWith("pnpm test:integration"))));
   });
+
+  it("runs Mailpit as a service with the docker-compose.yml image, on the SMTP and API ports", () => {
+    const compose = parse(readFileSync(path.resolve("docker-compose.yml"), "utf8")) as { services: { mailpit: { image: string } } };
+    const mailpit = job.services.mailpit as { image: string; ports: string[] };
+    expect(mailpit.image).toBe(compose.services.mailpit.image);
+    expect(mailpit.ports).toEqual(["1025:1025", "8025:8025"]);
+  });
 });

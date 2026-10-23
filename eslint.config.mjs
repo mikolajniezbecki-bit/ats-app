@@ -15,9 +15,11 @@ const eslintConfig = defineConfig([
         {
           paths: [
             { name: "pg-boss", message: "Use the JobQueue adapter in src/server/adapters/job-queue (J4)." },
+            { name: "nodemailer", message: "Queue emails with queueEmail() in src/server/email; only src/server/adapters/email talks to Nodemailer." },
           ],
           patterns: [
             { group: ["pg-boss/*"], message: "Use the JobQueue adapter in src/server/adapters/job-queue (J4)." },
+            { group: ["nodemailer/*"], message: "Only src/server/adapters/email talks to Nodemailer (§3 rule 4)." },
             // @azure/storage-blob and @azure/identity: use StorageService (§8).
             { group: ["@azure/*"], message: "Use the StorageService adapter in src/server/adapters/storage (§3 rule 4)." },
           ],

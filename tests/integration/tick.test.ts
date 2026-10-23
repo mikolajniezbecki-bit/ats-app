@@ -217,7 +217,7 @@ describe("run once", () => {
     expect(await status()).toBe("COMPLETED");
 
     // J3: a duplicate delivery of a completed run does nothing.
-    await handler({ id: job.id, queue: "approvals.remind", data: job.data });
+    await handler({ id: job.id, queue: "approvals.remind", data: job.data, retryCount: 0 });
     expect(calls).toBe(2);
   });
 });
