@@ -45,11 +45,12 @@ export async function applyAction(form: FormData): Promise<ApplyState> {
   for (const [name, value] of form.entries()) {
     if (name.startsWith("q_") && typeof value === "string") (answers[name.slice(2)] ??= []).push(value);
   }
-  let stamp: ApplyInput["questionStamp"] = [];
+  // Checked against questionStampSchema by submitApplication; unparsable JSON fails that check.
+  let stamp: unknown = null;
   try {
-    stamp = JSON.parse(String(form.get("questionStamp") ?? "[]")) as ApplyInput["questionStamp"];
+    stamp = JSON.parse(String(form.get("questionStamp") ?? "[]"));
   } catch {
-    stamp = [];
+    stamp = null;
   }
   const input: ApplyInput = {
     route,
@@ -61,7 +62,7 @@ export async function applyAction(form: FormData): Promise<ApplyState> {
       consent: form.get("consent") === "on",
     },
     answers,
-    questionStamp: Array.isArray(stamp) ? stamp : [],
+    questionStamp: stamp,
     consentVersion: String(form.get("consentVersion") ?? ""),
     cv: await file(form.get("cv")),
     coverLetter: await file(form.get("coverLetter")),

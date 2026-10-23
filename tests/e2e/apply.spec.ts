@@ -1,9 +1,10 @@
 // Quick Apply on the Compose stack (ats-project-scope.md §5.3, F2, F7, E8).
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { type Page, expect, test } from "@playwright/test";
 import { waitForMessage } from "../support/mailpit";
-import { fillApplication, newCandidate } from "./support/apply";
+import { VALID_PDF, fillApplication, newCandidate } from "./support/apply";
 import { query } from "./support/db";
 import { insertQuestion, insertRequisition } from "./support/requisitions";
 
@@ -103,17 +104,21 @@ test("an unpublished job shows the closed message and no form", async ({ page })
   await expect(page.getByRole("form", { name: "Application form" })).toHaveCount(0);
 });
 
-test.describe("with MAX_UPLOAD_MB = 1", () => {
+// MAX_UPLOAD_MB is a global setting, so the specs that change it run one
+// after the other and restore it themselves.
+test.describe("upload limits", () => {
   test.describe.configure({ mode: "serial" });
-  let previous: string | undefined;
-  test.beforeAll(async () => {
-    previous = (await query<{ value: string }>("SELECT value FROM settings WHERE key = 'MAX_UPLOAD_MB'"))[0]?.value;
-    await query("INSERT INTO settings (key, value) VALUES ('MAX_UPLOAD_MB', '1') ON CONFLICT (key) DO UPDATE SET value = '1'");
-  });
-  test.afterAll(async () => {
-    if (previous === undefined) await query("DELETE FROM settings WHERE key = 'MAX_UPLOAD_MB'");
-    else await query("UPDATE settings SET value = $1 WHERE key = 'MAX_UPLOAD_MB'", [previous]);
-  });
+
+  async function withMaxUpload(value: string, run: () => Promise<void>) {
+    const previous = (await query<{ value: string }>("SELECT value FROM settings WHERE key = 'MAX_UPLOAD_MB'"))[0]?.value;
+    await query("INSERT INTO settings (key, value) VALUES ('MAX_UPLOAD_MB', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [value]);
+    try {
+      await run();
+    } finally {
+      if (previous === undefined) await query("DELETE FROM settings WHERE key = 'MAX_UPLOAD_MB'");
+      else await query("UPDATE settings SET value = $1 WHERE key = 'MAX_UPLOAD_MB'", [previous]);
+    }
+  }
 
   const twoMiB = () => {
     const bytes = Buffer.alloc(2 * 1_048_576, 0x20);
@@ -121,38 +126,68 @@ test.describe("with MAX_UPLOAD_MB = 1", () => {
     return { name: "big.pdf", mimeType: "application/pdf", buffer: bytes };
   };
 
-  test("F2: the browser refuses a 2 MiB PDF and sends no request", async ({ page }) => {
-    const job = await insertRequisition(live);
-    const candidate = newCandidate();
-    await page.goto(`/apply/${job.id}`);
-    const form = await fillApplication(page, candidate);
-    await form.getByLabel("CV (PDF)").setInputFiles(twoMiB());
-    await expect(form.getByText("The file is larger than 1 MB.")).toBeVisible();
-    let posted = false;
-    page.on("request", (request) => {
-      if (request.method() === "POST") posted = true;
-    });
-    await form.getByRole("button", { name: "Submit application" }).click();
-    await page.waitForTimeout(500);
-    expect(posted).toBe(false);
-    expect(await applicationFor(candidate.email)).toHaveLength(0);
-  });
+  test("F2: the browser refuses a 2 MiB PDF and sends no request", async ({ page }) =>
+    withMaxUpload("1", async () => {
+      const job = await insertRequisition(live);
+      const candidate = newCandidate();
+      await page.goto(`/apply/${job.id}`);
+      const form = await fillApplication(page, candidate);
+      await form.getByLabel("CV (PDF)").setInputFiles(twoMiB());
+      await expect(form.getByText("The file is larger than 1 MB.")).toBeVisible();
+      let posted = false;
+      page.on("request", (request) => {
+        if (request.method() === "POST") posted = true;
+      });
+      await form.getByRole("button", { name: "Submit application" }).click();
+      await page.waitForTimeout(500);
+      expect(posted).toBe(false);
+      expect(await applicationFor(candidate.email)).toHaveLength(0);
+    }));
 
-  test("F2: skipping the browser check, the server refuses the file as too large", async ({ page }) => {
-    const job = await insertRequisition(live);
-    const candidate = newCandidate();
-    await page.goto(`/apply/${job.id}`);
-    const form = await fillApplication(page, candidate);
-    // Replace the file without a change event, so the browser check never runs.
-    await form.getByLabel("CV (PDF)").evaluate((input: HTMLInputElement) => {
-      const bytes = new Uint8Array(2 * 1_048_576).fill(0x20);
-      bytes.set(new TextEncoder().encode("%PDF-1.4\n"));
-      const transfer = new DataTransfer();
-      transfer.items.add(new File([bytes], "big.pdf", { type: "application/pdf" }));
-      input.files = transfer.files;
-    });
-    await form.getByRole("button", { name: "Submit application" }).click();
-    await expect(form.getByText("The file is larger than 1 MB.")).toBeVisible();
-    expect(await applicationFor(candidate.email)).toHaveLength(0);
-  });
+  test("F2: skipping the browser check, the server refuses the file as too large", async ({ page }) =>
+    withMaxUpload("1", async () => {
+      const job = await insertRequisition(live);
+      const candidate = newCandidate();
+      await page.goto(`/apply/${job.id}`);
+      const form = await fillApplication(page, candidate);
+      // Replace the file without a change event, so the browser check never runs.
+      await form.getByLabel("CV (PDF)").evaluate((input: HTMLInputElement) => {
+        const bytes = new Uint8Array(2 * 1_048_576).fill(0x20);
+        bytes.set(new TextEncoder().encode("%PDF-1.4\n"));
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([bytes], "big.pdf", { type: "application/pdf" }));
+        input.files = transfer.files;
+      });
+      await form.getByRole("button", { name: "Submit application" }).click();
+      await expect(form.getByText("The file is larger than 1 MB.")).toBeVisible();
+      expect(await applicationFor(candidate.email)).toHaveLength(0);
+    }));
+
+  test("two 9.5 MiB PDFs with MAX_UPLOAD_MB = 10 get through the proxy and the server action and are stored", async ({ page }) =>
+    withMaxUpload("10", async () => {
+      const valid = readFileSync(VALID_PDF);
+      // A valid PDF padded with spaces after %%EOF still parses.
+      const big = (name: string) => {
+        const bytes = Buffer.alloc(Math.round(9.5 * 1_048_576), 0x20);
+        valid.copy(bytes);
+        return { name, mimeType: "application/pdf", buffer: bytes };
+      };
+      const job = await insertRequisition(live);
+      const candidate = newCandidate();
+      await page.goto(`/apply/${job.id}`);
+      const form = await fillApplication(page, candidate);
+      await form.getByLabel("CV (PDF)").setInputFiles(big("cv.pdf"));
+      await form.getByLabel("Cover letter (PDF, optional)").setInputFiles(big("letter.pdf"));
+      await form.getByRole("button", { name: "Submit application" }).click();
+      await expect(page.getByRole("heading", { name: "Thank you" })).toBeVisible({ timeout: 30_000 });
+      const [application] = await applicationFor(candidate.email);
+      const stored = await query<{ kind: string; size_bytes: number }>(
+        "SELECT kind, size_bytes FROM files WHERE owner_id = $1 ORDER BY kind",
+        [application.id],
+      );
+      expect(stored.map((file) => [file.kind, Number(file.size_bytes)])).toEqual([
+        ["COVER_LETTER", Math.round(9.5 * 1_048_576)],
+        ["CV", Math.round(9.5 * 1_048_576)],
+      ]);
+    }));
 });

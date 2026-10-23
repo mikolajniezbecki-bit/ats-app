@@ -11,7 +11,7 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { getConfig } from "../config";
 import { type Tx, getDb, withTransaction } from "../db";
 import { applicationHistory, applications, prescreenAnswers, prescreenQuestions, requisitions } from "../db/schema";
-import { type ApplyQuestion, applicantErrors, applicantSchema, computeEmailHash, parseAnswers } from "../domain/apply";
+import { type ApplyQuestion, applicantErrors, applicantSchema, computeEmailHash, parseAnswers, questionStampSchema } from "../domain/apply";
 import { InvalidAnswerError, scorePrescreen } from "../domain/prescreen/scoring";
 import { queueTemplateEmail } from "../email";
 import { PdfRejectedError, maxUploadBytes, storePdf } from "../files/store-pdf";
@@ -32,8 +32,8 @@ export type ApplyInput = {
   fields: { firstName: string; lastName: string; email: string; phone: string; consent: boolean };
   /** Question ID → the raw form values (several for MULTI). */
   answers: Record<string, string[]>;
-  /** The active questions the form showed: ID and `updated_at` (ISO). */
-  questionStamp: { id: string; updatedAt: string }[];
+  /** The active questions the form showed: ID and `updated_at` (ISO); validated with questionStampSchema. */
+  questionStamp: unknown;
   /** The `PRIVACY_STATEMENT_VERSION` the form showed. */
   consentVersion: string;
   cv: UploadedFile | null;
@@ -87,6 +87,9 @@ export async function submitApplication(input: ApplyInput): Promise<ApplyResult>
   const job = await findJobForRoute(input.route);
   if (!job) return { ok: false, reason: "notFound" };
   if (!job.isPublished) return { ok: false, reason: "closed" };
+  // A stamp that isn't the form's own shape can't match the current questions.
+  const stamp = questionStampSchema.safeParse(input.questionStamp);
+  if (!stamp.success) return { ok: false, reason: "questionsChanged" };
 
   // Everything that needs no lock is checked before the transaction, so a
   // bad upload never reaches storage.
@@ -132,7 +135,7 @@ export async function submitApplication(input: ApplyInput): Promise<ApplyResult>
         .where(eq(prescreenQuestions.requisitionId, job.id))
         .orderBy(asc(prescreenQuestions.sortOrder))
         .for("share");
-      const shown = input.questionStamp.map((entry) => `${entry.id}@${entry.updatedAt}`).sort().join(",");
+      const shown = stamp.data.map((entry) => `${entry.id}@${entry.updatedAt}`).sort().join(",");
       if (shown !== stampOf(rows)) throw new Refusal({ ok: false, reason: "questionsChanged" });
 
       // 5. The privacy statement the candidate saw is still the current one.

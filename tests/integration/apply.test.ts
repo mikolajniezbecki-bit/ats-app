@@ -239,6 +239,14 @@ describe("submitApplication", () => {
     expect(await getDb().select().from(applications).where(eq(applications.requisitionId, requisition.id))).toEqual([]);
   });
 
+  it("a question stamp that isn't the form's shape is refused as changed questions, not a server error", async () => {
+    const requisition = await job();
+    for (const questionStamp of [[null], "nope", [{ id: 1 }], [{ id: "x", updatedAt: "y", extra: true }], null]) {
+      expect(await submitApplication(await input(requisition, { questionStamp })), JSON.stringify(questionStamp)).toEqual({ ok: false, reason: "questionsChanged" });
+    }
+    expect(await getDb().select().from(applications).where(eq(applications.requisitionId, requisition.id))).toEqual([]);
+  });
+
   it("a changed privacy version is refused", async () => {
     const requisition = await job();
     expect(await submitApplication(await input(requisition, { consentVersion: "0.9" }))).toEqual({ ok: false, reason: "consentChanged" });

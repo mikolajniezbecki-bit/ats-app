@@ -36,6 +36,11 @@ export function applicantErrors(error: z.ZodError): Record<string, string> {
   return errors;
 }
 
+/** The active questions the form showed (ID and `updated_at`), posted back as JSON. */
+export const questionStampSchema = z.array(z.object({ id: z.string().max(100), updatedAt: z.string().max(40) }).strict()).max(50);
+
+export type QuestionStamp = z.infer<typeof questionStampSchema>;
+
 export type ApplyQuestion = { id: string; questionType: QuestionType; options: { code: string }[] };
 
 /**
