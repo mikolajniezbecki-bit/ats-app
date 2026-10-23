@@ -34,7 +34,8 @@
       "home": "Home",
       "administration": "Administration",
       "settings": "Settings",
-      "masterData": "Master data"
+      "masterData": "Master data",
+      "users": "Users"
     },
     "signOut": "Sign out"
   },
@@ -49,7 +50,8 @@
     "description": "Settings, master data, templates, users, the Outbox and background jobs.",
     "links": {
       "settings": "Settings",
-      "masterData": "Master data"
+      "masterData": "Master data",
+      "users": "Users"
     }
   },
   "Forbidden": {
@@ -146,5 +148,49 @@
       "failed": "The change could not be saved. Please try again."
     },
     "hideInactive": "Hide inactive records"
+  },
+  "AdminUsers": {
+    "title": "Users",
+    "description": "Staff accounts. Users sign in with Microsoft Entra ID once they exist here; each user has one role.",
+    "filter": {
+      "label": "Show",
+      "active": "Active",
+      "inactive": "Inactive",
+      "all": "All"
+    },
+    "columns": {
+      "email": "Email",
+      "name": "Name",
+      "role": "Role",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "active": "Active",
+    "inactive": "Inactive",
+    "empty": "No users.",
+    "add": "Add user",
+    "email": "Email",
+    "name": "Name",
+    "role": "Role",
+    "create": "Add user",
+    "saveName": "Save name",
+    "changeRole": "Change role",
+    "deactivate": "Deactivate",
+    "reactivate": "Reactivate",
+    "you": "(you)",
+    "errors": {
+      "invalid": "Check the highlighted fields.",
+      "email": "Enter a valid email address.",
+      "name": "Enter 1 to 200 characters.",
+      "role": "Choose a role.",
+      "notEditable": "The email can't be changed.",
+      "duplicate": "A user with this email already exists.",
+      "duplicateInactive": "A user with this email already exists but is inactive. Reactivate them instead.",
+      "notFound": "This user no longer exists.",
+      "ownRole": "You can't change your own role.",
+      "ownDeactivation": "You can't deactivate yourself.",
+      "lastAdmin": "There must be at least one active Admin.",
+      "failed": "The change could not be saved. Please try again."
+    }
   }
 }

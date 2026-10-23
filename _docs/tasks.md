@@ -225,7 +225,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - A referenced master data record cannot be deleted but can be deactivated, after which it no longer appears in picker APIs.
 - Non-Admin users get 403 from the settings and master data APIs: the first T5 API check of the task 12 guard.
 
-## 15. User management
+## 15. User management ✅
 
 **Issue:** [#21](https://github.com/mikolajniezbecki-bit/ats-app/issues/21)
 

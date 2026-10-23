@@ -9,4 +9,5 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/admin", labelKey: "administration", action: "admin.area" },
   { href: "/admin/settings", labelKey: "settings", action: "settings.manage" },
   { href: "/admin/master-data", labelKey: "masterData", action: "masterData.manage" },
+  { href: "/admin/users", labelKey: "users", action: "users.manage" },
 ];

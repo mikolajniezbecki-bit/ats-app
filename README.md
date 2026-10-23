@@ -114,6 +114,14 @@ default-src 'self'; script-src 'self' 'nonce-<n>' 'strict-dynamic'; style-src 's
 - Pickers call `GET /api/master-data?type=<TYPE>[&picklistKey=<key>]` (Admin, Recruiter, Hiring Manager), which returns active records only as `{ id, code, label }`, sorted by label.
 - API error texts come from `messages/en.json` through `message()` in `src/server/messages.ts`.
 
+## User management (Admin)
+
+- `/admin/users` lists users (email, name, role, status) sorted by name, filtered Active / Inactive / All. Admins create users (`POST /api/admin/users`: lower-cased email, name, one role; active, `email_verified = true`, no password — staff sign in with Entra ID, and dev sign-in passwords come only from `ensureDevUser()`), change the role or name (`PATCH /api/admin/users/<id>`; the email can't change), deactivate (`POST …/deactivate`) and reactivate (`POST …/reactivate`). The service is `src/server/users/`.
+- Deactivation sets `is_active = false` and deletes all the user's sessions in the same transaction, so they are signed out on their next request (AU5). Other references to the user stay in place. Role changes apply on the user's next request.
+- Guards: an Admin can't change their own role or deactivate themselves, and the last active Admin can't be demoted or deactivated (the active Admin rows are locked, so concurrent changes can't both pass). A duplicate email (any case, also an inactive user) returns 409.
+- Audit rows hold IDs and roles only: `USER_CREATED` (`role`), `USER_ROLE_CHANGED` (`fromRole`, `toRole`; none for the same role or a name change), `USER_DEACTIVATED` (`sessionsDeleted`), `USER_REACTIVATED`.
+- User pickers use `listActiveUsers({ roles })` or `GET /api/users/picker?role=HIRING_MANAGER&role=ADMIN` (Admin, Recruiter, Hiring Manager): active users only, with any of the given roles, as `{ id, name, email, role }`, sorted by name.
+
 ## Microsoft Entra sign-in (owner setup)
 
 Staff sign in with accounts from the project's own Entra tenant (tech-stack.md §4, AU1–AU4). Sign-in is invite-only: an Entra account gets in only if an Admin created an **active** ATS user with the same email first (task 12's `pnpm seed:admin` for the first Admin, the Admin user pages from task 15 after that). Anyone else sees "Access not granted, contact your ATS admin." and no user is created. On the first sign-in the Entra account is linked to that user; later sign-ins match the Entra object ID, so a renamed UPN still signs in the same user. Sign-in never changes the ATS user's name, email or role, and no profile photo is fetched.
