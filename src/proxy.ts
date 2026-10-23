@@ -1,12 +1,16 @@
 // tech-stack.md §3 rule 6: (a) the session cookie must be present outside the
-// public paths, and (b) every request gets a fresh request ID (M3). Only the
-// cookie's presence is checked: no database call and no role decision, which
-// pages and route handlers make on the server (AU5, AU9). The CSP (c) comes
-// with the first HTML pages that need it.
+// public paths, (b) every request gets a fresh request ID (M3), and (c) HTML
+// pages get a nonce-based CSP whose frame-src is the Blob origin, and every
+// response gets `nosniff` (§8, F5). Only the cookie's presence is checked: no
+// database call and no role decision, which pages and route handlers make on
+// the server (AU5, AU9).
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
+import { blobOrigin } from "@/server/adapters/storage/endpoints";
 import { signInUrl } from "@/server/auth/redirect";
+import { getConfig } from "@/server/config";
 import { REQUEST_ID_HEADER, assignRequestId } from "@/server/request-id";
+import { CSP_HEADER, contentSecurityPolicy, createNonce, isHtmlPagePath } from "@/server/security-headers";
 
 /** Paths that need no session cookie: exact paths and prefixes ending in `/`. */
 export const PUBLIC_PATHS = [
@@ -37,6 +41,18 @@ export function proxy(request: NextRequest) {
   const { requestId, requestHeaders } = assignRequestId(request.headers);
   const { pathname, search } = request.nextUrl;
 
+  // Next.js reads the nonce from the forwarded request's CSP header and puts
+  // it on the scripts it renders; the browser enforces the response header.
+  let csp: string | undefined;
+  if (isHtmlPagePath(pathname)) {
+    csp = contentSecurityPolicy({
+      nonce: createNonce(),
+      frameOrigin: blobOrigin(getConfig().storage),
+      dev: process.env.NODE_ENV === "development",
+    });
+    requestHeaders.set(CSP_HEADER, csp);
+  }
+
   let response: NextResponse;
   if (isPublicPath(pathname) || getSessionCookie(request)) {
     response = NextResponse.next({ request: { headers: requestHeaders } });
@@ -46,6 +62,8 @@ export function proxy(request: NextRequest) {
     response = NextResponse.redirect(new URL(signInUrl(`${pathname}${search}`), request.url), 307);
   }
   response.headers.set(REQUEST_ID_HEADER, requestId);
+  if (csp) response.headers.set(CSP_HEADER, csp);
+  response.headers.set("X-Content-Type-Options", "nosniff");
   return response;
 }
 

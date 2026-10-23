@@ -29,6 +29,12 @@ const REDACTED_KEYS = [
   "cookie",
   "set-cookie",
   "x-tick-secret",
+  // Signed file links grant access until they expire (V11); original file
+  // names are personal data (RT4).
+  "url",
+  "signedUrl",
+  "originalName",
+  "original_name",
 ];
 
 export const REDACT_PATHS = REDACTED_KEYS.flatMap((key) => {

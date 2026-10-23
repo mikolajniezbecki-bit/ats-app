@@ -5,16 +5,22 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Only adapters talk to pg-boss; domain code uses the JobQueue interface
-  // (tech-stack.md §3 rule 4, J4).
+  // Only adapters talk to external SDKs (tech-stack.md §3 rule 4): pg-boss
+  // behind JobQueue (J4), the Azure SDK behind StorageService (§8).
   {
     ignores: ["src/server/adapters/**"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
-          paths: [{ name: "pg-boss", message: "Use the JobQueue adapter in src/server/adapters/job-queue (J4)." }],
-          patterns: [{ group: ["pg-boss/*"], message: "Use the JobQueue adapter in src/server/adapters/job-queue (J4)." }],
+          paths: [
+            { name: "pg-boss", message: "Use the JobQueue adapter in src/server/adapters/job-queue (J4)." },
+          ],
+          patterns: [
+            { group: ["pg-boss/*"], message: "Use the JobQueue adapter in src/server/adapters/job-queue (J4)." },
+            // @azure/storage-blob and @azure/identity: use StorageService (§8).
+            { group: ["@azure/*"], message: "Use the StorageService adapter in src/server/adapters/storage (§3 rule 4)." },
+          ],
         },
       ],
     },

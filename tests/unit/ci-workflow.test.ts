@@ -4,7 +4,7 @@ import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import { CONFIG_KEYS, loadConfig } from "@/server/config";
 
-type Step = { run?: string; env?: Record<string, string> };
+type Step = { name?: string; run?: string; env?: Record<string, string> };
 type Workflow = {
   jobs: { ci: { env?: Record<string, string>; services: Record<string, { image: string }>; steps: Step[] } };
 };
@@ -34,5 +34,17 @@ describe("ci.yml", () => {
     const buildEnv = { ...job.env, ...build.env };
     expect(Object.keys(buildEnv).filter((key) => (CONFIG_KEYS as string[]).includes(key))).toEqual([]);
     expect(JSON.stringify(buildEnv)).not.toMatch(/postgres(ql)?:\/\//);
+  });
+
+  it("starts Azurite with the same image and command as docker-compose.yml, before the integration tests", () => {
+    const compose = parse(readFileSync(path.resolve("docker-compose.yml"), "utf8")) as {
+      services: { azurite: { image: string; command: string } };
+    };
+    const start = job.steps.find((step) => step.name === "Start Azurite")!;
+    const command = start.run!.replace(/\s+/g, " ");
+    expect(command).toContain(`${compose.services.azurite.image} ${compose.services.azurite.command}`);
+    expect(command).toContain("-p 10000:10000");
+    const index = (s: Step | undefined) => job.steps.indexOf(s!);
+    expect(index(start)).toBeLessThan(index(job.steps.find((step) => step.run?.startsWith("pnpm test:integration"))));
   });
 });

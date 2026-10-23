@@ -19,7 +19,12 @@ export const E2E_DATABASE_URL =
 
 export const E2E_TICK_SECRET = process.env.E2E_TICK_SECRET ?? appEnv.TICK_SECRET;
 
-/** The app's configuration as host-side scripts need it, pointed at the same database. */
+/** The app's configuration as host-side scripts need it, pointed at the same database and Azurite. */
 export function hostAppEnvironment(): Record<string, string> {
-  return { ...appEnv, DATABASE_URL: E2E_DATABASE_URL, LOG_LEVEL: "silent" };
+  return {
+    ...appEnv,
+    DATABASE_URL: E2E_DATABASE_URL,
+    AZURE_STORAGE_CONNECTION_STRING: appEnv.AZURE_STORAGE_CONNECTION_STRING.replace("//azurite:", "//localhost:"),
+    LOG_LEVEL: "silent",
+  };
 }

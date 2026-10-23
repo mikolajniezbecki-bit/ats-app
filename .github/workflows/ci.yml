@@ -50,6 +50,16 @@ jobs:
 
       - run: pnpm verify
 
+      # Azurite for the storage integration tests (tech-stack.md §8). Started
+      # here rather than as a service container, because a service can't take
+      # a command and the SDK's API version needs --skipApiVersionCheck. Same
+      # image and command as docker-compose.yml (a unit test keeps them equal).
+      - name: Start Azurite
+        run: >-
+          docker run -d --name azurite -p 10000:10000
+          mcr.microsoft.com/azure-storage/azurite:3.37.0
+          azurite-blob --blobHost 0.0.0.0 --location /data --skipApiVersionCheck
+
       # db:migrate validates the whole configuration (getConfig()), so it gets
       # the same kind of fake values as docker-compose.yml.
       - run: pnpm db:migrate

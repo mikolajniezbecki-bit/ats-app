@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   startJobQueue: vi.fn(),
   ensureJobQueues: vi.fn(),
   workQueues: vi.fn(),
+  ensureContainer: vi.fn(),
 }));
 
 vi.mock("@/server/config", async (importOriginal) => ({
@@ -21,8 +22,12 @@ vi.mock("@/server/adapters/job-queue", () => ({
   stopJobQueue: vi.fn(),
 }));
 
+vi.mock("@/server/adapters/storage", () => ({
+  getStorage: () => ({ ensureContainer: mocks.ensureContainer }),
+}));
+
 const { register } = await import("@/instrumentation");
-const { startWebProcess } = await import("@/worker/startup");
+const { ensureFilesContainer, startWebProcess } = await import("@/worker/startup");
 
 function config(workerEnabled: boolean) {
   return { workerEnabled };
@@ -34,6 +39,7 @@ describe("web process start-up", () => {
     mocks.startJobQueue.mockResolvedValue(undefined);
     mocks.ensureJobQueues.mockResolvedValue(undefined);
     mocks.workQueues.mockImplementation(async (handlers: object) => Object.keys(handlers));
+    mocks.ensureContainer.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -97,5 +103,16 @@ describe("web process start-up", () => {
       exit.mockRestore();
       delete global.__atsStartup;
     }
+  });
+
+  it("ensures the files container at start-up", async () => {
+    await startWebProcess();
+    expect(mocks.ensureContainer).toHaveBeenCalledOnce();
+  });
+
+  it("retries the files container and then gives up without failing start-up", async () => {
+    mocks.ensureContainer.mockRejectedValue(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }));
+    await expect(ensureFilesContainer(3, 1)).resolves.toBeUndefined();
+    expect(mocks.ensureContainer).toHaveBeenCalledTimes(3);
   });
 });
