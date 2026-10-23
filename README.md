@@ -6,7 +6,7 @@ Custom ATS & career portal. Specs live in `_docs/` (start with `ats-project-scop
 
 Requires Node.js 24 and pnpm (the version pinned in `package.json` `packageManager`; `corepack enable` picks it up).
 
-In GitHub Codespaces (or VS Code Dev Containers), `.devcontainer/devcontainer.json` provides a slim Node 24 image with Docker-in-Docker and the GitHub CLI. Its first start runs `pnpm install`, installs Playwright's Chromium with its system libraries, and installs Claude Code. Every start also adds a firewall rule that lets the Compose containers reach each other.
+In GitHub Codespaces (or VS Code Dev Containers), `.devcontainer/devcontainer.json` provides a slim Node 24 image with Docker-in-Docker, the GitHub CLI and Git LFS (the clone's Git hooks need it). Its first start runs `pnpm install`, installs Playwright's Chromium with its system libraries, and installs Claude Code. Every start also adds a firewall rule that lets the Compose containers reach each other.
 
 ```sh
 pnpm install   # install dependencies (fails on a Node version other than 24)

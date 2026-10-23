@@ -5,7 +5,10 @@
   "image": "mcr.microsoft.com/devcontainers/typescript-node:24-bookworm",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // The clone carries Git LFS hooks (post-checkout, pre-push, ...) that fail
+    // without git-lfs, which blocks every push.
+    "ghcr.io/devcontainers/features/git-lfs:1": {}
   },
   "containerEnv": {
     // corepack installs the pnpm version pinned in package.json without asking.
