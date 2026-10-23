@@ -12,7 +12,7 @@ import { logger } from "../logger";
 export const DEFAULT_PRIVACY_STATEMENT_TEXT = [
   "Privacy statement (demo)",
   "",
-  "This is a demonstration recruiting system. Do not submit real personal data.",
+  "This career portal is a demonstration that holds synthetic data only. Do not submit real personal data.",
   "We use the details you provide only to process your application for the position you applied for.",
   "Your application is deleted or anonymized after the retention period configured by the administrator.",
 ].join("\n");

@@ -129,6 +129,23 @@ default-src 'self'; script-src 'self' 'nonce-<n>' 'strict-dynamic'; style-src 's
 - Code loads templates with `resolveTemplate(type, name)` (active only), stage emails with `getStageTemplate(status)`, and pickers with `listActiveTemplates({ type, bulk })` or `GET /api/templates?type=<TYPE>[&bulk=true]` (Admin, Recruiter, Hiring Manager).
 - `src/server/domain/tokens/` resolves the 13 `[[TOKEN]]` placeholders in one pass with `resolveTokens(text, values, "html" | "text" | "subject")`: HTML-escaped in HTML, as-is in text, line breaks removed in subjects. An unknown token, an unclosed `[[` or a token without a value is an error, never raw output. `[[LOGO]]` takes the data: URI from `logoDataUri()` (`/public/logo.png`, a placeholder to replace for branding). `format.ts` formats dates (`15 January 2027`), amounts (`85,000.00`) and interview times in the interview's zone with its name.
 
+## Base seed (`db:seed`)
+
+Order in every environment: migrate → seed → first Admin.
+
+```sh
+pnpm db:migrate && pnpm db:seed && pnpm seed:admin --email <upn>      # host (reads .env)
+docker compose run --rm app node db/migrate.mjs                         # production image
+docker compose run --rm app node db/seed.mjs
+docker compose run --rm app node db/seed-admin.mjs --email <upn>
+```
+
+The image holds the three compiled entry points in `/app/db` (`node db/migrate.mjs`, `node db/seed.mjs`, `node db/seed-admin.mjs --email <upn>`), so the Azure `db-migrate` and `db-seed` jobs run the same commands (task 44).
+
+- **Contents** (`src/server/db/seed/data.ts`, all synthetic): one row per setting with its default and `updated_by = NULL` (shown as "Default"); Departments, Locations, Legal Entities and the `employment_type` and `seniority` picklists; the "Standard requisition" template, the "Application received" (`APPLIED`) and "Application rejected" (`REJECTED`) stage emails, the bulk emails "Application update" and "Interview preparation", and the "Default offer letter"; and four demo users, `admin@`, `recruiter@`, `hm@` and `interviewer@` + `DEMO_USER_DOMAIN` (`ats-demo.local` locally; the `<tenant>.onmicrosoft.com` domain in Azure, so they link to the Entra demo accounts). No requisitions or applications (task 42).
+- **Idempotent and non-destructive:** it inserts only what is missing by natural key and never updates existing rows, so an Admin's changes, deactivations and role changes survive a rerun. A stage email is skipped when any email template already has its trigger status. A seeded record an Admin **deleted** comes back on the next run — deactivate records instead. The seed runs in one transaction under an advisory lock (concurrent runs are safe) and prints counts only.
+- **Dev passwords:** with `AUTH_DEV_LOGIN=true` the seed requires `DEMO_USER_PASSWORD` (12+ characters) and gives all four demo users that password (a rerun updates it). Compose uses the fake `local-only-not-secret-demo`, so `recruiter@ats-demo.local` signs in at `http://localhost:3000/sign-in`; for `pnpm dev` choose your own in `.env`. Without dev login no password is set; in Azure demo users sign in through Entra only.
+
 ## Microsoft Entra sign-in (owner setup)
 
 Staff sign in with accounts from the project's own Entra tenant (tech-stack.md §4, AU1–AU4). Sign-in is invite-only: an Entra account gets in only if an Admin created an **active** ATS user with the same email first (task 12's `pnpm seed:admin` for the first Admin, the Admin user pages from task 15 after that). Anyone else sees "Access not granted, contact your ATS admin." and no user is created. On the first sign-in the Entra account is linked to that user; later sign-ins match the Entra object ID, so a renamed UPN still signs in the same user. Sign-in never changes the ATS user's name, email or role, and no profile photo is fetched.
