@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/admin/settings", key: "settings" },
   { href: "/admin/master-data", key: "masterData" },
   { href: "/admin/users", key: "users" },
+  { href: "/admin/templates", key: "templates" },
 ] as const;
 
 export default async function AdminPage() {

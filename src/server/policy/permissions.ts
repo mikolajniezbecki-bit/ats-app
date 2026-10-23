@@ -50,6 +50,8 @@ export const PERMISSIONS = {
   "requisition.create": CREATORS,
   "masterData.pick": CREATORS,
   "users.pick": CREATORS,
+  // Requisition, offer and bulk-email forms list active templates (task 16, Q10).
+  "templates.pick": CREATORS,
 
   // Role level only; A2 and the current-approver check come with task 22.
   "approval.decide": APPROVERS,

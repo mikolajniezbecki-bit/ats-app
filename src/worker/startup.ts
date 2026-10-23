@@ -36,7 +36,7 @@ export async function ensureFilesContainer(attempts = 5, delayMs = 1_000): Promi
       return;
     } catch (err) {
       if (attempt >= attempts) {
-        logger.error({ err: { name: (err as Error).name, code: (err as { code?: string }).code } }, "files container not ensured");
+        logger.error({ error_type: (err as Error).name, code: (err as { code?: string }).code }, "files container not ensured");
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, delayMs));
