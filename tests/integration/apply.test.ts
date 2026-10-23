@@ -32,11 +32,12 @@ const HOUR = 3_600_000;
 afterEach(() => vi.restoreAllMocks());
 
 // The worker database is shared with other files, which own the trigger
-// statuses (one active stage template per status): templates this file
-// created are deactivated again (email_log rows still reference them).
+// statuses (one active stage template per status, and some count them):
+// templates this file created are deactivated and lose their trigger status
+// again (email_log rows still reference them, so they stay).
 const createdTemplateIds: string[] = [];
 afterAll(async () => {
-  if (createdTemplateIds.length > 0) await getDb().update(templates).set({ isActive: false }).where(inArray(templates.id, createdTemplateIds));
+  if (createdTemplateIds.length > 0) await getDb().update(templates).set({ isActive: false, triggerStatus: null }).where(inArray(templates.id, createdTemplateIds));
 });
 
 /** A published External requisition (or Private with a slug), with a real Hiring Manager and Recruiter. */
