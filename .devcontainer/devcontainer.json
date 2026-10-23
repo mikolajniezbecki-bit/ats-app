@@ -1,0 +1,20 @@
+{
+  // A slim Node 24 image instead of the default universal Codespace image, so
+  // the 32 GB disk has room for the Compose stack, builds and Playwright.
+  "name": "ats-app",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "containerEnv": {
+    // corepack installs the pnpm version pinned in package.json without asking.
+    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"
+  },
+  // Compose app, PostgreSQL, Azurite and the Mailpit web UI (README "Local stack").
+  "forwardPorts": [3000, 5432, 10000, 8025],
+  "postCreateCommand": "sudo corepack enable && corepack install && pnpm install --frozen-lockfile && npx playwright install --with-deps chromium && npm install -g @anthropic-ai/claude-code",
+  // Docker-in-docker can start with a FORWARD policy that drops traffic between
+  // containers on Compose bridge networks; accept it on every start.
+  "postStartCommand": "sudo iptables-legacy -I FORWARD -i br-+ -j ACCEPT 2>/dev/null || true && sudo iptables-legacy -I FORWARD -o br-+ -j ACCEPT 2>/dev/null || true"
+}
