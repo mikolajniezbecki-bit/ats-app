@@ -255,7 +255,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Saving a second active `EMAIL` template with an existing `trigger_status` shows a validation error instead of a database error.
 - A `schema_json` field of type `PICKLIST` without `picklist_key` is rejected.
 
-## 17. Base seed
+## 17. Base seed ✅
 
 **Issue:** [#23](https://github.com/mikolajniezbecki-bit/ats-app/issues/23)
 
