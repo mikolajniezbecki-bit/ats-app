@@ -193,7 +193,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `AU9:` test: a signed-in user with no matching permission is denied by the policy module even though authenticated.
 - `seed:admin` creates the Admin, and running it again creates no duplicate.
 
-## 13. File storage and secure PDF viewing
+## 13. File storage and secure PDF viewing ✅
 
 **Issue:** [#19](https://github.com/mikolajniezbecki-bit/ats-app/issues/19)
 

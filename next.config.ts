@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
   agentRules: false,
   // forbidden() renders src/app/forbidden.tsx with HTTP 403 (task 12, V9).
   experimental: { authInterrupts: true },
+  // Static assets skip proxy.ts, which sets nosniff (and the CSP) on
+  // everything else; this value needs no configuration, so build time is fine.
+  async headers() {
+    return [{ source: "/:path*", headers: [{ key: "X-Content-Type-Options", value: "nosniff" }] }];
+  },
   turbopack: {
     rules: {
       "*.css": {

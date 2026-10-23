@@ -3,6 +3,7 @@
 // PostgreSQL stops the process with a non-zero exit code, so the container
 // restarts instead of serving requests without a working queue.
 import { ensureJobQueues, startJobQueue } from "../server/adapters/job-queue";
+import { getStorage } from "../server/adapters/storage";
 import { ConfigError, getConfig } from "../server/config";
 import { isConnectionError, rootCause } from "../server/db/migrator";
 import { logger } from "../server/logger";
@@ -14,10 +15,32 @@ export async function startWebProcess(): Promise<void> {
   const config = getConfig();
   await startJobQueue({ supervise: config.workerEnabled });
   await ensureJobQueues();
+  await ensureFilesContainer();
   if (config.workerEnabled) {
     await startWorker(handlers);
   } else {
     logger.info("worker disabled");
+  }
+}
+
+/**
+ * Azurite starts empty, so the private `files` container is created when
+ * missing (Azurite mode only; Bicep creates it in Azure). Storage isn't
+ * required to serve requests: after a few attempts a failure is logged and
+ * /api/health reports it (M5).
+ */
+export async function ensureFilesContainer(attempts = 5, delayMs = 1_000): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await getStorage().ensureContainer();
+      return;
+    } catch (err) {
+      if (attempt >= attempts) {
+        logger.error({ err: { name: (err as Error).name, code: (err as { code?: string }).code } }, "files container not ensured");
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
 }
 

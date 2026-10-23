@@ -49,5 +49,17 @@
   "Forbidden": {
     "title": "You don't have access to this page.",
     "home": "Go to the dashboard"
+  },
+  "Files": {
+    "title": "Document",
+    "viewerTitle": "PDF document",
+    "openInNewTab": "Open in new tab",
+    "errors": {
+      "EMPTY": "The file is empty.",
+      "TOO_LARGE": "The file is larger than {max} MB.",
+      "NOT_PDF": "Only PDF files are accepted.",
+      "ENCRYPTED": "Encrypted or password-protected PDFs are not accepted.",
+      "DAMAGED": "The PDF file can't be read."
+    }
   }
 }

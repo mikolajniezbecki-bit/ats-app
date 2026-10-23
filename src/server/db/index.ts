@@ -54,10 +54,40 @@ export async function closeDb(): Promise<void> {
   await current?.pool.end();
 }
 
+type RollbackHook = () => Promise<void>;
+
+// Hooks registered on a transaction from withTransaction(), run after it
+// rolls back (or its commit fails).
+const rollbackHooks = new WeakMap<Tx, RollbackHook[]>();
+
 /**
  * Runs `fn(tx)` in one transaction: commits when it resolves, rolls back and
- * re-throws the original error when it rejects.
+ * re-throws the original error when it rejects. Hooks registered with
+ * onRollback() run after a rollback; their own failures are logged, never
+ * thrown over the original error.
  */
-export function withTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-  return getDb().transaction(fn);
+export async function withTransaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  const hooks: RollbackHook[] = [];
+  try {
+    return await getDb().transaction((tx) => {
+      rollbackHooks.set(tx, hooks);
+      return fn(tx);
+    });
+  } catch (err) {
+    for (const hook of hooks) {
+      await hook().catch((hookErr: unknown) => logger.error({ err: hookErr }, "rollback hook failed"));
+    }
+    throw err;
+  }
+}
+
+/**
+ * Registers clean-up for work outside the database (e.g. an uploaded blob)
+ * that must be undone if `tx` rolls back. `tx` must come from
+ * withTransaction() itself, not a nested savepoint.
+ */
+export function onRollback(tx: Tx, hook: RollbackHook): void {
+  const hooks = rollbackHooks.get(tx);
+  if (!hooks) throw new Error("onRollback() needs the transaction handle from withTransaction()");
+  hooks.push(hook);
 }

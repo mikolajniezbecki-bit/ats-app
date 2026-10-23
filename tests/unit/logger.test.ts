@@ -88,6 +88,10 @@ describe("logger", () => {
       "cookie",
       "set-cookie",
       "x-tick-secret",
+      "url",
+      "signedUrl",
+      "originalName",
+      "original_name",
     ];
     const secret = (key: string) => `secret-${key}`;
     const payload = Object.fromEntries(keys.map((key) => [key, secret(key)]));
@@ -95,5 +99,14 @@ describe("logger", () => {
     createLogger(out.stream).info({ ...payload, headers: payload });
     const line = out.lines.join("\n");
     for (const key of keys) expect(line).not.toContain(secret(key));
+  });
+
+  it("M2: never logs a signed link (V11) or an original file name", () => {
+    const out = capture();
+    const url = "http://localhost:10000/devstoreaccount1/files/abc?sv=2025&sig=secret-signature";
+    createLogger(out.stream).info({ file_id: "file-1", url, signedUrl: url, originalName: "Jane CV.pdf", file: { original_name: "Jane CV.pdf" } });
+    const line = out.lines.join("\n");
+    expect(line).toContain("file-1");
+    for (const value of ["secret-signature", "Jane CV.pdf"]) expect(line).not.toContain(value);
   });
 });

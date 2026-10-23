@@ -22,6 +22,8 @@ export default defineConfig({
           name: "unit",
           include: ["tests/**/*.test.{ts,tsx}"],
           exclude: ["tests/e2e/**", "tests/integration/**", "node_modules/**", ".next/**"],
+          // Test-only placeholder configuration for code that calls getConfig().
+          setupFiles: ["tests/unit/setup.ts"],
         },
       },
       {

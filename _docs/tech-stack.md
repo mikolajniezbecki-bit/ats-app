@@ -2,10 +2,11 @@
 
 | | |
 |---|---|
-| **Version** | 1.14 |
-| **Date** | 2026-10-22 |
+| **Version** | 1.15 |
+| **Date** | 2026-10-23 |
 | **Owner** | Mikolaj Niezbecki |
 | **Status** | Approved for build |
+| **Changes in 1.15** | Task 13: `ci.yml` starts Azurite with a `docker run` step (same image and command as `docker-compose.yml`) instead of a service container, because a service container can't take the `--skipApiVersionCheck` command the Azure SDK's API version needs (§12) |
 | **Changes in 1.14** | Task 9: pg-boss 12.38 table and column names used by the clock shift and the W4 count confirmed (T3) |
 | **Changes in 1.13** | Task 8: on shutdown pg-boss 12 fails jobs still active after the 8 s grace timeout, so they are retried per their queue options instead of expiring; the image sets `NEXT_MANUAL_SIG_HANDLE=true` so the app, not Next.js, handles SIGTERM (W6) |
 | **Changes in 1.12** | TypeScript 6.x instead of 5.x: Dependabot PR #58 passes lint, typecheck, unit and integration tests and the build on current `main` (owner decision, §2) |
@@ -339,7 +340,7 @@ The worker runs inside the web process. The app scales to zero when idle and an 
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | Pull request | Install (pnpm, cached) → the `pnpm verify` checks (lint → typecheck → unit tests → `pnpm test:rules`) → `pnpm db:migrate` + `pnpm test:integration` against `postgres:17`, Azurite and Mailpit service containers → `next build`. No Playwright (G4). |
+| `ci.yml` | Pull request | Install (pnpm, cached) → the `pnpm verify` checks (lint → typecheck → unit tests → `pnpm test:rules`) → `pnpm db:migrate` + `pnpm test:integration` against `postgres:17` and Mailpit service containers and Azurite (started by a `docker run` step with the `docker-compose.yml` image and command, because a service container can't take a command) → `next build`. No Playwright (G4). |
 | `main.yml` | Push to `main`, manual | `pnpm verify` → build the image once (tag = commit SHA) → start the Compose stack with that image → migrate + seed (run from that image) → `pnpm test:integration` against the Compose PostgreSQL → Playwright suite → push image to GHCR → Azure login (OIDC) → set the new tag on the `db-migrate` job and run it (wait for success) → update the web Container App and the `tick` and `db-seed` jobs to the new tag → smoke test `GET /api/health`. Deployments are never cancelled by a newer push. Each step runs only if the previous one succeeded. Manual runs from another branch run the tests but never push or deploy. |
 | `infra.yml` | Manual | `mode: what-if` runs `az deployment group what-if` only; `mode: deploy` repeats the what-if and then runs `az deployment group create` with `/infra/main.bicep`. The owner reviews a what-if run before starting a deploy run (TO-21). |
 
