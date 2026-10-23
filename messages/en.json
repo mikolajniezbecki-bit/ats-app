@@ -18,7 +18,9 @@
     "accessNotGranted": "Access not granted, contact your ATS admin.",
     "failed": "Sign-in failed. Please try again.",
     "devOnly": "Dev sign-in (local and CI only)",
-    "unavailable": "Sign-in with email and password is not available in this environment."
+    "unavailable": "Sign-in is not configured in this environment.",
+    "microsoft": "Sign in with Microsoft",
+    "redirecting": "Redirecting to Microsoft…"
   },
   "Dashboard": {
     "title": "Dashboard",
