@@ -29,7 +29,7 @@ const ADMIN_RECRUITER: Action[] = [
   "approval.reassign",
   ...READS,
 ];
-const CREATORS: Action[] = ["requisition.create", "requisition.edit", "masterData.pick", "users.pick", "templates.pick"];
+const CREATORS: Action[] = ["requisition.create", "requisition.edit", "approval.withdraw", "masterData.pick", "users.pick", "templates.pick"];
 
 /** What each role is allowed; everything else in the catalogue is denied. */
 const ALLOWED: Record<Role, Action[]> = {

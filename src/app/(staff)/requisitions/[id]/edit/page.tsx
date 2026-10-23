@@ -38,7 +38,7 @@ export default async function EditRequisitionPage({ params }: PageProps<"/requis
       </Link>
       <h1 className="text-2xl font-semibold">{t("editTitle", { reqNumber: requisition.reqNumber })}</h1>
       {requisition.state !== "DRAFT" ? (
-        <p role="alert">{t("errors.notEditable")}</p>
+        <p role="alert">{t(requisition.state === "PENDING_APPROVAL" && !requisition.approvedAt ? "errors.awaitingApproval" : "errors.notEditable")}</p>
       ) : (
         <RequisitionForm
           options={options}

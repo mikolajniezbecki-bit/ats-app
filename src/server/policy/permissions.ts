@@ -55,8 +55,10 @@ export const PERMISSIONS = {
   // Requisition, offer and bulk-email forms list active templates (task 16, Q10).
   "templates.pick": CREATORS,
 
-  // Role level only; A2 and the current-approver check come with task 22.
+  // A2, A3: only the current approver of a pending item, never its submitter (resource rule below).
   "approval.decide": APPROVERS,
+  // A9: the submitter, any Recruiter or any Admin (resource rule below).
+  "approval.withdraw": CREATORS,
 
   // V1, V2; Hiring Managers within V3a (resource rule below). Hiring Manager
   // application reads (V4) and Interviewer reads (V5/V6) are added with their
@@ -80,6 +82,9 @@ export function inRequisitionScope(user: PolicyUser, requisition: RequisitionRes
   return requisition.hiringManagerId === user.id || requisition.approverId === user.id || requisition.createdByUserId === user.id;
 }
 
+/** A pending or decided approval: a requisition or an offer (A1–A9). */
+export type ApprovalResource = { pending: boolean; approverId: string | null; submittedByUserId: string | null };
+
 type ResourceRule = (user: PolicyUser, resource: unknown) => boolean;
 
 /**
@@ -92,6 +97,14 @@ const RESOURCE_RULES: Partial<Record<Action, ResourceRule>> = {
     user.role !== "HIRING_MANAGER" || inRequisitionScope(user, resource as RequisitionResource),
   "requisition.edit": (user, resource) =>
     user.role !== "HIRING_MANAGER" || (resource as RequisitionResource).createdByUserId === user.id,
+  "approval.decide": (user, resource) => {
+    const approval = resource as ApprovalResource;
+    return approval.pending && approval.approverId === user.id && approval.submittedByUserId !== user.id;
+  },
+  "approval.withdraw": (user, resource) => {
+    const approval = resource as ApprovalResource;
+    return approval.pending && (user.role === "ADMIN" || user.role === "RECRUITER" || approval.submittedByUserId === user.id);
+  },
 };
 
 /**

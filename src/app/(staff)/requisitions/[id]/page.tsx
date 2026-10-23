@@ -1,14 +1,17 @@
 // Requisition detail (ats-project-scope.md §5.2, §5.1, V3a, V9): 404 outside
 // the caller's scope; warns when the recruiter or hiring manager is inactive.
 import { getTranslations } from "next-intl/server";
+import { ApprovalActions } from "@/components/requisitions/approval-actions";
 import { PrescreenEditor } from "@/components/requisitions/prescreen-editor";
+import { APPROVER_ROLES, latestRequisitionApprovalEvent, requisitionApproval } from "@/server/approvals";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sanitizeDescription } from "@/server/domain/requisitions/description";
 import { requirePermission } from "@/server/policy/guards";
 import { can } from "@/server/policy/permissions";
 import { canEditQuestions, listQuestionRows, questionsEditable, storedDefinition } from "@/server/prescreen";
-import { getRequisitionDetail } from "@/server/requisitions";
+import { getRequisitionDetail, isFirstApprovalPending } from "@/server/requisitions";
+import { listActiveUsers } from "@/server/users";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +22,17 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
   if (!detail) notFound();
   const { requisition, template } = detail;
   const t = await getTranslations("Requisitions");
+  const a = await getTranslations("Approvals.panel");
+  const pendingFirst = isFirstApprovalPending(requisition);
+  const canSubmit = requisition.state === "DRAFT" && can(user, "requisition.edit", requisition);
+  // A2: the picker never offers the current user.
+  const approvers = canSubmit
+    ? (await listActiveUsers({ roles: APPROVER_ROLES })).filter((approver) => approver.id !== user.id).map(({ id: userId, name }) => ({ id: userId, name }))
+    : null;
+  const approval = requisitionApproval(requisition);
+  const latest = await latestRequisitionApprovalEvent(requisition.id);
+  const approverName = detail.approver?.name ?? "—";
+  const utc = (date: Date) => date.toISOString().slice(0, 16).replace("T", " ");
   const questions = (await listQuestionRows(requisition.id)).map((row) => ({ id: row.id, isActive: row.isActive, ...storedDefinition(row) }));
   const customFields = (requisition.customFieldsJson as Record<string, string | number | boolean | null>) ?? {};
   const named = (ref: { label: string; isActive: boolean }) => (ref.isActive ? ref.label : t("inactive", { label: ref.label }));
@@ -70,6 +84,32 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
           </Link>
         )}
       </div>
+      <section aria-labelledby="approval-heading" className="max-w-3xl space-y-2">
+        <h2 id="approval-heading" className="text-xl font-semibold">
+          {a("title")}
+        </h2>
+        {requisition.state === "PENDING_APPROVAL" && requisition.submittedAt && (
+          <p data-testid="approval-status">{a("pending", { approver: approverName, time: utc(requisition.submittedAt) })}</p>
+        )}
+        {pendingFirst && (
+          <p role="status" className="rounded border border-amber-700 bg-amber-50 px-3 py-2 text-amber-900">
+            {a("locked")}
+          </p>
+        )}
+        {latest && latest.event !== "SUBMITTED" && (
+          <p data-testid="approval-latest">
+            {a("latest", { event: a(`events.${latest.event}`), actor: latest.actor ?? "—", time: utc(latest.createdAt) })}
+            {latest.comment && <span className="block">{a("latestComment", { comment: latest.comment })}</span>}
+          </p>
+        )}
+        <ApprovalActions
+          requisitionId={requisition.id}
+          version={requisition.version}
+          approvers={approvers}
+          canDecide={can(user, "approval.decide", approval)}
+          canWithdraw={can(user, "approval.withdraw", approval)}
+        />
+      </section>
       <section aria-labelledby="details-heading" className="space-y-2">
         <h2 id="details-heading" className="text-xl font-semibold">
           {t("details")}

@@ -335,7 +335,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `L3:` test: an answered question cannot be deleted or have its weight changed, but can be deactivated.
 - A `TEXT` question is always saved with weight 0 and no scoring or disqualifying answer.
 
-## 22. Requisition first approval
+## 22. Requisition first approval ✅
 
 **Issue:** [#28](https://github.com/mikolajniezbecki-bit/ats-app/issues/28)
 
