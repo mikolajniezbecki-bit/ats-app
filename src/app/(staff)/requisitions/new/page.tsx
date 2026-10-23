@@ -37,7 +37,7 @@ export default async function NewRequisitionPage({ searchParams }: PageProps<"/r
         {t("back")}
       </Link>
       <h1 className="text-2xl font-semibold">{heading}</h1>
-      <RequisitionForm options={options} initial={initial} />
+      <RequisitionForm options={options} initial={initial} duplicateOfId={typeof params.from === "string" ? params.from : undefined} />
     </main>
   );
 }

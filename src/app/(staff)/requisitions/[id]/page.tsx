@@ -1,11 +1,13 @@
 // Requisition detail (ats-project-scope.md §5.2, §5.1, V3a, V9): 404 outside
 // the caller's scope; warns when the recruiter or hiring manager is inactive.
 import { getTranslations } from "next-intl/server";
+import { PrescreenEditor } from "@/components/requisitions/prescreen-editor";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sanitizeDescription } from "@/server/domain/requisitions/description";
 import { requirePermission } from "@/server/policy/guards";
 import { can } from "@/server/policy/permissions";
+import { canEditQuestions, listQuestionRows, questionsEditable, storedDefinition } from "@/server/prescreen";
 import { getRequisitionDetail } from "@/server/requisitions";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +19,7 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
   if (!detail) notFound();
   const { requisition, template } = detail;
   const t = await getTranslations("Requisitions");
+  const questions = (await listQuestionRows(requisition.id)).map((row) => ({ id: row.id, isActive: row.isActive, ...storedDefinition(row) }));
   const customFields = (requisition.customFieldsJson as Record<string, string | number | boolean | null>) ?? {};
   const named = (ref: { label: string; isActive: boolean }) => (ref.isActive ? ref.label : t("inactive", { label: ref.label }));
   const person = (ref: { name: string; isActive: boolean }) => (ref.isActive ? ref.name : t("inactive", { label: ref.name }));
@@ -95,6 +98,7 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
           dangerouslySetInnerHTML={{ __html: sanitizeDescription(requisition.descriptionHtml) }}
         />
       </section>
+      <PrescreenEditor requisitionId={requisition.id} questions={questions} canEdit={canEditQuestions(user, requisition) && questionsEditable(requisition)} />
     </main>
   );
 }

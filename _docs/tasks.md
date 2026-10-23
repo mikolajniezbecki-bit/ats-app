@@ -320,7 +320,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `L9:` test: saving a `PRIVATE` requisition without a slug generates 32 random hex characters; `L11:` test: field changes are recorded in history.
 - `V3:` API test: a Hiring Manager's list contains only requisitions in their scope.
 
-## 21. Pre-screening questions and scoring
+## 21. Pre-screening questions and scoring ✅
 
 **Issue:** [#27](https://github.com/mikolajniezbecki-bit/ats-app/issues/27)
 
