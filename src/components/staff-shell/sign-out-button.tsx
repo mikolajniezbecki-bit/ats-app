@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 /** Deletes the session row and the cookie, then goes to sign-in. */
 export function SignOutButton() {
-  const t = useTranslations("Dashboard");
+  const t = useTranslations("StaffShell");
   const router = useRouter();
 
   async function signOut() {

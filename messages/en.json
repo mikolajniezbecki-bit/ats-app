@@ -25,7 +25,29 @@
   "Dashboard": {
     "title": "Dashboard",
     "signedInAs": "Signed in as {name}",
-    "role": "Role: {role}",
+    "role": "Role: {role}"
+  },
+  "StaffShell": {
+    "appName": "ATS",
+    "navLabel": "Main",
+    "nav": {
+      "home": "Home",
+      "administration": "Administration"
+    },
     "signOut": "Sign out"
+  },
+  "Roles": {
+    "ADMIN": "Admin",
+    "RECRUITER": "Recruiter",
+    "HIRING_MANAGER": "Hiring Manager",
+    "INTERVIEWER": "Interviewer"
+  },
+  "Admin": {
+    "title": "Administration",
+    "description": "Settings, master data, templates, users, the Outbox and background jobs will be linked here."
+  },
+  "Forbidden": {
+    "title": "You don't have access to this page.",
+    "home": "Go to the dashboard"
   }
 }

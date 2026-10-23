@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pg", "pg-boss", "pino", "@react-pdf/renderer"],
   // AGENTS.md is owner-maintained; stop `next dev` from writing into it.
   agentRules: false,
+  // forbidden() renders src/app/forbidden.tsx with HTTP 403 (task 12, V9).
+  experimental: { authInterrupts: true },
   turbopack: {
     rules: {
       "*.css": {
