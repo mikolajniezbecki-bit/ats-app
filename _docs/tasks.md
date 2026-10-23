@@ -370,7 +370,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - A private posting opens via its slug with a `noindex` tag and does not appear in the list or the sitemap.
 - An unpublished job page shows the "no longer accepting applications" message and no form.
 
-## 24. Quick Apply
+## 24. Quick Apply ✅
 
 **Issue:** [#30](https://github.com/mikolajniezbecki-bit/ats-app/issues/30)
 

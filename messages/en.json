@@ -668,5 +668,54 @@
     "apply": "Apply now",
     "closed": "This position is no longer accepting applications.",
     "notFound": "This job can't be found."
+  },
+  "Apply": {
+    "title": "Apply for {title}",
+    "pageTitle": "Apply: {title} | Careers",
+    "notFound": "This job can't be found.",
+    "formLabel": "Application form",
+    "contact": "Your details",
+    "documents": "Documents",
+    "questions": "Questions",
+    "optional": "(optional)",
+    "filesHelp": "PDF only, at most {max} MB per file.",
+    "fields": {
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Phone",
+      "cv": "CV (PDF)",
+      "coverLetter": "Cover letter (PDF, optional)"
+    },
+    "privacyTitle": "Privacy",
+    "privacyRegion": "Privacy statement, version {version}",
+    "consent": "I have read the privacy statement (version {version}) and agree to the processing of my data for this application.",
+    "submit": "Submit application",
+    "submitting": "Submitting…",
+    "thanksTitle": "Thank you",
+    "thanks": "Thank you for applying. We've sent a confirmation to your email address if one is configured.",
+    "errors": {
+      "invalid": "Please correct the highlighted fields.",
+      "notFound": "This job can't be found.",
+      "closed": "This position is no longer accepting applications.",
+      "duplicate": "You have already applied for this position.",
+      "questionsChanged": "The questions for this position have changed. Please review your answers and submit again.",
+      "consentChanged": "The privacy statement has been updated. Please read it and confirm again.",
+      "uploadTooLarge": "The upload is too large.",
+      "cvRequired": "Choose your CV as a PDF file.",
+      "fileEmpty": "The file is empty.",
+      "fileTooLarge": "The file is larger than {max} MB.",
+      "answerRequired": "Please answer this question.",
+      "invalidOption": "Choose one of the listed answers.",
+      "unknownQuestion": "This question is no longer part of the form.",
+      "textTooLong": "Answers are at most 2,000 characters.",
+      "fields": {
+        "firstName": "Enter your first name (1 to 100 characters).",
+        "lastName": "Enter your last name (1 to 100 characters).",
+        "email": "Enter a valid email address.",
+        "phone": "Enter a phone number of 6 to 30 characters: digits, spaces, + - ( ), with at least 6 digits.",
+        "consent": "Please confirm that you have read the privacy statement."
+      }
+    }
   }
 }

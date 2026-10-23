@@ -9,8 +9,15 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pg", "pg-boss", "pino", "@react-pdf/renderer"],
   // AGENTS.md is owner-maintained; stop `next dev` from writing into it.
   agentRules: false,
-  // forbidden() renders src/app/forbidden.tsx with HTTP 403 (task 12, V9).
-  experimental: { authInterrupts: true },
+  experimental: {
+    // forbidden() renders src/app/forbidden.tsx with HTTP 403 (task 12, V9).
+    authInterrupts: true,
+    // Quick Apply (§3 rule 7): two files at the 10 MiB maximum of
+    // MAX_UPLOAD_MB plus the form fields, through the server action and the
+    // proxy, which would otherwise cut bodies at 1 MB and 10 MB.
+    serverActions: { bodySizeLimit: "21mb" },
+    proxyClientMaxBodySize: "21mb",
+  },
   // Static assets skip proxy.ts, which sets nosniff (and the CSP) on
   // everything else; this value needs no configuration, so build time is fine.
   async headers() {

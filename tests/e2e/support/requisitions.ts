@@ -58,3 +58,26 @@ export async function insertRequisition(overrides: Overrides = {}): Promise<Spec
   );
   return { id: row.id, reqNumber: row.req_number, title, privateSlug: row.private_slug };
 }
+
+/** A pre-screening question on a spec's own requisition. */
+export async function insertQuestion(
+  requisitionId: string,
+  question: { text: string; type: "YES_NO" | "SINGLE" | "MULTI" | "TEXT"; weight?: number; scoring?: unknown; disqualifying?: unknown; sortOrder?: number },
+): Promise<string> {
+  const options = question.type === "YES_NO" ? [{ code: "YES", label: "Yes" }, { code: "NO", label: "No" }] : [];
+  const [row] = await query<{ id: string }>(
+    `INSERT INTO prescreen_questions (requisition_id, question_text, question_type, options_json, weight, scoring_answer, disqualifying_answer, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [
+      requisitionId,
+      question.text,
+      question.type,
+      JSON.stringify(options),
+      question.weight ?? 0,
+      question.scoring === undefined ? null : JSON.stringify(question.scoring),
+      question.disqualifying === undefined ? null : JSON.stringify(question.disqualifying),
+      question.sortOrder ?? 0,
+    ],
+  );
+  return row.id;
+}
