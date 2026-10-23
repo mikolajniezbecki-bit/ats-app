@@ -29,10 +29,12 @@ type Props = {
   initial?: Partial<FormValues>;
   /** Editing: the requisition, its version and its fixed template's schema. */
   existing?: { id: string; version: number; templateName?: string; schema: CustomFieldDefinition[] };
+  /** Creating a duplicate: the source, whose active questions are copied on save. */
+  duplicateOfId?: string;
 };
 type ApiError = { message?: string; fields?: Record<string, string> };
 
-export function RequisitionForm({ options, initial, existing }: Props) {
+export function RequisitionForm({ options, initial, existing, duplicateOfId }: Props) {
   const t = useTranslations("Requisitions");
   const router = useRouter();
   const [values, setValues] = useState<FormValues>({
@@ -76,7 +78,7 @@ export function RequisitionForm({ options, initial, existing }: Props) {
     const response = await fetch(existing ? `/api/requisitions/${existing.id}` : "/api/requisitions", {
       method: existing ? "PATCH" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(existing ? { version: existing.version, ...content } : { templateId: values.templateId, ...content }),
+      body: JSON.stringify(existing ? { version: existing.version, ...content } : { templateId: values.templateId, ...(duplicateOfId ? { duplicateOfId } : {}), ...content }),
     }).catch(() => null);
     setPending(false);
     if (response?.ok) {

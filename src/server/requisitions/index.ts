@@ -14,6 +14,7 @@ import {
   POSTING_TYPES,
   REQUISITION_STATES,
   masterData,
+  prescreenQuestions,
   requisitionHistory,
   requisitions,
   templates,
@@ -79,6 +80,8 @@ export const createRequisitionSchema = z
     descriptionHtml: fields.descriptionHtml.default(""),
     customFields: fields.customFields.default({}),
     templateId: z.uuid().nullable().optional(),
+    // Saving a duplicate also copies the source's active questions (§5.2).
+    duplicateOfId: z.uuid().optional(),
   })
   .strict();
 
@@ -256,6 +259,8 @@ export async function createRequisition(tx: Tx, user: PolicyUser, input: unknown
   }
   const custom = await customFieldCheck(tx, schema, data.customFields, {});
   Object.assign(errors, custom.errors);
+  const source = data.duplicateOfId ? await findVisibleRequisition(user, data.duplicateOfId, tx) : undefined;
+  if (data.duplicateOfId && !source) errors.duplicateOfId = "invalid";
   if (Object.keys(errors).length > 0) return { ok: false, reason: "invalid", fields: errors };
 
   const requisition = await withSlugRetry(tx, data.postingType === "PRIVATE", async (sp, slug) => {
@@ -287,8 +292,32 @@ export async function createRequisition(tx: Tx, user: PolicyUser, input: unknown
     newValue: "DRAFT",
     userId: user.id,
   });
-  logger.info({ requisition_id: requisition.id, user_id: user.id }, "requisition created");
+  if (source) await copyActiveQuestions(tx, source.id, requisition.id);
+  logger.info({ requisition_id: requisition.id, user_id: user.id, duplicate_of: source?.id }, "requisition created");
   return { ok: true, requisition };
+}
+
+/** Copies the source's active questions in their order, as new active questions without answers. */
+async function copyActiveQuestions(tx: Tx, sourceId: string, targetId: string): Promise<void> {
+  const rows = await tx
+    .select()
+    .from(prescreenQuestions)
+    .where(and(eq(prescreenQuestions.requisitionId, sourceId), eq(prescreenQuestions.isActive, true)))
+    .orderBy(asc(prescreenQuestions.sortOrder), asc(prescreenQuestions.createdAt));
+  if (rows.length === 0) return;
+  await tx.insert(prescreenQuestions).values(
+    rows.map((row, index) => ({
+      requisitionId: targetId,
+      questionText: row.questionText,
+      questionType: row.questionType,
+      optionsJson: row.optionsJson,
+      weight: row.weight,
+      scoringAnswer: row.scoringAnswer,
+      disqualifyingAnswer: row.disqualifyingAnswer,
+      isActive: true,
+      sortOrder: index,
+    })),
+  );
 }
 
 /** The requisition if `user` may see it (D6), else undefined; also for malformed IDs. */
