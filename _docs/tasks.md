@@ -288,7 +288,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `E4:` / `E6:` tests: `email_log` holds the full content; status is `SENT` with `smtp` and `CAPTURED` with `outbox`.
 - `E5:` test: a failing transport is retried and ends as `FAILED`; `J3:` test: running the handler twice sends the email once.
 
-## 19. Admin Outbox and background-job pages
+## 19. Admin Outbox and background-job pages ✅
 
 **Issue:** [#25](https://github.com/mikolajniezbecki-bit/ats-app/issues/25)
 

@@ -36,7 +36,9 @@
       "settings": "Settings",
       "masterData": "Master data",
       "users": "Users",
-      "templates": "Templates"
+      "templates": "Templates",
+      "outbox": "Outbox",
+      "jobs": "Jobs"
     },
     "signOut": "Sign out"
   },
@@ -53,7 +55,9 @@
       "settings": "Settings",
       "masterData": "Master data",
       "users": "Users",
-      "templates": "Templates"
+      "templates": "Templates",
+      "outbox": "Outbox",
+      "jobs": "Background jobs"
     }
   },
   "Forbidden": {
@@ -301,5 +305,95 @@
   "Email": {
     "footer": "Reply to this email to reach your recruiter.",
     "recruitingTeam": "the recruiting team"
+  },
+  "EmailStatuses": {
+    "QUEUED": "Queued",
+    "SENT": "Sent",
+    "CAPTURED": "Captured",
+    "FAILED": "Failed",
+    "CANCELLED": "Cancelled"
+  },
+  "AdminOutbox": {
+    "title": "Outbox",
+    "description": "Every email the system built, whatever its status. Emails are never delivered to real recipients: they go to Mailpit locally and stay here in Azure. Times are in UTC.",
+    "filterLabel": "Status",
+    "all": "All",
+    "columns": {
+      "recipient": "Recipient",
+      "subject": "Subject",
+      "status": "Status",
+      "time": "Time",
+      "application": "Application"
+    },
+    "removed": "Removed by retention",
+    "open": "Open",
+    "openApplication": "Application",
+    "empty": "No emails.",
+    "pageLabel": "Pages",
+    "previous": "Previous page",
+    "next": "Next page",
+    "pageOf": "Page {page} of {pages}",
+    "detailTitle": "Email",
+    "back": "Back to the Outbox",
+    "fields": {
+      "from": "From (current sender setting)",
+      "to": "To",
+      "cc": "Cc",
+      "replyTo": "Reply-To",
+      "subject": "Subject",
+      "status": "Status",
+      "scheduledFor": "Scheduled for",
+      "sentAt": "Sent at",
+      "messageId": "Message ID",
+      "error": "Error",
+      "template": "Template",
+      "application": "Application"
+    },
+    "none": "—",
+    "body": "Body",
+    "bodyTitle": "Email body",
+    "noBody": "No body stored.",
+    "downloadIcs": "Download invite (.ics)",
+    "attachments": "Attachments",
+    "attachmentDeleted": "Deleted",
+    "unnamed": "document.pdf",
+    "openAttachment": "Open {name}",
+    "openFailed": "The file could not be opened."
+  },
+  "AdminJobs": {
+    "title": "Background jobs",
+    "description": "Jobs per queue and the daily-task runs of the last 30 days. Times are in UTC.",
+    "queues": "Queues",
+    "columns": {
+      "queue": "Queue",
+      "queued": "Queued",
+      "active": "Active",
+      "failed": "Failed",
+      "id": "Job ID",
+      "state": "State",
+      "created": "Created",
+      "start": "Start after",
+      "retries": "Retries",
+      "error": "Last error",
+      "data": "Data"
+    },
+    "states": {
+      "queued": "Queued",
+      "active": "Active",
+      "failed": "Failed"
+    },
+    "jobsIn": "{queue}: {state}",
+    "noJobs": "No jobs.",
+    "runs": "Daily-task runs (last 30 days)",
+    "runColumns": {
+      "job": "Task",
+      "runDate": "Run date",
+      "started": "Started",
+      "finished": "Finished",
+      "duration": "Duration",
+      "status": "Status"
+    },
+    "noRuns": "No runs.",
+    "seconds": "{value} s"
   }
 }

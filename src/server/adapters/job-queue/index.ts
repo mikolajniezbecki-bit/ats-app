@@ -305,3 +305,77 @@ export async function completeJob(queue: string, jobId: string): Promise<void> {
 export async function failJob(queue: string, jobId: string, error: Error): Promise<void> {
   await (await getBoss()).fail(queue, jobId, { message: error.message });
 }
+
+// J6 Admin view: read-only listings of pg-boss jobs. pg-boss 12's public API
+// has no list by state (findJobs filters by id, key or data only, and
+// getQueue's counts come from maintenance passes), so these read
+// pgboss.job directly, as T3 allows for the J6 listings.
+
+export type JobListState = "queued" | "active" | "failed";
+
+export type JobCounts = { queue: string; queued: number; active: number; failed: number };
+
+export type JobListing = {
+  id: string;
+  queue: string;
+  state: string;
+  createdOn: Date;
+  startAfter: Date;
+  retryCount: number;
+  /** The last error message, cut to 500 characters. */
+  error: string | null;
+  /** IDs only (J4). */
+  data: unknown;
+};
+
+const STATE_GROUPS: Record<JobListState, string[]> = { queued: ["created", "retry"], active: ["active"], failed: ["failed"] };
+
+/** Queued (`created` + `retry`), active and failed jobs per queue. Read-only. */
+export async function countJobsByState(queues: readonly string[] = QUEUE_NAMES): Promise<JobCounts[]> {
+  await getBoss();
+  const { rows } = await getPool().query<{ name: string; state: string; count: number }>(
+    `SELECT name, state::text AS state, count(*)::int AS count FROM pgboss.job
+     WHERE name = ANY($1) AND state IN ('created', 'retry', 'active', 'failed')
+     GROUP BY name, state`,
+    [queues],
+  );
+  return queues.map((queue) => {
+    const count = (states: string[]) =>
+      rows.filter((row) => row.name === queue && states.includes(row.state)).reduce((sum, row) => sum + row.count, 0);
+    return { queue, queued: count(STATE_GROUPS.queued), active: count(STATE_GROUPS.active), failed: count(STATE_GROUPS.failed) };
+  });
+}
+
+/** The newest `limit` jobs of one queue in one state group. Read-only. */
+export async function listJobs(queue: string, state: JobListState, limit = 50): Promise<JobListing[]> {
+  await getBoss();
+  const { rows } = await getPool().query<{
+    id: string;
+    name: string;
+    state: string;
+    created_on: Date;
+    start_after: Date;
+    retry_count: number;
+    error: string | null;
+    data: unknown;
+  }>(
+    `SELECT id, name, state::text AS state, created_on, start_after, retry_count, data,
+            left(coalesce(output->>'message', output::text), 500) AS error
+     FROM pgboss.job
+     WHERE name = $1 AND state::text = ANY($2)
+     ORDER BY created_on DESC
+     LIMIT $3`,
+    [queue, STATE_GROUPS[state], limit],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    queue: row.name,
+    state: row.state,
+    createdOn: row.created_on,
+    startAfter: row.start_after,
+    retryCount: row.retry_count,
+    // Only failed jobs carry an error; a completed handler's output isn't one.
+    error: row.state === "failed" || row.state === "retry" ? row.error : null,
+    data: row.data,
+  }));
+}
