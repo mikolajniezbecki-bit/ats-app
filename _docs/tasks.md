@@ -208,7 +208,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `F1:`, `F2:`, `F3:` tests: a renamed non-PDF, an oversize file and an encrypted PDF are rejected; `F4:` test: an anonymous request to the blob fails.
 - `/api/health` returns 200 when database and storage are reachable and 503 otherwise.
 
-## 14. Settings and master data administration
+## 14. Settings and master data administration ✅
 
 **Issue:** [#20](https://github.com/mikolajniezbecki-bit/ats-app/issues/20)
 
