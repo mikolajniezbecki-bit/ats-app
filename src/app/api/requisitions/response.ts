@@ -1,9 +1,19 @@
 // Maps a requisition result to the JSON response the form reads: an error
 // code, its text from messages/en.json, and per-field texts for 400s.
 import { message } from "@/server/messages";
+import type { ApprovalResult } from "@/server/approvals";
 import type { RequisitionResult } from "@/server/requisitions";
 
-const STATUS = { invalid: 400, notFound: 404, forbidden: 403, stale: 409, notEditable: 409 } as const;
+const STATUS = {
+  invalid: 400,
+  notFound: 404,
+  forbidden: 403,
+  stale: 409,
+  notEditable: 409,
+  awaitingApproval: 409,
+  notSubmittable: 409,
+  notPending: 409,
+} as const;
 
 /** A field's text: its own for a generic error, else the code's (custom fields share theirs). */
 function fieldText(field: string, code: string): string {
@@ -16,7 +26,7 @@ function fieldText(field: string, code: string): string {
   }
 }
 
-export function requisitionResponse(result: RequisitionResult, okStatus = 200): Response {
+export function requisitionResponse(result: RequisitionResult | ApprovalResult, okStatus = 200): Response {
   if (result.ok) return Response.json({ requisition: result.requisition }, { status: okStatus });
   const body: { error: string; message: string; fields?: Record<string, string> } = {
     error: result.reason,

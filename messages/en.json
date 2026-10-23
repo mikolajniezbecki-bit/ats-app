@@ -39,7 +39,8 @@
       "templates": "Templates",
       "outbox": "Outbox",
       "jobs": "Jobs",
-      "requisitions": "Requisitions"
+      "requisitions": "Requisitions",
+      "approvals": "My approvals"
     },
     "signOut": "Sign out"
   },
@@ -305,7 +306,11 @@
   },
   "Email": {
     "footer": "Reply to this email to reach your recruiter.",
-    "recruitingTeam": "the recruiting team"
+    "recruitingTeam": "the recruiting team",
+    "approvalRequest": {
+      "subject": "Approval needed: [[REQ_NUMBER]] [[JOB_TITLE]]",
+      "body": "Hello,\n\n{submitter} has submitted a requisition for your approval.\n\n- Requisition: **[[REQ_NUMBER]]** [[JOB_TITLE]]\n- Hiring manager: [[HIRING_MGR_FULL_NAME]]\n- Submitted by: {submitter}\n\nReview it here:\n{link}\n\nThis is an automatic message from the ATS."
+    }
   },
   "EmailStatuses": {
     "QUEUED": "Queued",
@@ -507,8 +512,19 @@
         "templateId": "Pick an active requisition template.",
         "customFields": "Check the custom fields.",
         "customField": "Check this value.",
-        "duplicateOfId": "The requisition to duplicate can't be found."
-      }
+        "duplicateOfId": "The requisition to duplicate can't be found.",
+        "approverId": "Choose an active Hiring Manager or Admin as approver.",
+        "version": "Reload the page and try again.",
+        "comment": "Comments are at most 2,000 characters."
+      },
+      "awaitingApproval": "This requisition is awaiting approval. Withdraw it to make changes.",
+      "notSubmittable": "This requisition can't be submitted in its current state.",
+      "notPending": "This requisition is not awaiting approval.",
+      "approverInvalid": "Choose an active Hiring Manager or Admin as approver.",
+      "approverSelf": "You can't approve your own submission.",
+      "commentRequired": "Add a comment to reject.",
+      "commentTooLong": "Comments are at most 2,000 characters.",
+      "descriptionRequired": "Add a job description before submitting."
     }
   },
   "Prescreen": {
@@ -588,6 +604,44 @@
         "isActive": "Check this value.",
         "_": "Check the question."
       }
+    }
+  },
+  "Approvals": {
+    "title": "My approvals",
+    "description": "Requisitions waiting for your decision, oldest submission first.",
+    "empty": "Nothing is waiting for your approval.",
+    "columns": {
+      "reqNumber": "Number",
+      "title": "Title",
+      "department": "Department",
+      "submitter": "Submitted by",
+      "submittedAt": "Submitted"
+    },
+    "panel": {
+      "title": "Approval",
+      "pending": "Awaiting approval by {approver} since {time} UTC.",
+      "locked": "This requisition is awaiting approval. Withdraw it to make changes.",
+      "latest": "Latest decision: {event} by {actor} on {time} UTC.",
+      "latestComment": "Comment: {comment}",
+      "events": {
+        "SUBMITTED": "Submitted",
+        "APPROVED": "Approved",
+        "REJECTED": "Rejected",
+        "WITHDRAWN": "Withdrawn",
+        "REASSIGNED": "Reassigned",
+        "REMINDED": "Reminded"
+      },
+      "submit": "Submit for approval",
+      "approver": "Approver",
+      "chooseApprover": "Choose an approver…",
+      "confirmSubmit": "Submit",
+      "approve": "Approve",
+      "reject": "Reject",
+      "withdraw": "Withdraw",
+      "comment": "Comment",
+      "commentOptional": "Comment (optional)",
+      "cancel": "Cancel",
+      "failed": "The action could not be completed. Try again."
     }
   }
 }

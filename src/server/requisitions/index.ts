@@ -26,7 +26,7 @@ import {
   customFieldErrors,
   normalizeCustomFields,
 } from "../domain/requisitions/custom-fields";
-import { MAX_DESCRIPTION_LENGTH, sanitizeDescription } from "../domain/requisitions/description";
+import { MAX_DESCRIPTION_LENGTH, hasVisibleText, sanitizeDescription } from "../domain/requisitions/description";
 import { generatePrivateSlug } from "../domain/requisitions/slug";
 import { logger } from "../logger";
 import { scopeRequisitionsFor } from "../policy/filters";
@@ -113,7 +113,7 @@ export type FieldErrors = Record<string, string>;
 export type RequisitionResult =
   | { ok: true; requisition: RequisitionRow }
   | { ok: false; reason: "invalid"; fields: FieldErrors }
-  | { ok: false; reason: "notFound" | "forbidden" | "stale" | "notEditable" };
+  | { ok: false; reason: "notFound" | "forbidden" | "stale" | "notEditable" | "awaitingApproval" };
 
 /** The editable values of a requisition, as the service checks them. */
 type Values = {
@@ -297,6 +297,26 @@ export async function createRequisition(tx: Tx, user: PolicyUser, input: unknown
   return { ok: true, requisition };
 }
 
+/** L8: in first-approval PENDING_APPROVAL (never approved), nothing on the requisition can change. */
+export function isFirstApprovalPending(requisition: Pick<RequisitionRow, "state" | "approvedAt">): boolean {
+  return requisition.state === "PENDING_APPROVAL" && requisition.approvedAt === null;
+}
+
+/**
+ * The full check before submitting (A1, §5.2): a description with visible
+ * text, active master data and users of a fitting role in every reference
+ * (a draft may keep inactive stored values, but can't be submitted with
+ * them), and custom fields valid against the template's current schema.
+ */
+export async function submissionErrors(db: Db | Tx, row: RequisitionRow): Promise<FieldErrors> {
+  const customFields = (row.customFieldsJson as Record<string, unknown>) ?? {};
+  const errors = await referenceErrors(db, { ...row, customFields });
+  if (!hasVisibleText(row.descriptionHtml)) errors.descriptionHtml = "descriptionRequired";
+  const template = row.templateId ? await loadTemplateSchema(db, row.templateId) : undefined;
+  Object.assign(errors, (await customFieldCheck(db, template?.schema ?? [], customFields, {})).errors);
+  return errors;
+}
+
 /** Copies the source's active questions in their order, as new active questions without answers. */
 async function copyActiveQuestions(tx: Tx, sourceId: string, targetId: string): Promise<void> {
   const rows = await tx
@@ -342,6 +362,8 @@ export async function updateRequisition(tx: Tx, user: PolicyUser, id: string, in
   if (!parsed.success) return { ok: false, reason: "invalid", fields: zodFields(parsed.error) };
   const { version, ...changes } = parsed.data;
   if (current.version !== version) return { ok: false, reason: "stale" };
+  // L8: nothing changes while a first approval is pending (A9 withdraws it).
+  if (isFirstApprovalPending(current)) return { ok: false, reason: "awaitingApproval" };
   if (current.state !== "DRAFT") return { ok: false, reason: "notEditable" };
 
   const storedCustom = (current.customFieldsJson as Record<string, unknown>) ?? {};
@@ -473,7 +495,13 @@ export async function getRequisitionDetail(user: PolicyUser, id: string, db: Db 
   const people = await db
     .select({ id: users.id, name: users.name, role: users.role, isActive: users.isActive })
     .from(users)
-    .where(or(eq(users.id, requisition.hiringManagerId), eq(users.id, requisition.recruiterId)));
+    .where(
+      or(
+        eq(users.id, requisition.hiringManagerId),
+        eq(users.id, requisition.recruiterId),
+        requisition.approverId ? eq(users.id, requisition.approverId) : undefined,
+      ),
+    );
   const [template] = requisition.templateId
     ? await db
         .select({ name: templates.name, schemaJson: templates.schemaJson, isActive: templates.isActive })
@@ -489,6 +517,7 @@ export async function getRequisitionDetail(user: PolicyUser, id: string, db: Db 
     legalEntity: ref(requisition.legalEntityId),
     hiringManager: person(requisition.hiringManagerId),
     recruiter: person(requisition.recruiterId),
+    approver: requisition.approverId ? person(requisition.approverId) : undefined,
     template: template
       ? { name: template.name, schema: (template.schemaJson as CustomFieldDefinition[] | null) ?? [], isActive: template.isActive }
       : undefined,
