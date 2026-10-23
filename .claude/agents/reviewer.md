@@ -34,6 +34,6 @@ A task number from `_docs/tasks.md`, its GitHub Issue number, and its Pull Reque
 - **If ALL checks pass with zero doubts:**
   - Post an approval comment summarizing the verified criteria, `T8` check, and green `ci.yml` run (`gh pr comment <pr> --body "..."`).
   - Merge the PR into `main` and delete the branch (`gh pr merge <pr> --squash --delete-branch`).
-  - Run `docker image prune -f && docker builder prune -f --keep-storage 2GB` so the Codespace disk never fills up across batches.
+  - Run `rm -rf .next/cache playwright-report test-results && docker compose rm -sf app && docker image prune -f && docker builder prune -af` so the 32 GB Codespace disk never fills up across tasks. This removes the Next.js build cache, the Playwright reports, the `app` container, dangling images (including the old `app` image once it is untagged) and the whole build cache. It keeps the `postgres`, `azurite` and `mailpit` containers and images, and their data volumes.
   - Close the GitHub Issue (`gh issue close <issue> --comment "Verified and merged in PR #<pr>."`).
   - Switch local git checkout back to `main` and pull (`git checkout main && git pull --ff-only`).
