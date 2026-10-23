@@ -12,7 +12,7 @@ import { POST as submit } from "@/app/api/requisitions/[id]/submit/route";
 import { POST as withdraw } from "@/app/api/requisitions/[id]/withdraw/route";
 import { type Tx, getDb } from "@/server/db";
 import { approvalEvents, emailLog, masterData, requisitionHistory, requisitions, users } from "@/server/db/schema";
-import { listActiveUsers } from "@/server/users";
+import { listApproverOptions } from "@/server/approvals";
 import { waitForMessage } from "../support/mailpit";
 import { processDueJobs } from "../support/process-due-jobs";
 import { insertRequisition, insertUser } from "./fixtures";
@@ -95,11 +95,19 @@ describe("submit", () => {
     expect((await response.json()).fields.approverId).toBe("You can't approve your own submission.");
   });
 
-  it("A2: the approver picker for the current user doesn't list that user", async () => {
+  it("A2: the approver picker for the current user doesn't list that user, but lists other active approvers only", async () => {
     const hm = await signedIn("HIRING_MANAGER");
-    const picker = (await listActiveUsers({ roles: ["HIRING_MANAGER", "ADMIN"] })).filter((user) => user.id !== hm.userId);
-    expect(picker.some((user) => user.id === hm.userId)).toBe(false);
-    expect(picker.length).toBeGreaterThan(0);
+    const otherHm = await insertUser(db(), "HIRING_MANAGER");
+    const admin = await insertUser(db(), "ADMIN");
+    const recruiter = await insertUser(db(), "RECRUITER");
+    const inactive = await insertUser(db(), "HIRING_MANAGER");
+    await getDb().update(users).set({ isActive: false }).where(eq(users.id, inactive.id));
+
+    const ids = (await listApproverOptions({ id: hm.userId, role: "HIRING_MANAGER" })).map((option) => option.id);
+    expect(ids).not.toContain(hm.userId);
+    expect(ids).toEqual(expect.arrayContaining([otherHm.id, admin.id]));
+    expect(ids).not.toContain(recruiter.id);
+    expect(ids).not.toContain(inactive.id);
   });
 
   it("A1: submit checks the description, active references and custom fields, and refuses other states and stale versions", async () => {

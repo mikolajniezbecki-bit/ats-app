@@ -11,6 +11,7 @@ import { type Db, type Tx, getDb } from "../db";
 import { approvalEvents, masterData, requisitionHistory, requisitions, users } from "../db/schema";
 import { queueRequisitionApprovalRequest } from "../email/approval-request";
 import { logger } from "../logger";
+import { listActiveUsers } from "../users";
 import { type ApprovalResource, type PolicyUser, can } from "../policy/permissions";
 import { type FieldErrors, type RequisitionRow, findVisibleRequisition, isFirstApprovalPending, submissionErrors } from "../requisitions";
 
@@ -177,6 +178,15 @@ export async function withdrawRequisition(tx: Tx, user: PolicyUser, id: string, 
   await stateHistory(tx, id, "PENDING_APPROVAL", "DRAFT", user.id, note);
   logger.info({ requisition_id: id, user_id: user.id }, "requisition withdrawn");
   return { ok: true, requisition };
+}
+
+/**
+ * The approver picker (A1, A2): active Hiring Managers and Admins, sorted by
+ * name, without the current user, who could never approve their own submission.
+ */
+export async function listApproverOptions(user: PolicyUser, db: Db | Tx = getDb()): Promise<{ id: string; name: string }[]> {
+  const approvers = await listActiveUsers({ roles: APPROVER_ROLES }, db);
+  return approvers.filter((approver) => approver.id !== user.id).map(({ id, name }) => ({ id, name }));
 }
 
 /** "My approvals": requisitions waiting for this approver, oldest submission first. */

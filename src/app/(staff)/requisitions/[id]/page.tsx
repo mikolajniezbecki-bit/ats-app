@@ -3,7 +3,7 @@
 import { getTranslations } from "next-intl/server";
 import { ApprovalActions } from "@/components/requisitions/approval-actions";
 import { PrescreenEditor } from "@/components/requisitions/prescreen-editor";
-import { APPROVER_ROLES, latestRequisitionApprovalEvent, requisitionApproval } from "@/server/approvals";
+import { latestRequisitionApprovalEvent, listApproverOptions, requisitionApproval } from "@/server/approvals";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sanitizeDescription } from "@/server/domain/requisitions/description";
@@ -11,7 +11,6 @@ import { requirePermission } from "@/server/policy/guards";
 import { can } from "@/server/policy/permissions";
 import { canEditQuestions, listQuestionRows, questionsEditable, storedDefinition } from "@/server/prescreen";
 import { getRequisitionDetail, isFirstApprovalPending } from "@/server/requisitions";
-import { listActiveUsers } from "@/server/users";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +24,7 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
   const a = await getTranslations("Approvals.panel");
   const pendingFirst = isFirstApprovalPending(requisition);
   const canSubmit = requisition.state === "DRAFT" && can(user, "requisition.edit", requisition);
-  // A2: the picker never offers the current user.
-  const approvers = canSubmit
-    ? (await listActiveUsers({ roles: APPROVER_ROLES })).filter((approver) => approver.id !== user.id).map(({ id: userId, name }) => ({ id: userId, name }))
-    : null;
+  const approvers = canSubmit ? await listApproverOptions(user) : null;
   const approval = requisitionApproval(requisition);
   const latest = await latestRequisitionApprovalEvent(requisition.id);
   const approverName = detail.approver?.name ?? "—";
