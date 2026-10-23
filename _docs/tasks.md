@@ -353,7 +353,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `A7:` test: each action writes an `approval_events` row; `E7:` test: the approver receives the request email.
 - `L8:` test: editing a requisition in first-approval `PENDING_APPROVAL` is refused.
 
-## 23. Public job board and job pages
+## 23. Public job board and job pages ✅
 
 **Issue:** [#29](https://github.com/mikolajniezbecki-bit/ats-app/issues/29)
 
