@@ -240,7 +240,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Deactivating a signed-in user ends their session on the next request.
 - The user-picker API returns only active users, filtered by role when asked.
 
-## 16. Templates and token resolution
+## 16. Templates and token resolution ✅
 
 **Issue:** [#22](https://github.com/mikolajniezbecki-bit/ats-app/issues/22)
 
