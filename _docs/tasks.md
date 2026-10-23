@@ -273,7 +273,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - With `AUTH_DEV_LOGIN` not `true`, no passwords are created; with `true`, each demo user can sign in.
 - `docker compose run --rm app <seed command>` and `<seed:admin command> --email admin@example.com` succeed from the production image.
 
-## 18. Email service and delivery job
+## 18. Email service and delivery job ✅
 
 **Issue:** [#24](https://github.com/mikolajniezbecki-bit/ats-app/issues/24)
 
