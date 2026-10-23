@@ -29,13 +29,14 @@ const ADMIN_RECRUITER: Action[] = [
   "approval.reassign",
   ...READS,
 ];
-const CREATORS: Action[] = ["requisition.create", "masterData.pick", "users.pick", "templates.pick"];
+const CREATORS: Action[] = ["requisition.create", "requisition.edit", "masterData.pick", "users.pick", "templates.pick"];
 
 /** What each role is allowed; everything else in the catalogue is denied. */
 const ALLOWED: Record<Role, Action[]> = {
   ADMIN: [...ACTIONS],
   RECRUITER: ["staff.area", ...ADMIN_RECRUITER, ...CREATORS],
-  HIRING_MANAGER: ["staff.area", ...CREATORS, "approval.decide"],
+  // requisition.read: within V3a only (resource rule, task 20).
+  HIRING_MANAGER: ["staff.area", ...CREATORS, "approval.decide", "requisition.read"],
   INTERVIEWER: ["staff.area"],
 };
 
@@ -59,8 +60,40 @@ describe("can()", () => {
 
   it("AU9: Hiring Manager and Interviewer are signed in but denied reads until their rules exist", () => {
     for (const role of ["HIRING_MANAGER", "INTERVIEWER"] as const) {
-      for (const action of READS) expect(can(user(role), action), `${role} ${action}`).toBe(false);
+      // A Hiring Manager's requisition reads have their rule since task 20 (V3a, below).
+      const pending = role === "HIRING_MANAGER" ? READS.filter((action) => action !== "requisition.read") : READS;
+      for (const action of pending) expect(can(user(role), action), `${role} ${action}`).toBe(false);
     }
+    expect(can(user("INTERVIEWER"), "requisition.read")).toBe(false);
+  });
+
+  describe("requisition resource rules", () => {
+    const hm = user("HIRING_MANAGER");
+    const other = "00000000-0000-4000-8000-0000000000ff";
+    const requisition = (overrides: Partial<{ hiringManagerId: string; approverId: string | null; createdByUserId: string }>) => ({
+      hiringManagerId: other,
+      approverId: null,
+      createdByUserId: other,
+      ...overrides,
+    });
+
+    it("V3: a Hiring Manager reads a requisition as its hiring manager, approver or creator, and no other", () => {
+      expect(can(hm, "requisition.read", requisition({ hiringManagerId: hm.id }))).toBe(true);
+      expect(can(hm, "requisition.read", requisition({ approverId: hm.id }))).toBe(true);
+      expect(can(hm, "requisition.read", requisition({ createdByUserId: hm.id }))).toBe(true);
+      expect(can(hm, "requisition.read", requisition({}))).toBe(false);
+    });
+
+    it("V2: a Recruiter reads and edits any requisition", () => {
+      expect(can(user("RECRUITER"), "requisition.read", requisition({}))).toBe(true);
+      expect(can(user("RECRUITER"), "requisition.edit", requisition({}))).toBe(true);
+    });
+
+    it("V3: a Hiring Manager edits only requisitions they created", () => {
+      expect(can(hm, "requisition.edit", requisition({ createdByUserId: hm.id }))).toBe(true);
+      expect(can(hm, "requisition.edit", requisition({ hiringManagerId: hm.id }))).toBe(false);
+      expect(can(user("INTERVIEWER"), "requisition.edit", requisition({ createdByUserId: user("INTERVIEWER").id }))).toBe(false);
+    });
   });
 
   it("AU9: no user, an inactive user and an unknown action are denied", () => {
