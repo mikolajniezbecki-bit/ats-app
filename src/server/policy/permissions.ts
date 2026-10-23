@@ -48,6 +48,8 @@ export const PERMISSIONS = {
 
   // Admin, Recruiter and Hiring Manager (§3).
   "requisition.create": CREATORS,
+  // Hiring Managers edit only drafts they created (resource rule below).
+  "requisition.edit": CREATORS,
   "masterData.pick": CREATORS,
   "users.pick": CREATORS,
   // Requisition, offer and bulk-email forms list active templates (task 16, Q10).
@@ -56,9 +58,10 @@ export const PERMISSIONS = {
   // Role level only; A2 and the current-approver check come with task 22.
   "approval.decide": APPROVERS,
 
-  // V1, V2. Hiring Manager (V3/V4) and Interviewer (V5/V6) reads are added
-  // with their resource rules (tasks 20, 34, 36).
-  "requisition.read": ADMIN_RECRUITER,
+  // V1, V2; Hiring Managers within V3a (resource rule below). Hiring Manager
+  // application reads (V4) and Interviewer reads (V5/V6) are added with their
+  // resource rules (tasks 34, 36).
+  "requisition.read": CREATORS,
   "application.read": ADMIN_RECRUITER,
   "scorecard.read": ADMIN_RECRUITER,
   "offer.read": ADMIN_RECRUITER,
@@ -69,16 +72,38 @@ export type Action = keyof typeof PERMISSIONS;
 
 export const ACTIONS = Object.keys(PERMISSIONS) as Action[];
 
+/** The requisition columns the resource rules read. */
+export type RequisitionResource = { hiringManagerId: string; approverId: string | null; createdByUserId: string };
+
+/** V3a: the Hiring Manager is the requisition's hiring manager, approver or creator. */
+export function inRequisitionScope(user: PolicyUser, requisition: RequisitionResource): boolean {
+  return requisition.hiringManagerId === user.id || requisition.approverId === user.id || requisition.createdByUserId === user.id;
+}
+
+type ResourceRule = (user: PolicyUser, resource: unknown) => boolean;
+
+/**
+ * Rules on the record, checked after the role matrix when a resource is
+ * given. Without a resource only the role is checked (e.g. opening the list
+ * page); the record itself is then read through a row-level filter (D6).
+ */
+const RESOURCE_RULES: Partial<Record<Action, ResourceRule>> = {
+  "requisition.read": (user, resource) =>
+    user.role !== "HIRING_MANAGER" || inRequisitionScope(user, resource as RequisitionResource),
+  "requisition.edit": (user, resource) =>
+    user.role !== "HIRING_MANAGER" || (resource as RequisitionResource).createdByUserId === user.id,
+};
+
 /**
  * True when `user` may perform `action`. Denies by default: no user, an
  * inactive user, or an action outside the catalogue. `resource` is the record
- * acted on, for the resource rules later tasks add; role-level actions
- * ignore it.
+ * acted on, for the resource rules above; role-level actions ignore it.
  */
 export function can(user: PolicyUser | null | undefined, action: Action, resource?: unknown): boolean {
-  void resource;
   if (!user || user.isActive === false) return false;
   if (!Object.hasOwn(PERMISSIONS, action)) return false;
   const roles: readonly Role[] = PERMISSIONS[action];
-  return roles.includes(user.role);
+  if (!roles.includes(user.role)) return false;
+  const rule = RESOURCE_RULES[action];
+  return resource === undefined || rule === undefined || rule(user, resource);
 }

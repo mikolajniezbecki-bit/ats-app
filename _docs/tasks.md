@@ -303,7 +303,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - The iframe has a `sandbox` attribute without `allow-scripts`; the `.ics` route returns `text/calendar; charset=utf-8` as an attachment.
 - Non-Admin users get 403 from the Outbox page, the `.ics` route and the jobs page.
 
-## 20. Requisition drafting
+## 20. Requisition drafting ✅
 
 **Issue:** [#26](https://github.com/mikolajniezbecki-bit/ats-app/issues/26)
 

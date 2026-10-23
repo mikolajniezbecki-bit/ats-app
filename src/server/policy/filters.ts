@@ -5,10 +5,11 @@
 //
 //   db.select().from(requisitions).where(and(scopeRequisitionsFor(user), ...))
 //
-// Admin (V1) and Recruiter (V2) see everything. Hiring Manager (V3a: task 20,
-// V3b: task 36) and Interviewer (V5–V7: tasks 33, 34) get their conditions
-// from those tasks.
-import { type SQL, sql } from "drizzle-orm";
+// Admin (V1) and Recruiter (V2) see everything. Hiring Managers see the
+// requisitions of V3a; their application reads (V3b: task 36) and the
+// Interviewer's (V5–V7: tasks 33, 34) get their conditions from those tasks.
+import { type SQL, eq, or, sql } from "drizzle-orm";
+import { requisitions } from "../db/schema";
 import type { PolicyUser } from "./permissions";
 
 const ALL_ROWS: SQL = sql`true`;
@@ -20,7 +21,15 @@ function adminOrRecruiterOnly(user: PolicyUser | null | undefined): SQL {
   return user.role === "ADMIN" || user.role === "RECRUITER" ? ALL_ROWS : NO_ROWS;
 }
 
+/** V1, V2; V3a: a Hiring Manager's requisitions as hiring manager, approver or creator. */
 export function scopeRequisitionsFor(user: PolicyUser | null | undefined): SQL {
+  if (user && user.isActive !== false && user.role === "HIRING_MANAGER") {
+    return or(
+      eq(requisitions.hiringManagerId, user.id),
+      eq(requisitions.approverId, user.id),
+      eq(requisitions.createdByUserId, user.id),
+    )!;
+  }
   return adminOrRecruiterOnly(user);
 }
 

@@ -13,4 +13,5 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/admin/templates", labelKey: "templates", action: "templates.manage" },
   { href: "/admin/outbox", labelKey: "outbox", action: "outbox.view" },
   { href: "/admin/jobs", labelKey: "jobs", action: "jobs.view" },
+  { href: "/requisitions", labelKey: "requisitions", action: "requisition.read" },
 ];

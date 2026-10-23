@@ -1,0 +1,100 @@
+// Requisition detail (ats-project-scope.md §5.2, §5.1, V3a, V9): 404 outside
+// the caller's scope; warns when the recruiter or hiring manager is inactive.
+import { getTranslations } from "next-intl/server";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { sanitizeDescription } from "@/server/domain/requisitions/description";
+import { requirePermission } from "@/server/policy/guards";
+import { can } from "@/server/policy/permissions";
+import { getRequisitionDetail } from "@/server/requisitions";
+
+export const dynamic = "force-dynamic";
+
+export default async function RequisitionPage({ params }: PageProps<"/requisitions/[id]">) {
+  const { id } = await params;
+  const user = await requirePermission("requisition.read", undefined, `/requisitions/${encodeURIComponent(id)}`);
+  const detail = await getRequisitionDetail(user, id);
+  if (!detail) notFound();
+  const { requisition, template } = detail;
+  const t = await getTranslations("Requisitions");
+  const customFields = (requisition.customFieldsJson as Record<string, string | number | boolean | null>) ?? {};
+  const named = (ref: { label: string; isActive: boolean }) => (ref.isActive ? ref.label : t("inactive", { label: ref.label }));
+  const person = (ref: { name: string; isActive: boolean }) => (ref.isActive ? ref.name : t("inactive", { label: ref.name }));
+  const customValue = (value: string | number | boolean | null | undefined) =>
+    value === null || value === undefined ? t("fields.notSet") : typeof value === "boolean" ? t(value ? "fields.yes" : "fields.no") : String(value);
+
+  const rows: [string, string][] = [
+    [t("fields.title"), requisition.title],
+    [t("columns.state"), t(`states.${requisition.state}`)],
+    [t("fields.template"), template ? template.name : t("noTemplate")],
+    [t("fields.department"), named(detail.department)],
+    [t("fields.location"), named(detail.location)],
+    [t("fields.legalEntity"), named(detail.legalEntity)],
+    [t("fields.hiringManager"), person(detail.hiringManager)],
+    [t("fields.recruiter"), person(detail.recruiter)],
+    [t("fields.openingsCount"), String(requisition.openingsCount)],
+    [t("fields.postingType"), t(`postingTypes.${requisition.postingType}`)],
+  ];
+  if (requisition.privateSlug) rows.push([t("fields.privateLink"), `/jobs/p/${requisition.privateSlug}`]);
+
+  return (
+    <main className="flex flex-1 flex-col gap-4 p-8">
+      <Link href="/requisitions" className="text-sm underline">
+        {t("back")}
+      </Link>
+      <h1 className="text-2xl font-semibold">
+        {requisition.reqNumber} · {requisition.title}
+      </h1>
+      {!detail.recruiter.isActive && (
+        <p role="alert" className="rounded border border-amber-700 bg-amber-50 px-3 py-2 text-amber-900">
+          {t("recruiterInactive")}
+        </p>
+      )}
+      {!detail.hiringManager.isActive && (
+        <p role="alert" className="rounded border border-amber-700 bg-amber-50 px-3 py-2 text-amber-900">
+          {t("hiringManagerInactive")}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-3">
+        {requisition.state === "DRAFT" && can(user, "requisition.edit", requisition) && (
+          <Link href={`/requisitions/${requisition.id}/edit`} className="rounded bg-black px-4 py-2 text-white">
+            {t("edit")}
+          </Link>
+        )}
+        {can(user, "requisition.create") && (
+          <Link href={`/requisitions/new?from=${requisition.id}`} className="rounded border px-4 py-2">
+            {t("duplicate")}
+          </Link>
+        )}
+      </div>
+      <section aria-labelledby="details-heading" className="space-y-2">
+        <h2 id="details-heading" className="text-xl font-semibold">
+          {t("details")}
+        </h2>
+        <dl className="grid max-w-3xl grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+          {rows.map(([term, value]) => (
+            <div key={term} className="contents">
+              <dt className="font-medium">{term}</dt>
+              <dd data-testid={`detail-${term}`}>{value}</dd>
+            </div>
+          ))}
+          {template?.schema.map((field) => (
+            <div key={field.key} className="contents">
+              <dt className="font-medium">{field.label}</dt>
+              <dd>{customValue(customFields[field.key])}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+      <section aria-labelledby="description-heading" className="max-w-3xl space-y-2">
+        <h2 id="description-heading" className="text-xl font-semibold">
+          {t("fields.description")}
+        </h2>
+        <div
+          className="[&_a]:underline [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6"
+          dangerouslySetInnerHTML={{ __html: sanitizeDescription(requisition.descriptionHtml) }}
+        />
+      </section>
+    </main>
+  );
+}
