@@ -49,6 +49,8 @@ export function proxy(request: NextRequest) {
       nonce: createNonce(),
       frameOrigin: blobOrigin(getConfig().storage),
       dev: process.env.NODE_ENV === "development",
+      // Turnstile (F6) runs on the apply pages only.
+      turnstile: pathname.startsWith("/apply/"),
     });
     requestHeaders.set(CSP_HEADER, csp);
   }

@@ -1,6 +1,6 @@
 // Fills in the Quick Apply form for specs (ats-project-scope.md §5.3).
 import { randomUUID } from "node:crypto";
-import type { Page } from "@playwright/test";
+import { type Page, expect } from "@playwright/test";
 
 export const VALID_PDF = "tests/fixtures/pdf/valid.pdf";
 
@@ -19,5 +19,11 @@ export async function fillApplication(page: Page, candidate: Candidate, options:
   await form.getByLabel("Phone").fill(candidate.phone);
   await form.getByLabel("CV (PDF)").setInputFiles(options.cv ?? VALID_PDF);
   if (options.consent ?? true) await form.getByRole("checkbox", { name: /I have read the privacy statement/ }).check();
+  await waitForTurnstile(page);
   return form;
+}
+
+/** Waits until the Turnstile widget (test keys: always passes) has put its token into the form (F6). */
+export async function waitForTurnstile(page: Page) {
+  await expect(page.locator('input[name="cf-turnstile-response"]')).not.toHaveValue("", { timeout: 20_000 });
 }
