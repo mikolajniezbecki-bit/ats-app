@@ -44,15 +44,15 @@ function fieldText(field: string, code: string, maxMb: number | undefined): stri
 
 export async function applyAction(form: FormData): Promise<ApplyState> {
   const route = routeOf(form);
-  if (!route) return { status: "error", message: message("Apply.errors.notFound"), fields: {} };
-  // F6: rate limit, honeypot and Turnstile before anything else.
+  // F6: every POST counts; rate limit, honeypot and Turnstile come before anything else.
   const refusal = await checkApplyAttempt({
     headers: await headers(),
     honeypot: String(form.get("website") ?? ""),
     captchaToken: typeof form.get("cf-turnstile-response") === "string" ? String(form.get("cf-turnstile-response")) : null,
-    requisitionId: route.kind === "external" ? route.id : undefined,
+    requisitionId: async () => (route ? (await findJobForRoute(route))?.id : undefined),
   });
   if (refusal) return { status: "error", httpStatus: refusal.httpStatus, message: message(`Apply.errors.${refusal.reason}`), fields: {} };
+  if (!route) return { status: "error", message: message("Apply.errors.notFound"), fields: {} };
   const answers: Record<string, string[]> = {};
   for (const [name, value] of form.entries()) {
     if (name.startsWith("q_") && typeof value === "string") (answers[name.slice(2)] ??= []).push(value);

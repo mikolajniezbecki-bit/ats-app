@@ -12,6 +12,7 @@ import { rateLimitKeyForIp } from "@/server/http/client-ip";
 import { countAttempt } from "@/server/ratelimit";
 
 const randomIp = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+const noId = async () => undefined;
 const key = () => `apply:test-${randomUUID()}`;
 
 describe("countAttempt", () => {
@@ -51,9 +52,9 @@ describe("checkApplyAttempt", () => {
     const ip = randomIp();
     for (let i = 0; i < 5; i++) await countAttempt(rateLimitKeyForIp(ip));
     const headers = new Headers({ "x-forwarded-for": `6.6.6.6, ${ip}` });
-    expect(await checkApplyAttempt({ headers, honeypot: "", captchaToken: null })).toEqual({ reason: "rateLimited", httpStatus: 429 });
+    expect(await checkApplyAttempt({ headers, honeypot: "", captchaToken: null, requisitionId: noId })).toEqual({ reason: "rateLimited", httpStatus: 429 });
     // A different address gets past the limit and is stopped by the honeypot instead.
-    expect(await checkApplyAttempt({ headers: new Headers({ "x-forwarded-for": randomIp() }), honeypot: "filled", captchaToken: null })).toEqual({
+    expect(await checkApplyAttempt({ headers: new Headers({ "x-forwarded-for": randomIp() }), honeypot: "filled", captchaToken: null, requisitionId: noId })).toEqual({
       reason: "honeypot",
       httpStatus: 400,
     });
@@ -62,7 +63,7 @@ describe("checkApplyAttempt", () => {
   it("F6: the client-set first x-forwarded-for entry doesn't bypass the limit", async () => {
     const ip = randomIp();
     for (let i = 0; i < 5; i++) await countAttempt(rateLimitKeyForIp(ip));
-    expect(await checkApplyAttempt({ headers: new Headers({ "x-forwarded-for": `${randomIp()}, ${ip}` }), honeypot: "", captchaToken: null })).toMatchObject({
+    expect(await checkApplyAttempt({ headers: new Headers({ "x-forwarded-for": `${randomIp()}, ${ip}` }), honeypot: "", captchaToken: null, requisitionId: noId })).toMatchObject({
       reason: "rateLimited",
     });
   });

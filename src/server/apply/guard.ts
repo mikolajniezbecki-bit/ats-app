@@ -17,25 +17,26 @@ export async function checkApplyAttempt(input: {
   headers: HeaderReader;
   honeypot: string;
   captchaToken: string | null;
-  /** For the log only. */
-  requisitionId?: string;
+  /** For the log only: resolved when a check refuses. */
+  requisitionId: () => Promise<string | undefined>;
 }): Promise<GuardRefusal | null> {
   const { ip, source } = getClientIp(input.headers);
-  const log = { requisition_id: input.requisitionId, ip_source: source };
+  const refused = async (check: string, extra: Record<string, unknown> = {}) =>
+    logger.info({ requisition_id: await input.requisitionId(), ip_source: source, check, ...extra }, "application refused");
   if (shouldEnforceRateLimit({ authDevLogin: getConfig().auth.devLogin, headerValue: input.headers.get("x-enforce-rate-limit") })) {
     const { allowed } = await countAttempt(rateLimitKeyForIp(ip));
     if (!allowed) {
-      logger.info({ ...log, check: "rateLimit" }, "application refused");
+      await refused("rateLimit");
       return { reason: "rateLimited", httpStatus: 429 };
     }
   }
   if (input.honeypot !== "") {
-    logger.info({ ...log, check: "honeypot" }, "application refused");
+    await refused("honeypot");
     return { reason: "honeypot", httpStatus: 400 };
   }
   const captcha = await getCaptcha().verify(input.captchaToken, ip);
   if (!captcha.ok) {
-    logger.info({ ...log, check: "captcha", captcha_reason: captcha.reason }, "application refused");
+    await refused("captcha", { captcha_reason: captcha.reason });
     return { reason: "captcha", httpStatus: 400 };
   }
   return null;
