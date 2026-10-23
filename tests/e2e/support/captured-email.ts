@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { outboxTransport } from "@/server/adapters/email";
+import { stopJobQueue } from "@/server/adapters/job-queue";
 import { closeDb, withTransaction } from "@/server/db";
 import { queueEmail } from "@/server/email";
 import { createEmailSendHandler } from "@/server/email/send";
@@ -48,6 +49,8 @@ async function main(): Promise<void> {
   );
   await createEmailSendHandler({ transport: outboxTransport })({ id: randomUUID(), queue: "email.send", data: { emailLogId }, retryCount: 0 });
   process.stdout.write(JSON.stringify({ emailLogId, fileId: file.id }));
+  // queueEmail() started pg-boss, whose timers would keep the process alive.
+  await stopJobQueue();
   await closeDb();
 }
 

@@ -58,9 +58,15 @@ test("the sandboxed body runs no script and fetches no remote image", async ({ a
   const scripted = await insertLoggedEmail('<p id="before">Text</p><script>document.title = "pwned"; parent.document.title = "pwned";</script>');
   const remote = await insertLoggedEmail('<p>Image</p><img src="https://example.com/x.png" alt="remote">');
   const page = await asRole("admin");
-  const external: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().startsWith("https://example.com")) external.push(request.url());
+  // Chromium reports a request it then blocks, so what counts is that none
+  // gets a response and each fails as blocked by the CSP ("csp").
+  const responses: string[] = [];
+  const failures: string[] = [];
+  page.on("response", (response) => {
+    if (response.url().startsWith("https://example.com")) responses.push(response.url());
+  });
+  page.on("requestfailed", (request) => {
+    if (request.url().startsWith("https://example.com")) failures.push(request.failure()?.errorText ?? "");
   });
 
   await page.goto(`/admin/outbox/${scripted}`);
@@ -70,8 +76,8 @@ test("the sandboxed body runs no script and fetches no remote image", async ({ a
 
   await page.goto(`/admin/outbox/${remote}`);
   await expect(page.frameLocator('iframe[title="Email body"]').getByText("Image")).toBeVisible();
-  await page.waitForTimeout(300);
-  expect(external).toEqual([]);
+  await expect.poll(() => failures).toEqual(["csp"]);
+  expect(responses).toEqual([]);
 });
 
 test("V1: an Admin sees the queues and the daily-task runs", async ({ asRole }) => {
