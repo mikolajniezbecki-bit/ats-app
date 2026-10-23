@@ -1,10 +1,13 @@
-// Compiles the db:migrate entry point into one JavaScript file with its
-// runtime dependencies bundled, and copies the committed SQL next to it, so
-// the production image runs migrations without pnpm, tsx or drizzle-kit
-// (tech-stack.md §3 rule 8). `pnpm db:migrate` runs the same bundle locally.
+// Compiles the database entry points into JavaScript files with their
+// runtime dependencies bundled, and copies the committed SQL next to them, so
+// the production image runs migrations and seeds without pnpm, tsx or
+// drizzle-kit (tech-stack.md §3 rule 8, G5). `pnpm db:migrate` and
+// `pnpm db:seed` run the same bundles locally.
 //
-//   dist/db/migrate.mjs   the bundle
-//   dist/db/migrations/   the committed SQL and drizzle-kit journal
+//   dist/db/migrate.mjs      db:migrate
+//   dist/db/seed.mjs         db:seed
+//   dist/db/seed-admin.mjs   seed:admin
+//   dist/db/migrations/      the committed SQL and drizzle-kit journal
 import { cpSync, rmSync } from "node:fs";
 import { build } from "esbuild";
 
@@ -13,8 +16,13 @@ const OUT_DIR = "dist/db";
 rmSync(OUT_DIR, { recursive: true, force: true });
 
 await build({
-  entryPoints: ["src/server/db/migrate.ts"],
-  outfile: `${OUT_DIR}/migrate.mjs`,
+  entryPoints: {
+    migrate: "src/server/db/migrate.ts",
+    seed: "src/server/db/seed/cli.ts",
+    "seed-admin": "src/server/db/seed-admin-cli.ts",
+  },
+  outdir: OUT_DIR,
+  outExtension: { ".js": ".mjs" },
   bundle: true,
   platform: "node",
   target: "node24",
