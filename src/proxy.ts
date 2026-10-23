@@ -64,6 +64,11 @@ export function proxy(request: NextRequest) {
   response.headers.set(REQUEST_ID_HEADER, requestId);
   if (csp) response.headers.set(CSP_HEADER, csp);
   response.headers.set("X-Content-Type-Options", "nosniff");
+  // Private postings (§5.2): never indexed, and links in them don't leak the slug.
+  if (pathname.startsWith("/jobs/p/")) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    response.headers.set("Referrer-Policy", "no-referrer");
+  }
   return response;
 }
 

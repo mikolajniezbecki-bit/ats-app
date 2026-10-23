@@ -183,6 +183,13 @@ The image holds the three compiled entry points in `/app/db` (`node db/migrate.m
 - `scorePrescreen(questions, answers)` (`src/server/domain/prescreen/scoring.ts`) is the one scoring function (S1–S4): active questions only, unanswered = 0, unknown codes throw `InvalidAnswerError`, `MULTI` compared as sets.
 - Saving a duplicate copies the source's active questions in order.
 
+## Career portal
+
+- `/jobs` (public, rendered per request) lists requisitions with `posting_type = 'EXTERNAL' AND is_published = true`, newest approval first, 20 per page. `?q=` matches every word in the title or the description text (case-insensitive, `%` and `_` literal, at most 100 characters); `?location=` and `?department=` take master data codes, offered from the listed jobs only (deactivated records included). The form is a plain GET form.
+- `/jobs/<id>` serves External requisitions approved at least once and `/jobs/p/<slug>` Private ones; anything else (drafts, first approval, the wrong route for the posting type) is the public 404 "This job can't be found.". An unpublished job shows its title and "This position is no longer accepting applications." only, with `noindex`. The description is sanitized again on render.
+- Private pages send `noindex, nofollow` (meta and `X-Robots-Tag`) and `Referrer-Policy: no-referrer` (meta and header, set in `proxy.ts`). `/sitemap.xml` lists `/jobs` and the listed External jobs on `BETTER_AUTH_URL`; `/robots.txt` disallows `/apply/`, `/jobs/p/` and the staff paths.
+- Public queries live in `src/server/careers/` and select public columns only (title, department, location, description). Playwright checks the pages with `@axe-core/playwright` (WCAG 2.1 A/AA) and at a 375 px viewport.
+
 ## Microsoft Entra sign-in (owner setup)
 
 Staff sign in with accounts from the project's own Entra tenant (tech-stack.md §4, AU1–AU4). Sign-in is invite-only: an Entra account gets in only if an Admin created an **active** ATS user with the same email first (task 12's `pnpm seed:admin` for the first Admin, the Admin user pages from task 15 after that). Anyone else sees "Access not granted, contact your ATS admin." and no user is created. On the first sign-in the Entra account is linked to that user; later sign-ins match the Entra object ID, so a renamed UPN still signs in the same user. Sign-in never changes the ATS user's name, email or role, and no profile photo is fetched.

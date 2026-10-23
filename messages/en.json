@@ -643,5 +643,30 @@
       "cancel": "Cancel",
       "failed": "The action could not be completed. Try again."
     }
+  },
+  "Careers": {
+    "appName": "ATS Demo Careers",
+    "skipToContent": "Skip to content",
+    "allJobs": "All open positions",
+    "boardTitle": "Open positions",
+    "pageTitle": "{title} | Careers",
+    "searchLabel": "Search open positions",
+    "keywords": "Keywords",
+    "location": "Location",
+    "department": "Department",
+    "allLocations": "All locations",
+    "allDepartments": "All departments",
+    "search": "Search",
+    "results": "{count} open positions",
+    "noJobs": "There are no open positions right now.",
+    "noMatches": "No positions match your search.",
+    "clearFilters": "Clear filters",
+    "pagination": "Pages",
+    "previous": "Previous",
+    "next": "Next",
+    "pageInfo": "Page {page} of {pages}",
+    "apply": "Apply now",
+    "closed": "This position is no longer accepting applications.",
+    "notFound": "This job can't be found."
   }
 }
