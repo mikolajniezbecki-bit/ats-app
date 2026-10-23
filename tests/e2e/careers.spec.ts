@@ -96,7 +96,7 @@ test("sitemap.xml lists external jobs as absolute URLs and robots.txt names it, 
   const robots = await request.get("/robots.txt");
   expect(robots.status()).toBe(200);
   const text = await robots.text();
-  expect(text).toContain("Disallow: /apply/");
+  for (const path of ["/apply/", "/jobs/p/", "/api/", "/admin", "/dashboard", "/requisitions", "/approvals"]) expect(text).toContain(`Disallow: ${path}`);
   expect(text).toContain("Sitemap: http://localhost:3000/sitemap.xml");
 });
 
