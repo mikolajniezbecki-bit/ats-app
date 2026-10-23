@@ -19,10 +19,10 @@ pnpm build     # production build (.next/standalone)
 Database (PostgreSQL 17 from the Compose stack, see below):
 
 ```sh
-docker compose up -d postgres   # start PostgreSQL on localhost:5432
+docker compose up -d postgres azurite   # start PostgreSQL on localhost:5432 and Azurite on :10000
 pnpm db:migrate                 # apply the committed migrations (reads .env if present)
 pnpm db:generate                # generate a migration after a schema change
-pnpm test:integration           # Vitest integration tests against PostgreSQL
+pnpm test:integration           # Vitest integration tests against PostgreSQL and Azurite
 ```
 
 - The Drizzle schema in `src/server/db/schema/` is the source of truth for the data model (tech-stack.md D1). To change it: edit the schema, run `pnpm db:generate` (optionally `--name=<what_changed>`), review the SQL in `src/server/db/migrations/` and commit it together with the schema change. On a clean checkout `pnpm db:generate` must report no changes. `drizzle-kit push` is allowed only on a local database (D2).
@@ -82,6 +82,30 @@ Creates an active Admin with `email_verified = true` and no password. The name d
 - Concurrent runs are safe.
 
 It reads `.env` like `pnpm db:migrate`. In Azure it runs through the `db-seed` job with `SEED_ADMIN_EMAIL` (tasks 17 and 44).
+
+## Files, health and security headers
+
+**Storage** (tech-stack.md §8). `StorageService` in `src/server/adapters/storage/` is the only code that imports `@azure/storage-blob` and `@azure/identity` (ESLint enforces it). Blobs live in the private container `files` under random UUID keys with no extension; the original file name is stored only in the `files` table. The mode follows the configuration:
+
+| Mode | When | Signed links |
+|---|---|---|
+| Azurite | `AZURE_STORAGE_CONNECTION_STRING` is set (Compose, CI, `pnpm dev`) | Account-key SAS. The app creates the `files` container at start-up (and the integration-test setup does too) if it's missing. Links use `AZURE_STORAGE_PUBLIC_URL` when set (`http://localhost:10000/devstoreaccount1` in Compose, because the browser can't resolve `azurite`), otherwise the connection string's endpoint. |
+| Azure | otherwise: `AZURE_STORAGE_ACCOUNT_URL` + `AZURE_CLIENT_ID` | Managed identity (`DefaultAzureCredential`) and a user delegation key, cached until 5 minutes before it expires; HTTPS only. Bicep creates the container. |
+
+- Every signed link is for one blob, read-only, with no start time, expires after 5 minutes and sets `Content-Type: application/pdf` and `Content-Disposition: inline` (F5, V11). PDFs are never streamed through the app. Signed URLs and original file names are never logged (`url`, `signedUrl`, `originalName` and `original_name` are redacted).
+- Uploads go through `storePdf(tx, …)` in `src/server/files/`: it validates the file with `validatePdfUpload()` (empty, larger than `MAX_UPLOAD_MB` MiB, no `%PDF-` at byte 0, encrypted including permissions-only, or unparsable: refused; the name and the browser's MIME type are ignored), uploads it, and inserts the `files` row in `tx`. If the transaction rolls back, the blob is deleted again (`onRollback()` in `src/server/db`).
+- Staff view a PDF at `/files/<id>` (the `PdfViewer` server component) or get a link from `GET /api/files/<id>/url` (`{ url, expiresAt }`, `Cache-Control: no-store`). Both check `can(user, 'file.view', file)`: Admins and Recruiters for now. No session gives 401, other roles 403, and an unknown, deleted or non-`CLEAN` file 404.
+- Settings are read with `getSetting(key)` from `src/server/settings/`: typed per key, the ats-project-scope.md §5.1 default when no row exists or the stored value doesn't parse, and no cache.
+
+**Health** (M5). `GET /api/health` is public and checks the database (`select 1`) and storage (the `files` container exists) concurrently, each with a 3 s timeout. It returns `200 {"status":"ok","database":"ok","storage":"ok"}`, or `503` with the failed part set to `"fail"`, always with `Cache-Control: no-store` and never with host names or error text. Against the Compose stack: `curl -s localhost:3000/api/health`; after `docker compose stop azurite` it returns 503 within about 3 s.
+
+**Security headers** (§3 rule 6, F5). `src/proxy.ts` sets, at run time, a Content Security Policy with a fresh nonce on every HTML page response:
+
+```
+default-src 'self'; script-src 'self' 'nonce-<n>' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src <blob origin>; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+```
+
+`'unsafe-eval'` is added only under `next dev`. `<blob origin>` is the scheme, host and port of the browser-facing Blob endpoint (`http://localhost:10000` in Compose, `http://127.0.0.1:10000` for `pnpm dev`, `https://<account>.blob.core.windows.net` in Azure), never `*`. Next.js reads the nonce from the forwarded request header and puts it on its scripts; this needs pages rendered per request, which they are. Every response also gets `X-Content-Type-Options: nosniff` (static assets through `next.config.ts`). The proxy still makes no authorization decision.
 
 ## Microsoft Entra sign-in (owner setup)
 
