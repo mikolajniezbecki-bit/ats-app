@@ -11,6 +11,8 @@ const LINKS = [
   { href: "/admin/master-data", key: "masterData" },
   { href: "/admin/users", key: "users" },
   { href: "/admin/templates", key: "templates" },
+  { href: "/admin/outbox", key: "outbox" },
+  { href: "/admin/jobs", key: "jobs" },
 ] as const;
 
 export default async function AdminPage() {

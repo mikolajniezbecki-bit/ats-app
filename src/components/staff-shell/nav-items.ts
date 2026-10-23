@@ -11,4 +11,6 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/admin/master-data", labelKey: "masterData", action: "masterData.manage" },
   { href: "/admin/users", labelKey: "users", action: "users.manage" },
   { href: "/admin/templates", labelKey: "templates", action: "templates.manage" },
+  { href: "/admin/outbox", labelKey: "outbox", action: "outbox.view" },
+  { href: "/admin/jobs", labelKey: "jobs", action: "jobs.view" },
 ];
