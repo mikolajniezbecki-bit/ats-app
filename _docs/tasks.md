@@ -162,7 +162,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `POST /api/internal/tick` without a session is not redirected to sign-in.
 - The `time-travel` Playwright project runs with one worker after the parallel projects; a unit-tested check fails when a spec outside `tests/e2e/time-travel/**` sends `x-test-now`.
 
-## 11. Microsoft Entra ID sign-in
+## 11. Microsoft Entra ID sign-in ✅
 
 **Issue:** [#17](https://github.com/mikolajniezbecki-bit/ats-app/issues/17)
 

@@ -48,12 +48,37 @@ Rule traceability (`pnpm test:rules`, tech-stack.md §11 T1):
 
 ## Sign-in and end-to-end tests
 
-- Staff sign in at `/sign-in`. Locally and in CI (`AUTH_DEV_LOGIN=true`) the page shows an email and password form (dev sign-in, AU7); sign-up is always disabled, so dev users are created with `ensureDevUser()` from `src/server/auth/dev-users.ts` (the Playwright setup, and the demo seed from task 17). Without dev login the form isn't shown (task 11 adds Microsoft sign-in).
+- Staff sign in at `/sign-in`. Locally and in CI (`AUTH_DEV_LOGIN=true`) the page shows an email and password form (dev sign-in, AU7); sign-up is always disabled, so dev users are created with `ensureDevUser()` from `src/server/auth/dev-users.ts` (the Playwright setup, and the demo seed from task 17). Without dev login the form isn't shown. When the three `MICROSOFT_*` variables are set, the page also shows "Sign in with Microsoft" (see below). A refused sign-in returns to `/sign-in?error=<code>`; the page shows "Access not granted, contact your ATS admin." or a generic failure text, never the code itself.
 - Sessions are database rows (`session` table) with an 8 h sliding expiry and a Secure, HTTP-only, SameSite=Lax cookie, even on `http://localhost` (AU6). Server code gets the signed-in user with `getCurrentUser()` from `src/server/auth/current-user.ts`, which reloads the role and active flag on every request (AU5); protected route handlers use `requireApiUser(request)`, which returns a 401 response when signed out.
 - `src/proxy.ts` only checks that the session cookie is present. Paths outside its public list (`PUBLIC_PATHS`) redirect to `/sign-in?next=…` (pages) or return 401 JSON (`/api/**`). `/api/internal/tick` is public because it has its own secret.
 - `pnpm test:e2e` runs two Playwright invocations: the `parallel` project, then the `time-travel` project, and fails if either failed. Both depend on the `setup` project, which makes sure four users exist — `e2e-admin@example.com`, `e2e-recruiter@example.com`, `e2e-hiring-manager@example.com` and `e2e-interviewer@example.com` — gives each a fresh random password (never stored), signs them in and saves the state to `tests/e2e/.auth/<role>.json` (gitignored). Specs open a signed-in page with the `asRole(role)` fixture from `tests/e2e/support/fixtures.ts`. Specs that change a user's role or active flag create their own throwaway `e2e-<uuid>@example.com` user and never touch the four shared ones.
 - Playwright reads the database connection and `TICK_SECRET` from the `app` service in `docker-compose.yml` (with the PostgreSQL host changed to `localhost`); `E2E_DATABASE_URL` and `E2E_TICK_SECRET` override them.
 - Time-travel rules (T2): specs that send `x-test-now` or depend on daily tasks live in `tests/e2e/time-travel/` and run alone, one at a time, after the parallel specs, because the clock shift and the daily tasks act on the whole shared database. Every time-travel spec uses a `TEST_NOW` date no other spec uses, or asserts only on data it created, and must pass when rerun against the same database. A unit test in `pnpm verify` fails if any file under `tests/e2e/` outside that folder contains `x-test-now` (any letter case) or imports from it.
+
+## Microsoft Entra sign-in (owner setup)
+
+Staff sign in with accounts from the project's own Entra tenant (tech-stack.md §4, AU1–AU4). Sign-in is invite-only: an Entra account gets in only if an Admin created an **active** ATS user with the same email first (task 12's `pnpm seed:admin` for the first Admin, the Admin user pages from task 15 after that). Anyone else sees "Access not granted, contact your ATS admin." and no user is created. On the first sign-in the Entra account is linked to that user; later sign-ins match the Entra object ID, so a renamed UPN still signs in the same user. Sign-in never changes the ATS user's name, email or role, and no profile photo is fetched.
+
+One-time setup in the Entra admin center (Microsoft Entra ID → App registrations), done by the owner:
+
+1. **New registration**, supported account types: *Accounts in this organizational directory only* (single tenant). Never multi-tenant: the app refuses a tenant ID that isn't a GUID (`common`, `organizations`, `consumers`).
+2. **Authentication → Web** redirect URIs:
+   - `http://localhost:3000/api/auth/callback/microsoft` (local)
+   - `https://<Azure app address>/api/auth/callback/microsoft` (update it if the host name changes after a rebuild, G6)
+3. **Certificates & secrets → New client secret.** Store the value in Key Vault as the `MICROSOFT_CLIENT_SECRET` secret (wired in by task 44) and set a calendar reminder before it expires; sign-in stops working when it does.
+4. **Token configuration → Add optional claim → ID → `email`.** Users without a mailbox have no `email` claim; the app then uses their UPN (`preferred_username`).
+5. **Demo users:** create `admin@`, `recruiter@`, `hm@` and `interviewer@<tenant>.onmicrosoft.com` in Entra, and the same emails as ATS users with the matching roles (demo seed, task 17).
+6. Note the **Application (client) ID** and the **Directory (tenant) ID** from the app's overview page.
+
+To try it locally, set all three in `.env` (set together or not at all; a partial set stops the app at start) and restart `pnpm dev`:
+
+```sh
+MICROSOFT_CLIENT_ID=<Application (client) ID>
+MICROSOFT_TENANT_ID=<Directory (tenant) ID, a GUID>
+MICROSOFT_CLIENT_SECRET=<client secret value>
+```
+
+The account you sign in with must already exist as an active ATS user. CI has no Entra credentials (G3): the automated tests mock Microsoft's token endpoint, and the real sign-in in Azure is checked by hand during deployment (Sprint 0 proof #6, task 45).
 
 ## Local stack (Docker Compose)
 

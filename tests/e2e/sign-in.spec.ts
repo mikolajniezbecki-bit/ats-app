@@ -173,3 +173,19 @@ test("each shared role signs in from its saved state", async ({ asRole }) => {
     await expect(page.getByTestId("user-role")).toHaveText(`Role: ${label}`);
   }
 });
+
+test("AU2: a refused Entra sign-in shows the access message, never the raw error code", async ({ page }) => {
+  await page.goto("/sign-in?error=signup_disabled");
+  await expect(page.getByTestId("sign-in-error")).toHaveText("Access not granted, contact your ATS admin.");
+
+  await page.goto(`/sign-in?error=${encodeURIComponent("<script>window.injected=1</script>")}`);
+  await expect(page.getByTestId("sign-in-error")).toHaveText("Sign-in failed. Please try again.");
+  expect(await page.content()).not.toContain("<script>window.injected");
+  expect(await page.evaluate(() => (window as { injected?: number }).injected)).toBeUndefined();
+});
+
+test("without the Microsoft variables (Compose, CI) there is no Microsoft button", async ({ page }) => {
+  await page.goto("/sign-in");
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in with Microsoft" })).toHaveCount(0);
+});
