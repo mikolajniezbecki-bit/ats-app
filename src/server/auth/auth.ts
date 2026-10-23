@@ -1,4 +1,4 @@
-// Better Auth (tech-stack.md §4, AU5–AU7, AU10). The instance is created on
+// Better Auth (tech-stack.md §4, AU1–AU7, AU10). The instance is created on
 // the first getAuth() call and never at import time, so `next build` needs
 // neither a database nor secrets (W1).
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
@@ -8,6 +8,8 @@ import { eq } from "drizzle-orm";
 import { type AppConfig, getConfig } from "../config";
 import { getDb } from "../db";
 import { account, session, users, verification } from "../db/schema";
+import { MissingIdentityError, mapProfileToUser } from "./microsoft-profile";
+import { SIGN_IN_PATH } from "./sign-in-errors";
 
 /** AU6: 8 h sessions, refreshed (sliding) at most once an hour. */
 export const SESSION_EXPIRES_IN_SECONDS = 8 * 60 * 60;
@@ -32,6 +34,42 @@ export const DISABLED_AUTH_PATHS = [
   "/link-social",
   "/unlink-account",
 ] as const;
+
+/**
+ * AU1–AU4: the Microsoft provider for the single project tenant, or none when
+ * the Microsoft variables are not set (getConfig() requires all three or none).
+ */
+function microsoftProvider(microsoft: AppConfig["auth"]["microsoft"]) {
+  if (!microsoft) return {};
+  return {
+    microsoft: {
+      clientId: microsoft.clientId,
+      clientSecret: microsoft.clientSecret,
+      // A GUID, never `common` or `organizations`: only the owner's tenant (AU1).
+      tenantId: microsoft.tenantId,
+      // AU2: invite-only. The first alone would still let a client send
+      // `requestSignUp: true`.
+      disableImplicitSignUp: true,
+      disableSignUp: true,
+      // AU3: the photo is discarded anyway, so Graph is never called.
+      disableProfilePhoto: true,
+      // Admin-maintained name and email stay as they are.
+      overrideUserInfoOnSignIn: false,
+      mapProfileToUser(profile: { email?: string | null; preferred_username?: string | null }) {
+        // Better Auth's type has no `null` image; `undefined` replaces the
+        // profile picture all the same, and the column stays NULL.
+        try {
+          return { email: mapProfileToUser(profile).email, image: undefined };
+        } catch (error) {
+          // An empty email makes Better Auth refuse with `email_not_found`,
+          // which /sign-in shows as the AU2 message, instead of a 500.
+          if (error instanceof MissingIdentityError) return { email: "", image: undefined };
+          throw error;
+        }
+      },
+    },
+  };
+}
 
 export function createAuth(config: AppConfig) {
   return betterAuth({
@@ -60,6 +98,15 @@ export function createAuth(config: AppConfig) {
     // AU7: password sign-in exists only for dev sign-in, never with sign-up.
     emailAndPassword: { enabled: config.auth.devLogin, disableSignUp: true },
     disabledPaths: [...DISABLED_AUTH_PATHS],
+    socialProviders: microsoftProvider(config.auth.microsoft),
+    account: {
+      // AU4: the first Entra sign-in links to the Admin-created user with the
+      // same email (`email_verified = true`); later ones match the account ID.
+      accountLinking: { enabled: true, trustedProviders: ["microsoft"] },
+    },
+    // AU2: refused OAuth sign-ins land on /sign-in?error=<code>, which never
+    // echoes the code.
+    onAPIError: { errorURL: `${config.auth.url}${SIGN_IN_PATH}` },
     // AU7: F6 is the only rate limit; Better Auth's reads the first
     // x-forwarded-for entry, which §3 rule 9 forbids.
     rateLimit: { enabled: false },

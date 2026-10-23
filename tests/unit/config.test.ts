@@ -244,7 +244,7 @@ describe("loadConfig", () => {
       expect(message).toContain("missing MICROSOFT_TENANT_ID, MICROSOFT_CLIENT_SECRET");
     });
 
-    it.each(["common", "organizations", "contoso.onmicrosoft.com"])("refuses tenant %s (GUID only)", (tenant) => {
+    it.each(["common", "organizations", "consumers", "contoso.onmicrosoft.com"])("refuses tenant %s (GUID only)", (tenant) => {
       expect(errorOf({ ...LOCAL, ...MICROSOFT, MICROSOFT_TENANT_ID: tenant })).toContain(
         "invalid MICROSOFT_TENANT_ID",
       );
