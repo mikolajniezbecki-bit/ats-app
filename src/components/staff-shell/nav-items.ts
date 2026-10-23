@@ -7,4 +7,6 @@ export type NavItem = { href: string; labelKey: string; action: Action };
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", labelKey: "home", action: "staff.area" },
   { href: "/admin", labelKey: "administration", action: "admin.area" },
+  { href: "/admin/settings", labelKey: "settings", action: "settings.manage" },
+  { href: "/admin/master-data", labelKey: "masterData", action: "masterData.manage" },
 ];

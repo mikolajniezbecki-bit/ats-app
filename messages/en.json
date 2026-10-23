@@ -32,7 +32,9 @@
     "navLabel": "Main",
     "nav": {
       "home": "Home",
-      "administration": "Administration"
+      "administration": "Administration",
+      "settings": "Settings",
+      "masterData": "Master data"
     },
     "signOut": "Sign out"
   },
@@ -44,7 +46,11 @@
   },
   "Admin": {
     "title": "Administration",
-    "description": "Settings, master data, templates, users, the Outbox and background jobs will be linked here."
+    "description": "Settings, master data, templates, users, the Outbox and background jobs.",
+    "links": {
+      "settings": "Settings",
+      "masterData": "Master data"
+    }
   },
   "Forbidden": {
     "title": "You don't have access to this page.",
@@ -61,5 +67,84 @@
       "ENCRYPTED": "Encrypted or password-protected PDFs are not accepted.",
       "DAMAGED": "The PDF file can't be read."
     }
+  },
+  "AdminSettings": {
+    "title": "Settings",
+    "description": "Values used across the system. A setting marked Default has not been changed by an Admin.",
+    "default": "Default",
+    "save": "Save settings",
+    "saving": "Saving…",
+    "saved": "Settings saved.",
+    "noChanges": "Nothing changed.",
+    "failed": "The settings could not be saved. Please try again.",
+    "timingHelp": "Delay and reminder settings apply to emails and reminders queued after the change. Emails and reminders already queued keep their time.",
+    "privacyHelp": "Plain text: line breaks are kept and HTML is shown as text. Change the version whenever you change the text.",
+    "labels": {
+      "RETENTION_DAYS": "Retention period (days)",
+      "REJECTION_EMAIL_DELAY_HOURS": "Rejection email delay (hours)",
+      "APPROVAL_REMINDER_DAYS": "Approval reminder after (days)",
+      "MAX_UPLOAD_MB": "Maximum upload size (MB)",
+      "SENDER_EMAIL": "Sender email",
+      "FALLBACK_REPLY_TO_EMAIL": "Fallback Reply-To email",
+      "PRIVACY_STATEMENT_VERSION": "Privacy statement version",
+      "PRIVACY_STATEMENT_TEXT": "Privacy statement text"
+    },
+    "errors": {
+      "RETENTION_DAYS": "Enter a whole number from 1 to 3650.",
+      "REJECTION_EMAIL_DELAY_HOURS": "Enter a whole number from 0 to 168.",
+      "APPROVAL_REMINDER_DAYS": "Enter a whole number from 1 to 30.",
+      "MAX_UPLOAD_MB": "Enter a whole number from 1 to 10.",
+      "SENDER_EMAIL": "Enter a valid email address.",
+      "FALLBACK_REPLY_TO_EMAIL": "Enter a valid email address.",
+      "PRIVACY_STATEMENT_VERSION": "Enter 1 to 20 characters.",
+      "PRIVACY_STATEMENT_TEXT": "Enter 1 to 20,000 characters.",
+      "privacyVersion": "Change the version when you change the statement text.",
+      "unknownKey": "Unknown setting."
+    }
+  },
+  "AdminMasterData": {
+    "title": "Master data",
+    "description": "Departments, locations, legal entities and picklist values. Records in use can only be deactivated.",
+    "showInactive": "Show inactive records",
+    "types": {
+      "DEPARTMENT": "Departments",
+      "LOCATION": "Locations",
+      "LEGAL_ENTITY": "Legal entities",
+      "PICKLIST": "Picklists"
+    },
+    "columns": {
+      "code": "Code",
+      "label": "Label",
+      "status": "Status",
+      "picklistKey": "Picklist key",
+      "actions": "Actions"
+    },
+    "active": "Active",
+    "inactive": "Inactive",
+    "empty": "No records.",
+    "add": "Add record",
+    "type": "Type",
+    "code": "Code",
+    "label": "Label",
+    "picklistKey": "Picklist key",
+    "create": "Add",
+    "rename": "Save label",
+    "deactivate": "Deactivate",
+    "reactivate": "Reactivate",
+    "delete": "Delete",
+    "codeHelp": "Upper-case letters, digits, _ and -; up to 50 characters. Can't be changed later.",
+    "picklistKeyHelp": "Picklists only: lower-case letters, digits and _; up to 50 characters. Can't be changed later.",
+    "errors": {
+      "duplicate": "A record with this code already exists.",
+      "inUse": "This record is in use and can only be deactivated.",
+      "notFound": "This record no longer exists.",
+      "invalid": "Check the highlighted fields.",
+      "code": "Use 1 to 50 upper-case letters, digits, _ or -.",
+      "label": "Enter 1 to 200 characters.",
+      "picklistKey": "Use 1 to 50 lower-case letters, digits or _ (picklists only).",
+      "notEditable": "Code, type and picklist key can't be changed.",
+      "failed": "The change could not be saved. Please try again."
+    },
+    "hideInactive": "Hide inactive records"
   }
 }
