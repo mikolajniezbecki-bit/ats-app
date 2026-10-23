@@ -297,5 +297,9 @@
       "inUse": "This template is in use and can only be deactivated.",
       "failed": "The change could not be saved. Please try again."
     }
+  },
+  "Email": {
+    "footer": "Reply to this email to reach your recruiter.",
+    "recruitingTeam": "the recruiting team"
   }
 }

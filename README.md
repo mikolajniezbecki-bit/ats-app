@@ -19,10 +19,10 @@ pnpm build     # production build (.next/standalone)
 Database (PostgreSQL 17 from the Compose stack, see below):
 
 ```sh
-docker compose up -d postgres azurite   # start PostgreSQL on localhost:5432 and Azurite on :10000
+docker compose up -d postgres azurite mailpit   # PostgreSQL :5432, Azurite :10000, Mailpit :1025/:8025
 pnpm db:migrate                 # apply the committed migrations (reads .env if present)
 pnpm db:generate                # generate a migration after a schema change
-pnpm test:integration           # Vitest integration tests against PostgreSQL and Azurite
+pnpm test:integration           # Vitest integration tests against PostgreSQL, Azurite and Mailpit
 ```
 
 - The Drizzle schema in `src/server/db/schema/` is the source of truth for the data model (tech-stack.md D1). To change it: edit the schema, run `pnpm db:generate` (optionally `--name=<what_changed>`), review the SQL in `src/server/db/migrations/` and commit it together with the schema change. On a clean checkout `pnpm db:generate` must report no changes. `drizzle-kit push` is allowed only on a local database (D2).
@@ -145,6 +145,14 @@ The image holds the three compiled entry points in `/app/db` (`node db/migrate.m
 - **Contents** (`src/server/db/seed/data.ts`, all synthetic): one row per setting with its default and `updated_by = NULL` (shown as "Default"); Departments, Locations, Legal Entities and the `employment_type` and `seniority` picklists; the "Standard requisition" template, the "Application received" (`APPLIED`) and "Application rejected" (`REJECTED`) stage emails, the bulk emails "Application update" and "Interview preparation", and the "Default offer letter"; and four demo users, `admin@`, `recruiter@`, `hm@` and `interviewer@` + `DEMO_USER_DOMAIN` (`ats-demo.local` locally; the `<tenant>.onmicrosoft.com` domain in Azure, so they link to the Entra demo accounts). No requisitions or applications (task 42).
 - **Idempotent and non-destructive:** it inserts only what is missing by natural key and never updates existing rows, so an Admin's changes, deactivations and role changes survive a rerun. A stage email is skipped when any email template already has its trigger status. A seeded record an Admin **deleted** comes back on the next run — deactivate records instead. The seed runs in one transaction under an advisory lock (concurrent runs are safe) and prints counts only.
 - **Dev passwords:** with `AUTH_DEV_LOGIN=true` the seed requires `DEMO_USER_PASSWORD` (12+ characters) and gives all four demo users that password (a rerun updates it). Compose uses the fake `local-only-not-secret-demo`, so `recruiter@ats-demo.local` signs in at `http://localhost:3000/sign-in`; for `pnpm dev` choose your own in `.env`. Without dev login no password is set; in Azure demo users sign in through Entra only.
+
+## Email
+
+- Every email goes through `queueEmail(tx, input)` in `src/server/email/` (or `queueTemplateEmail(tx, { templateId, applicationId })` for stage and bulk templates). In the caller's transaction it renders the subject and body — the P3 markup (`src/server/domain/markup/`) to HTML first, then tokens in HTML mode, so a value never becomes markup — writes a `QUEUED` `email_log` row with the full content, and queues an `email.send` job whose payload is `{ emailLogId }` only (J1, J4). A rollback removes both.
+- The `email.send` handler (`src/server/email/send.ts`) locks the row and acts only while it is `QUEUED` (J3). At send time it adds From = `SENDER_EMAIL` (E1), Reply-To = the requisition's current recruiter if active, else `FALLBACK_REPLY_TO_EMAIL` (E2), and for candidate emails the footer with the Reply-To address and "Reply to this email to reach your recruiter." (E3); it writes the final body and `reply_to` back (E4). `.ics` content goes out as a `text/calendar` alternative and an `invite.ics` attachment; PDF attachments are read with `StorageService.download`. Emails of anonymized applications are cancelled, not sent.
+- Transports live in `src/server/adapters/email/` (the only code that imports Nodemailer): `EMAIL_PROVIDER=smtp` hands the message to Mailpit (`SENT`), `outbox` builds the same message and keeps it (`CAPTURED`, E6). The app refuses to start with `APP_ENV=azure` unless `EMAIL_PROVIDER=outbox` (C4).
+- A failed attempt stays `QUEUED` with a sanitized `error` (error class and SMTP/system code, never addresses); pg-boss retries with exponential backoff (5 retries), and after the last one the row is `FAILED` (E5). Remaining at-least-once case: if the process crashes after Mailpit accepted a message but before the commit, the retry sends it again — only ever to Mailpit, never to a real mailbox.
+- Mailpit runs in Compose at `http://localhost:8025`. Integration tests need it (`docker compose up -d postgres azurite mailpit`); `ci.yml` runs it as a service container. Tests read messages with `tests/support/mailpit.ts` (`waitForMessage({ to, subjectIncludes })`, `getMessage(id)`; `E2E_MAILPIT_URL` overrides the URL). There is no "delete all": tests run in parallel against one Mailpit, so each uses its own `e2e-<uuid>@example.com` recipients.
 
 ## Microsoft Entra sign-in (owner setup)
 

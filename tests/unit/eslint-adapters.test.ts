@@ -15,6 +15,7 @@ describe("adapter-only SDK imports", () => {
     ['import { BlobServiceClient } from "@azure/storage-blob";', "@azure/storage-blob"],
     ['import { DefaultAzureCredential } from "@azure/identity";', "@azure/identity"],
     ['import { PgBoss } from "pg-boss";', "pg-boss"],
+    ['import nodemailer from "nodemailer";', "nodemailer"],
   ])("rejects %s outside the adapters", async (code, sdk) => {
     const errors = await restrictedImportErrors(`${code}\nexport const x = 1;\n`, "src/server/domain/sample.ts");
     expect(errors.length, sdk).toBe(1);

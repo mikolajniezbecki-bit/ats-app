@@ -1,6 +1,7 @@
 # Pull-request checks (tech-stack.md §12 ci.yml, G4, G7). Runs `pnpm verify`
 # as one step so CI and the local check cannot drift apart, then the database
-# integration tests against a postgres:17 service container. No Playwright and
+# integration tests against postgres:17 and Mailpit service containers and
+# Azurite (a docker run step). No Playwright and
 # no secrets: the build must pass without them (Sprint 0 proof 3, W1), so the
 # database URL and the configuration are set only on the steps that need them,
 # never on the job or the build step. The values below are obviously fake,
@@ -35,6 +36,12 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
+      # Email integration tests read real messages through its API (§9).
+      mailpit:
+        image: axllent/mailpit:v1
+        ports:
+          - 1025:1025
+          - 8025:8025
     steps:
       - uses: actions/checkout@v7
 

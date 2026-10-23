@@ -65,8 +65,12 @@ export const jobQueue: JobQueue = {
   },
 };
 
-/** A claimed job as handlers see it: the queue name and the ID-only payload. */
-export type Job = { id: string; queue: string; data: JobPayload };
+/**
+ * A claimed job as handlers see it: the queue name, the ID-only payload, and
+ * how many attempts came before this one (0 on the first), so a handler can
+ * tell its last attempt (E5).
+ */
+export type Job = { id: string; queue: string; data: JobPayload; retryCount: number };
 
 export type JobHandler = (job: Job) => Promise<void>;
 
@@ -155,7 +159,7 @@ export async function workQueues(handlers: HandlerMap, options: WorkOptions = {}
   for (const name of names) {
     const handler = handlers[name];
     await boss.work<JobPayload>(name, workOptions, async ([job]) => {
-      await handler({ id: job.id, queue: job.name, data: job.data });
+      await handler({ id: job.id, queue: job.name, data: job.data, retryCount: job.retryCount });
     });
   }
   return names;
@@ -289,7 +293,7 @@ export function isWorking(): boolean {
 export async function fetchDueJobs(queue: string, limit: number): Promise<Job[]> {
   const boss = await getBoss();
   const jobs = await boss.fetch<JobPayload>(queue, { batchSize: limit });
-  return jobs.map((job) => ({ id: job.id, queue: job.name, data: job.data }));
+  return jobs.map((job) => ({ id: job.id, queue: job.name, data: job.data, retryCount: job.retryCount }));
 }
 
 /** Marks a claimed job completed. */
