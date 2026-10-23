@@ -55,6 +55,32 @@ Rule traceability (`pnpm test:rules`, tech-stack.md §11 T1):
 - Playwright reads the database connection and `TICK_SECRET` from the `app` service in `docker-compose.yml` (with the PostgreSQL host changed to `localhost`); `E2E_DATABASE_URL` and `E2E_TICK_SECRET` override them.
 - Time-travel rules (T2): specs that send `x-test-now` or depend on daily tasks live in `tests/e2e/time-travel/` and run alone, one at a time, after the parallel specs, because the clock shift and the daily tasks act on the whole shared database. Every time-travel spec uses a `TEST_NOW` date no other spec uses, or asserts only on data it created, and must pass when rerun against the same database. A unit test in `pnpm verify` fails if any file under `tests/e2e/` outside that folder contains `x-test-now` (any letter case) or imports from it.
 
+## Authorization and the back office
+
+- Every permission check goes through the policy module in `src/server/policy/` (ats-project-scope.md V9, tech-stack.md AU9). `permissions.ts` holds the action catalogue and the role matrix in one place: `can(user, action, resource?)` is `false` for no user, an inactive user or an unknown action. Later tasks add their actions and resource rules there.
+- Row-level visibility uses the filters in `filters.ts` (`scopeRequisitionsFor(user)`, `scopeApplicationsFor`, `scopeScorecardsFor`, `scopeOffersFor`) inside the query's `WHERE`, never ad-hoc conditions in a handler (D6). Admin and Recruiter see everything (V1, V2). Roles whose rule isn't implemented yet see no rows.
+- Guards in `guards.ts`:
+  - `requireUser()` for pages: redirects to sign-in.
+  - `requirePermission(action)` for pages: renders `src/app/forbidden.tsx` with HTTP 403 (Next.js `forbidden()`, `experimental.authInterrupts`).
+  - `withPermission(action, handler)` for route handlers: 401 `{"error":"unauthorized"}` / 403 `{"error":"forbidden"}`.
+  - `authorizeAction(action)` for server actions: throws `ForbiddenError`.
+- A unit test fails if a `src/app/api/**/route.ts` is neither on `proxy.ts`'s public list nor guarded.
+- Staff pages live in the `src/app/(staff)/` route group. Its layout requires a signed-in user and shows the header: the app name, the navigation, the user's name and role, and sign-out. Navigation items are listed in `src/components/staff-shell/nav-items.ts` as `{ href, labelKey, action }` and shown only when `can()` allows the action. `/admin` is the Admin overview.
+
+### First Admin (`pnpm seed:admin`)
+
+```sh
+pnpm seed:admin --email <upn> [--name "<name>"]
+```
+
+Creates an active Admin with `email_verified = true` and no password. The name defaults to the email's local part. If a user with that email exists, it is promoted to Admin and reactivated instead (the way back in when no active Admin is left). An existing active Admin is left unchanged.
+- Each change writes `ADMIN_SEEDED` to `audit_log`.
+- It prints `created|updated|unchanged <user id>` and never the email (M2).
+- A missing or invalid `--email` prints the usage and exits 1.
+- Concurrent runs are safe.
+
+It reads `.env` like `pnpm db:migrate`. In Azure it runs through the `db-seed` job with `SEED_ADMIN_EMAIL` (tasks 17 and 44).
+
 ## Microsoft Entra sign-in (owner setup)
 
 Staff sign in with accounts from the project's own Entra tenant (tech-stack.md §4, AU1–AU4). Sign-in is invite-only: an Entra account gets in only if an Admin created an **active** ATS user with the same email first (task 12's `pnpm seed:admin` for the first Admin, the Admin user pages from task 15 after that). Anyone else sees "Access not granted, contact your ATS admin." and no user is created. On the first sign-in the Entra account is linked to that user; later sign-ins match the Entra object ID, so a renamed UPN still signs in the same user. Sign-in never changes the ATS user's name, email or role, and no profile photo is fetched.

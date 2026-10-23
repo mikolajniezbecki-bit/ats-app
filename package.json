@@ -20,6 +20,7 @@
     "db:generate": "drizzle-kit generate",
     "db:build": "node src/server/db/build-migrate.mjs",
     "db:migrate": "node src/server/db/build-migrate.mjs && node --env-file-if-exists=.env dist/db/migrate.mjs",
+    "seed:admin": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/server/db/seed-admin-cli.ts",
     "worker": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/worker/index.ts"
   },
   "dependencies": {

@@ -177,7 +177,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `AU2:` test with a simulated provider profile: an email with no active user is refused with the message above and no user row is created.
 - `AU3:` unit tests: email falls back to `preferred_username`, is lower-cased, and `image` is null; `AU4:` test: the first sign-in links to the pre-created user, later sign-ins match on the Entra account ID.
 
-## 12. Policy module, back-office shell and first Admin
+## 12. Policy module, back-office shell and first Admin ✅
 
 **Issue:** [#18](https://github.com/mikolajniezbecki-bit/ats-app/issues/18)
 
