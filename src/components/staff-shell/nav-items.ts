@@ -10,4 +10,5 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/admin/settings", labelKey: "settings", action: "settings.manage" },
   { href: "/admin/master-data", labelKey: "masterData", action: "masterData.manage" },
   { href: "/admin/users", labelKey: "users", action: "users.manage" },
+  { href: "/admin/templates", labelKey: "templates", action: "templates.manage" },
 ];

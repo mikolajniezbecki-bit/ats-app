@@ -35,7 +35,8 @@
       "administration": "Administration",
       "settings": "Settings",
       "masterData": "Master data",
-      "users": "Users"
+      "users": "Users",
+      "templates": "Templates"
     },
     "signOut": "Sign out"
   },
@@ -51,7 +52,8 @@
     "links": {
       "settings": "Settings",
       "masterData": "Master data",
-      "users": "Users"
+      "users": "Users",
+      "templates": "Templates"
     }
   },
   "Forbidden": {
@@ -190,6 +192,109 @@
       "ownRole": "You can't change your own role.",
       "ownDeactivation": "You can't deactivate yourself.",
       "lastAdmin": "There must be at least one active Admin.",
+      "failed": "The change could not be saved. Please try again."
+    }
+  },
+  "Statuses": {
+    "APPLIED": "Applied",
+    "SCREENING": "Screening",
+    "INTERVIEW": "Interview",
+    "OFFER": "Offer",
+    "HIRED": "Hired",
+    "REJECTED": "Rejected",
+    "WITHDRAWN": "Withdrawn"
+  },
+  "AdminTemplates": {
+    "title": "Templates",
+    "description": "Requisition templates define custom fields; email templates are stage and bulk emails; offer templates hold the letter text.",
+    "showInactive": "Show inactive templates",
+    "hideInactive": "Hide inactive templates",
+    "types": {
+      "REQUISITION": "Requisition templates",
+      "EMAIL": "Email templates",
+      "OFFER": "Offer templates"
+    },
+    "typeNames": {
+      "REQUISITION": "Requisition",
+      "EMAIL": "Email",
+      "OFFER": "Offer"
+    },
+    "columns": {
+      "name": "Name",
+      "trigger": "Sent on",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "active": "Active",
+    "inactive": "Inactive",
+    "bulk": "Bulk email",
+    "empty": "No templates.",
+    "add": "Add template",
+    "edit": "Edit",
+    "editTitle": "Edit template",
+    "back": "Back to templates",
+    "type": "Type",
+    "name": "Name",
+    "nameHelp": "Can't be changed later.",
+    "subject": "Subject",
+    "body": "Body",
+    "triggerStatus": "Sent when the application moves to",
+    "triggerNone": "No status (bulk email)",
+    "isActive": "Active",
+    "markupHelp": "Plain text with simple markup: # and ## headings, blank lines between paragraphs, **bold**, *italic*, - list items and line breaks. HTML is shown as text.",
+    "allowedTokens": "Tokens you can use here:",
+    "subjectTokens": "In the subject:",
+    "fields": "Custom fields",
+    "fieldKey": "Key",
+    "fieldLabel": "Label",
+    "fieldType": "Type",
+    "fieldPicklistKey": "Picklist key",
+    "fieldRequired": "Required",
+    "addField": "Add field",
+    "removeField": "Remove field {number}",
+    "fieldNumber": "Field {number}",
+    "noFields": "No custom fields yet.",
+    "fieldTypes": {
+      "TEXT": "Text",
+      "NUMBER": "Number",
+      "BOOLEAN": "Yes/No",
+      "PICKLIST": "Picklist"
+    },
+    "save": "Save template",
+    "saved": "Template saved.",
+    "delete": "Delete",
+    "errors": {
+      "invalid": "Check the highlighted fields.",
+      "name": "Enter 1 to 100 characters.",
+      "subject": "Enter 1 to 200 characters.",
+      "subjectLine": "The subject must be a single line.",
+      "body": "Enter 1 to 20,000 characters.",
+      "triggerStatus": "Choose a status.",
+      "triggerNotAllowed": "Moving to Interview or Offer never sends an email (E9).",
+      "schemaJson": "Check the custom fields.",
+      "fieldKey": "Field keys start with a lower-case letter and use a–z, 0–9 and _ (up to 50 characters).",
+      "fieldLabel": "Field labels have 1 to 200 characters.",
+      "fieldType": "Choose a field type.",
+      "fieldRequiredFlag": "Say whether the field is required.",
+      "picklistKeyFormat": "Picklist keys use a–z, 0–9 and _ (up to 50 characters).",
+      "picklistKeyRequired": "Picklist fields need a picklist key.",
+      "picklistKeyNotAllowed": "Only picklist fields have a picklist key.",
+      "picklistKeyUnknown": "There is no picklist with the key {token}.",
+      "duplicateKey": "Each field key can be used only once.",
+      "tooManyFields": "A template has at most 50 fields.",
+      "fieldRemoved": "The field {token} is used by requisitions and can't be removed.",
+      "fieldChanged": "The type or picklist of the field {token} can't change once requisitions use it.",
+      "fieldNowRequired": "The field {token} can't become required once requisitions use the template.",
+      "newFieldRequired": "New field {token} must be optional once requisitions use the template.",
+      "unknownToken": "[[{token}]] is not a known token.",
+      "unclosedToken": "A [[ is not closed with ]].",
+      "tokenNotAllowed": "[[{token}]] can't be used in this template.",
+      "notEditable": "Type and name can't be changed.",
+      "notAllowed": "This field doesn't apply to this template type.",
+      "duplicate": "A template with this name already exists.",
+      "triggerConflict": "Another active template already sends the {status} email. Deactivate it first.",
+      "notFound": "This template no longer exists.",
+      "inUse": "This template is in use and can only be deactivated.",
       "failed": "The change could not be saved. Please try again."
     }
   }
