@@ -31,10 +31,12 @@ type Props = {
   existing?: { id: string; version: number; templateName?: string; schema: CustomFieldDefinition[] };
   /** Creating a duplicate: the source, whose active questions are copied on save. */
   duplicateOfId?: string;
+  /** Fields shown read-only, e.g. the L2 fields of an approved requisition (L1); they are still sent unchanged. */
+  locked?: readonly string[];
 };
 type ApiError = { message?: string; fields?: Record<string, string> };
 
-export function RequisitionForm({ options, initial, existing, duplicateOfId }: Props) {
+export function RequisitionForm({ options, initial, existing, duplicateOfId, locked = [] }: Props) {
   const t = useTranslations("Requisitions");
   const router = useRouter();
   const [values, setValues] = useState<FormValues>({
@@ -110,6 +112,7 @@ export function RequisitionForm({ options, initial, existing, duplicateOfId }: P
         value={String(values[name] ?? "")}
         onChange={(event) => set({ [name]: event.target.value })}
         required
+        disabled={locked.includes(name)}
         {...invalid(name)}
         className="w-full rounded border px-3 py-2"
       >
@@ -242,6 +245,7 @@ export function RequisitionForm({ options, initial, existing, duplicateOfId }: P
             value={Number.isNaN(values.openingsCount) ? "" : values.openingsCount}
             onChange={(event) => set({ openingsCount: event.target.valueAsNumber })}
             required
+            disabled={locked.includes("openingsCount")}
             {...invalid("openingsCount")}
             className="w-full rounded border px-3 py-2"
           />

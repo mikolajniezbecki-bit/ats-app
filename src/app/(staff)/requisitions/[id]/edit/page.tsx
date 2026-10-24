@@ -7,7 +7,8 @@ import { forbidden, notFound } from "next/navigation";
 import { RequisitionForm } from "@/components/requisitions/requisition-form";
 import { requirePermission } from "@/server/policy/guards";
 import { can } from "@/server/policy/permissions";
-import { getRequisitionDetail } from "@/server/requisitions";
+import { allowsFreeEdits } from "@/server/domain/requisitions/lifecycle";
+import { L2_FIELDS, getRequisitionDetail } from "@/server/requisitions";
 import { requisitionFormOptions } from "@/server/requisitions/form-options";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ export default async function EditRequisitionPage({ params }: PageProps<"/requis
   if (!detail) notFound();
   const { requisition, template } = detail;
   if (!can(user, "requisition.edit", requisition)) forbidden();
+  // L1: drafts as before; approved, on-hold and re-approval requisitions get
+  // free edits by Admins and Recruiters, with the L2 fields locked.
+  const freeEdit = allowsFreeEdits(requisition);
+  if (freeEdit && !can(user, "requisition.manage")) forbidden();
   const t = await getTranslations("Requisitions");
   const customFields = (requisition.customFieldsJson as Record<string, string | number | boolean | null>) ?? {};
   const options = await requisitionFormOptions({
@@ -37,10 +42,19 @@ export default async function EditRequisitionPage({ params }: PageProps<"/requis
         {t("back")}
       </Link>
       <h1 className="text-2xl font-semibold">{t("editTitle", { reqNumber: requisition.reqNumber })}</h1>
-      {requisition.state !== "DRAFT" ? (
-        <p role="alert">{t(requisition.state === "PENDING_APPROVAL" && !requisition.approvedAt ? "errors.awaitingApproval" : "errors.notEditable")}</p>
+      {requisition.state !== "DRAFT" && !freeEdit ? (
+        <p role="alert">
+          {t(
+            requisition.state === "PENDING_APPROVAL" && !requisition.approvedAt
+              ? "errors.awaitingApproval"
+              : requisition.state === "CLOSED"
+                ? "errors.closed"
+                : "errors.notEditable",
+          )}
+        </p>
       ) : (
         <RequisitionForm
+          locked={freeEdit ? L2_FIELDS : []}
           options={options}
           existing={{ id: requisition.id, version: requisition.version, templateName: template?.name, schema: template?.schema ?? [] }}
           initial={{

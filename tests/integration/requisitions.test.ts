@@ -200,12 +200,14 @@ describe("edit", () => {
     });
   });
 
-  it("only DRAFT requisitions can be edited in this task", async () => {
+  // Task 29 (L1) opened APPROVED, ON_HOLD and re-approval for free edits
+  // (tests in requisition-lifecycle.test.ts); CLOSED stays read-only.
+  it("a CLOSED requisition can't be edited", async () => {
     await rolledBack(async (tx) => {
       const user = await actor(tx);
       const row = await create(tx, user, await validInput(tx));
-      await tx.update(requisitions).set({ state: "APPROVED" }).where(eq(requisitions.id, row.id));
-      expect(await updateRequisition(tx, user, row.id, { version: 1, title: "x" })).toEqual({ ok: false, reason: "notEditable" });
+      await tx.update(requisitions).set({ state: "CLOSED", approvedAt: new Date(), closedAt: new Date(), closeReason: "CANCELLED" }).where(eq(requisitions.id, row.id));
+      expect(await updateRequisition(tx, user, row.id, { version: 1, title: "x" })).toEqual({ ok: false, reason: "closed" });
     });
   });
 

@@ -2,12 +2,16 @@
 // the caller's scope; warns when the recruiter or hiring manager is inactive.
 import { getTranslations } from "next-intl/server";
 import { ApprovalActions } from "@/components/requisitions/approval-actions";
+import { LifecycleActions } from "@/components/requisitions/lifecycle-actions";
 import { PrescreenEditor } from "@/components/requisitions/prescreen-editor";
+import { LocalTime } from "@/components/local-time";
 import { countRequisitionApplications } from "@/server/applications";
 import { latestRequisitionApprovalEvent, listApproverOptions, requisitionApproval } from "@/server/approvals";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sanitizeDescription } from "@/server/domain/requisitions/description";
+import { allowedLifecycleActions, allowsFreeEdits } from "@/server/domain/requisitions/lifecycle";
+import { closeImpact } from "@/server/requisitions/lifecycle";
 import { requirePermission } from "@/server/policy/guards";
 import { can } from "@/server/policy/permissions";
 import { canEditQuestions, listQuestionRows, questionsEditable, storedDefinition } from "@/server/prescreen";
@@ -26,6 +30,14 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
   const apps = await getTranslations("Applications");
   const applicationCount = can(user, "application.read") ? await countRequisitionApplications(user, requisition.id) : null;
   const pendingFirst = isFirstApprovalPending(requisition);
+  const l = await getTranslations("Requisitions.lifecycle");
+  // L4–L7, L9: what this user may do in the current state (the API checks again).
+  const lifecycleActions = allowedLifecycleActions(requisition).filter((action) =>
+    can(user, action === "reopen" ? "requisition.reopen" : action === "unpublish" || action === "republish" ? "requisition.publish" : "requisition.manage"),
+  );
+  const impact = lifecycleActions.includes("close") ? await closeImpact(requisition.id) : null;
+  const canEdit =
+    (requisition.state === "DRAFT" && can(user, "requisition.edit", requisition)) || (allowsFreeEdits(requisition) && can(user, "requisition.manage"));
   const canSubmit = requisition.state === "DRAFT" && can(user, "requisition.edit", requisition);
   const approvers = canSubmit ? await listApproverOptions(user) : null;
   const approval = requisitionApproval(requisition);
@@ -72,7 +84,7 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
         </p>
       )}
       <div className="flex flex-wrap gap-3">
-        {requisition.state === "DRAFT" && can(user, "requisition.edit", requisition) && (
+        {canEdit && (
           <Link href={`/requisitions/${requisition.id}/edit`} className="rounded bg-black px-4 py-2 text-white">
             {t("edit")}
           </Link>
@@ -88,6 +100,44 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
           </Link>
         )}
       </div>
+      {requisition.state !== "DRAFT" && (
+        <section aria-labelledby="lifecycle-heading" className="max-w-3xl space-y-2">
+          <h2 id="lifecycle-heading" className="text-xl font-semibold">
+            {l("title")}
+          </h2>
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm" data-testid="lifecycle-facts">
+            <dt className="font-medium">{t("columns.state")}</dt>
+            <dd>{t(`states.${requisition.state}`)}</dd>
+            <dt className="font-medium">{l("posting")}</dt>
+            <dd>{requisition.isPublished ? l("published") : l("unpublished")}</dd>
+            <dt className="font-medium">{l("pausedDays")}</dt>
+            <dd>{requisition.pausedDays}</dd>
+            {requisition.onHoldSince && (
+              <>
+                <dt className="font-medium">{l("onHoldSince")}</dt>
+                <dd>
+                  <LocalTime value={requisition.onHoldSince.toISOString()} />
+                </dd>
+              </>
+            )}
+            {requisition.closedAt && (
+              <>
+                <dt className="font-medium">{l("closedAt")}</dt>
+                <dd>
+                  <LocalTime value={requisition.closedAt.toISOString()} />
+                </dd>
+              </>
+            )}
+            {requisition.closeReason && (
+              <>
+                <dt className="font-medium">{l("closeReason")}</dt>
+                <dd>{l(`closeReasons.${requisition.closeReason}`)}</dd>
+              </>
+            )}
+          </dl>
+          <LifecycleActions requisitionId={requisition.id} version={requisition.version} actions={lifecycleActions} closeImpact={impact} />
+        </section>
+      )}
       <section aria-labelledby="approval-heading" className="max-w-3xl space-y-2">
         <h2 id="approval-heading" className="text-xl font-semibold">
           {a("title")}
