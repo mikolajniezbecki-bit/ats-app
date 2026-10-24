@@ -29,7 +29,13 @@ export async function ApplicationTimeline({ entries }: { entries: TimelineEntry[
                 {entry.isReopen && <span className="ml-2 rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-900">{t("reopened")}</span>}
               </p>
               {entry.reasonCode && <p>{t("reason", { reason: reasons(entry.reasonCode) })}</p>}
-              {entry.comment && <p className="whitespace-pre-wrap">{entry.comment}</p>}
+              {entry.removed ? (
+                <p>
+                  <em>{t("removed")}</em>
+                </p>
+              ) : (
+                entry.comment && <p className="whitespace-pre-wrap">{entry.comment}</p>
+              )}
             </div>
           )}
           {entry.kind === "email" && (

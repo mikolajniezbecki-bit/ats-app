@@ -55,7 +55,7 @@ export type OfferSource = {
 };
 
 export type TimelineEntry =
-  | ({ kind: "history"; at: Date; created: boolean } & HistorySource)
+  | ({ kind: "history"; at: Date; created: boolean; removed: boolean } & HistorySource)
   | ({ kind: "email"; at: Date; removed: boolean; failed: boolean } & EmailSource)
   | ({ kind: "interview"; at: Date } & InterviewSource)
   | ({ kind: "scorecard"; at: Date } & Omit<ScorecardSource, "submittedAt"> & { submittedAt: Date })
@@ -76,8 +76,13 @@ export function emailTime(email: Pick<EmailSource, "status" | "sentAt" | "schedu
   return email.createdAt;
 }
 
-/** One list, oldest first; unsubmitted scorecards are left out. */
+/**
+ * One list, oldest first; unsubmitted scorecards are left out. `anonymized`:
+ * the purge cleared every status-change comment with the personal data
+ * (RT3 and RT4 run together), so those entries are marked removed.
+ */
 export function buildTimeline(sources: {
+  anonymized?: boolean;
   history: readonly HistorySource[];
   emails: readonly EmailSource[];
   interviews: readonly InterviewSource[];
@@ -85,7 +90,10 @@ export function buildTimeline(sources: {
   offers: readonly OfferSource[];
 }): TimelineEntry[] {
   const entries: TimelineEntry[] = [
-    ...sources.history.map((row) => ({ ...row, kind: "history" as const, at: row.createdAt, created: row.fromStatus === null })),
+    ...sources.history.map((row) => {
+      const created = row.fromStatus === null;
+      return { ...row, kind: "history" as const, at: row.createdAt, created, removed: (sources.anonymized ?? false) && !created };
+    }),
     ...sources.emails.map((row) => ({
       ...row,
       kind: "email" as const,

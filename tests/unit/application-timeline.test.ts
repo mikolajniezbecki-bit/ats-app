@@ -69,4 +69,13 @@ describe("buildTimeline", () => {
       ["interview", "i"],
     ]);
   });
+
+  it("on an anonymized application (purged comments) every status change is marked removed, the creation entry isn't", () => {
+    const history = [
+      { id: "h1", createdAt: at(0), fromStatus: null, toStatus: "APPLIED", changedBy: null, comment: null, reasonCode: null, isReopen: false },
+      { id: "h2", createdAt: at(1), fromStatus: "APPLIED", toStatus: "REJECTED", changedBy: "R", comment: null, reasonCode: "OTHER", isReopen: false },
+    ];
+    expect(buildTimeline({ ...empty, anonymized: true, history }).map((entry) => entry.kind === "history" && entry.removed)).toEqual([false, true]);
+    expect(buildTimeline({ ...empty, history }).map((entry) => entry.kind === "history" && entry.removed)).toEqual([false, false]);
+  });
 });

@@ -294,11 +294,24 @@ describe("getApplicationDetail", () => {
       emailHash: null,
       phone: null,
     });
-    await email(app.id, { status: "SENT", sentAt: new Date(), recipient: null, subject: null, bodyRendered: null });
+    const t0 = Date.now() - 60 * MINUTE;
+    await history(app.id, new Date(t0));
+    // The purge cleared this change's comment (RT4).
+    await history(app.id, new Date(t0 + MINUTE), { fromStatus: "APPLIED", toStatus: "REJECTED", comment: null, reasonCode: "OTHER" });
+    await email(app.id, { status: "SENT", sentAt: new Date(t0 + 2 * MINUTE), recipient: null, subject: null, bodyRendered: null });
     const detail = (await getApplicationDetail(recruiter, app.id))!;
     expect(detail).toMatchObject({ anonymized: true, documents: [], answers: [], others: [], targets: [] });
     expect(detail.application.status).toBe("REJECTED");
-    expect(detail.timeline).toEqual([expect.objectContaining({ kind: "email", removed: true })]);
+    expect(detail.timeline).toEqual([
+      expect.objectContaining({ kind: "history", created: true, removed: false }),
+      expect.objectContaining({ kind: "history", toStatus: "REJECTED", reasonCode: "OTHER", removed: true }),
+      expect.objectContaining({ kind: "email", removed: true }),
+    ]);
+
+    // A change without a comment on a live application isn't "removed".
+    const live = await applicationFor(job.id, `live-${randomUUID()}@example.com`, { status: "REJECTED" });
+    await history(live.id, new Date(t0), { fromStatus: "APPLIED", toStatus: "REJECTED", comment: null });
+    expect((await getApplicationDetail(recruiter, live.id))!.timeline).toEqual([expect.objectContaining({ kind: "history", removed: false })]);
   });
 
   it("returns undefined for an unknown or malformed ID and for roles without access", async () => {

@@ -236,7 +236,7 @@ async function loadAnswers(applicationId: string, requisitionId: string, db: Db)
     });
 }
 
-async function loadTimeline(applicationId: string, db: Db): Promise<TimelineEntry[]> {
+async function loadTimeline(applicationId: string, anonymized: boolean, db: Db): Promise<TimelineEntry[]> {
   const [history, emails, interviewRows, scorecards, offerRows] = await Promise.all([
     db
       .select({
@@ -297,7 +297,7 @@ async function loadTimeline(applicationId: string, db: Db): Promise<TimelineEntr
       .from(offers)
       .where(eq(offers.applicationId, applicationId)),
   ]);
-  return buildTimeline({ history, emails, interviews: interviewRows, scorecards, offers: offerRows });
+  return buildTimeline({ anonymized, history, emails, interviews: interviewRows, scorecards, offers: offerRows });
 }
 
 /**
@@ -355,7 +355,7 @@ export async function getApplicationDetail(user: PolicyUser, id: string, db: Db 
   const [answers, others, timeline, targets] = await Promise.all([
     anonymized ? Promise.resolve([]) : loadAnswers(id, application.requisitionId, db),
     application.emailHash ? relatedByHash(user, [application.emailHash], db, { id }) : Promise.resolve([]),
-    loadTimeline(id, db),
+    loadTimeline(id, anonymized, db),
     statusTargets(application, row.requisition, db),
   ]);
 
