@@ -722,5 +722,22 @@
     },
     "honeypot": "Leave this field empty",
     "verification": "Verification"
+  },
+  "Pipeline": {
+    "errors": {
+      "sameStatus": "The application is already in this status.",
+      "hiredFinal": "A hired application can't be changed.",
+      "requisitionClosed": "The requisition is closed.",
+      "hireNeedsAcceptedOffer": "Hiring needs an accepted offer.",
+      "hireOnlyFromOffer": "Only an application in Offer with an accepted offer can be hired.",
+      "reopenNeedsComment": "Reopening needs a comment.",
+      "reopenRequisitionNotApproved": "Applications can be reopened only while the requisition is approved.",
+      "notAllowed": "This status change isn't allowed.",
+      "anonymized": "This application has been anonymized.",
+      "notFound": "Application not found.",
+      "stale": "This record was changed by someone else. Reload and try again.",
+      "invalid": "Check the status change.",
+      "commentTooLong": "Enter a comment of at most 2,000 characters."
+    }
   }
 }
