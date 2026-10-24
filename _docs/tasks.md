@@ -474,7 +474,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `L7:` test: only an Admin can reopen; closed time is added to `paused_days` and rejected applications stay rejected.
 - `L1:` / `L9:` tests: free-edit fields save without approval while `APPROVED`; manual unpublish/republish works only while `APPROVED`.
 
-## 30. Requisition re-approval
+## 30. Requisition re-approval ✅
 
 **Issue:** [#36](https://github.com/mikolajniezbecki-bit/ats-app/issues/36)
 
