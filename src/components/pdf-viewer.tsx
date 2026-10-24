@@ -7,7 +7,7 @@ import { forbidden, notFound } from "next/navigation";
 import { issueFileLink } from "@/server/files/links";
 import type { PolicyUser } from "@/server/policy/permissions";
 
-export async function PdfViewer({ fileId, user }: { fileId: string; user: PolicyUser }) {
+export async function PdfViewer({ fileId, user, title }: { fileId: string; user: PolicyUser; title?: string }) {
   const result = await issueFileLink(user, fileId);
   if (result.status === "not-found") notFound();
   if (result.status === "forbidden") forbidden();
@@ -18,7 +18,7 @@ export async function PdfViewer({ fileId, user }: { fileId: string; user: Policy
       <a href={result.link.url} target="_blank" rel="noopener noreferrer" className="self-end text-sm underline">
         {t("openInNewTab")}
       </a>
-      <iframe src={result.link.url} title={t("viewerTitle")} className="min-h-[80vh] w-full flex-1 rounded border" />
+      <iframe src={result.link.url} title={title ?? t("viewerTitle")} className="min-h-[80vh] w-full flex-1 rounded border" />
     </div>
   );
 }
