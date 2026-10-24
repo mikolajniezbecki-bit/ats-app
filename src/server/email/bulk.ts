@@ -21,6 +21,9 @@ export type BulkEmailResult = { applicationId: string; ok: true; emailLogId: str
 
 export type BulkTemplate = { id: string; name: string; subject: string; body: string };
 
+// The same filter as listActiveTemplates({ type: "EMAIL", bulk: true }) in
+// src/server/templates (the picker API); this one also returns the text for
+// the preview. Keep the two in step.
 const bulkTemplateWhere = and(eq(templates.type, "EMAIL"), eq(templates.isActive, true), isNull(templates.triggerStatus));
 
 /** The bulk-email templates with their text, for the picker's read-only preview. */
@@ -50,23 +53,27 @@ const TOKEN_ERRORS = [MissingTokenValueError, TokenNotAllowedError, UnknownToken
 export async function bulkSendEmail(
   user: PolicyUser,
   input: z.infer<typeof bulkEmailSchema>,
-  options: { requestId?: string } = {},
+  options: { requestId?: string; isVisible?: typeof isVisibleApplication } = {},
 ): Promise<BulkEmailResult[] | undefined> {
   if (!(await usableTemplate(input.templateId))) return undefined;
+  const isVisible = options.isVisible ?? isVisibleApplication;
   const results: BulkEmailResult[] = [];
   for (const applicationId of input.applicationIds) {
-    if (!(await isVisibleApplication(user, applicationId))) {
-      results.push(bulkFailure(applicationId, "notFound"));
-      continue;
-    }
-    const [application] = await getDb().select({ anonymizedAt: applications.anonymizedAt }).from(applications).where(eq(applications.id, applicationId));
-    if (application.anonymizedAt) {
-      results.push(bulkFailure(applicationId, "anonymized"));
-      continue;
-    }
+    // Everything per item is inside the try: any error is that item's
+    // failure, and the rest still run.
     try {
-      const emailLogId = await withTransaction((tx) => queueTemplateEmail(tx, { templateId: input.templateId, applicationId }));
-      results.push({ applicationId, ok: true, emailLogId });
+      if (!(await isVisible(user, applicationId))) {
+        results.push(bulkFailure(applicationId, "notFound"));
+        continue;
+      }
+      // The anonymization check and the queueing share one transaction, with
+      // the row locked, so a purge can't slip in between (RT3).
+      const emailLogId = await withTransaction(async (tx) => {
+        const [application] = await tx.select({ anonymizedAt: applications.anonymizedAt }).from(applications).where(eq(applications.id, applicationId)).for("share");
+        if (application.anonymizedAt) return null;
+        return queueTemplateEmail(tx, { templateId: input.templateId, applicationId });
+      });
+      results.push(emailLogId ? { applicationId, ok: true, emailLogId } : bulkFailure(applicationId, "anonymized"));
     } catch (err) {
       if (TOKEN_ERRORS.some((type) => err instanceof type)) results.push(bulkFailure(applicationId, "tokenError", (err as Error).message));
       else results.push(unexpectedFailure(applicationId, err, options.requestId, "bulk email failed"));

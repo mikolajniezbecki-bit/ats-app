@@ -13,6 +13,7 @@ import { SEED_TEMPLATES } from "@/server/db/seed/data";
 import { applicationHistory, applications, emailLog, templates } from "@/server/db/schema";
 import type { PipelineStatus } from "@/server/domain/pipeline";
 import { changeApplicationStatus } from "@/server/pipeline";
+import { bulkSendEmail } from "@/server/email/bulk";
 import { bulkChangeStatus } from "@/server/pipeline/bulk";
 import { getMessage, searchMessages, waitForMessage } from "../support/mailpit";
 import { processDueJobs } from "../support/process-due-jobs";
@@ -196,6 +197,28 @@ describe("bulk status move", () => {
     expect(await row(items[1].id)).toMatchObject({ status: "APPLIED", version: 1 });
     expect(await history(items[1].id)).toEqual([]);
     expect((await row(items[2].id)).status).toBe("SCREENING");
+  });
+
+  it("a database error in the per-item checks fails only that item; the others still move or get their email", async () => {
+    const job = await requisition();
+    const items = [await application(job.id), await application(job.id), await application(job.id)];
+    const user = { id: (await insertUser(db(), "RECRUITER")).id, role: "RECRUITER" as const };
+    const isVisible = async (_user: unknown, id: string) => {
+      if (id === items[1].id) throw new Error("connection terminated");
+      return true;
+    };
+    const failure = { applicationId: items[1].id, ok: false, code: "failed", message: "Something went wrong with this application. Request ID: req-9" };
+
+    const moved = await bulkChangeStatus(user, { toStatus: "SCREENING", items: items.map((app) => ({ applicationId: app.id, version: 1 })) }, { requestId: "req-9", isVisible });
+    expect(moved).toEqual([expect.objectContaining({ ok: true }), failure, expect.objectContaining({ ok: true })]);
+    expect((await row(items[1].id)).status).toBe("APPLIED");
+    expect((await row(items[2].id)).status).toBe("SCREENING");
+
+    const template = await emailTemplate({});
+    const sent = await bulkSendEmail(user, { templateId: template.id, applicationIds: items.map((app) => app.id) }, { requestId: "req-9", isVisible });
+    expect(sent).toEqual([expect.objectContaining({ ok: true }), failure, expect.objectContaining({ ok: true })]);
+    expect(await emails(items[1].id)).toEqual([]);
+    expect((await emails(items[2].id)).filter((email) => email.templateId === template.id)).toHaveLength(1);
   });
 
   it("E8: moving two applications to REJECTED queues one delayed rejection email each", async () => {

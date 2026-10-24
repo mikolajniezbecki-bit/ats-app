@@ -70,16 +70,19 @@ type ChangeStatus = (tx: Tx, input: Parameters<typeof changeApplicationStatus>[1
 export async function bulkChangeStatus(
   user: PolicyUser,
   input: z.infer<typeof bulkStatusSchema>,
-  options: { requestId?: string; change?: ChangeStatus } = {},
+  options: { requestId?: string; change?: ChangeStatus; isVisible?: typeof isVisibleApplication } = {},
 ): Promise<BulkStatusResult[]> {
   const change = options.change ?? changeApplicationStatus;
+  const isVisible = options.isVisible ?? isVisibleApplication;
   const results: BulkStatusResult[] = [];
   for (const { applicationId, version } of input.items) {
-    if (!(await isVisibleApplication(user, applicationId))) {
-      results.push(bulkFailure(applicationId, "notFound"));
-      continue;
-    }
+    // Everything per item, the visibility check included, is inside the try:
+    // any error is that item's failure, and the rest still run.
     try {
+      if (!(await isVisible(user, applicationId))) {
+        results.push(bulkFailure(applicationId, "notFound"));
+        continue;
+      }
       const result = await withTransaction((tx) =>
         change(tx, { applicationId, toStatus: input.toStatus, version, comment: input.comment, actor: { id: user.id } }),
       );
