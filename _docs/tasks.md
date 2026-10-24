@@ -404,7 +404,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - A filled honeypot or failed Turnstile check refuses the submission without creating an application.
 - Unit tests for the IP helper cover each header case and show a client-set first `x-forwarded-for` entry is ignored.
 
-## 26. Pipeline status transitions
+## 26. Pipeline status transitions ✅
 
 **Issue:** [#32](https://github.com/mikolajniezbecki-bit/ats-app/issues/32)
 
