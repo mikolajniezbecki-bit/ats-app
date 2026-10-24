@@ -149,12 +149,13 @@ describe("free edits (L1)", () => {
     }
   });
 
-  it("L1: an L2 field in APPROVED and any field in CLOSED return 409; an empty description returns 400; a Hiring Manager gets 403", async () => {
+  it("L1: an L2 field in APPROVED needs re-approval, any field in CLOSED returns 409; an empty description returns 400; a Hiring Manager gets 403", async () => {
     const recruiter = await signedIn("RECRUITER");
     const job = await approved();
-    const locked = await patch(job.id, { version: 1, openingsCount: 3 }, recruiter);
-    expect(locked.status).toBe(409);
-    expect((await locked.json()).message).toBe("This field can't be changed in the current state.");
+    // Task 30 (L2): raising openings from APPROVED starts re-approval, so it needs an approver.
+    const needsApprover = await patch(job.id, { version: 1, openingsCount: 3 }, recruiter);
+    expect(needsApprover.status).toBe(400);
+    expect((await needsApprover.json()).fields.approverId).toBe("This change needs re-approval. Choose an approver.");
     // Sent unchanged (as the form does), the L2 fields are fine.
     expect((await patch(job.id, { version: 1, openingsCount: 1, departmentId: job.departmentId, title: "Same L2" }, recruiter)).status).toBe(200);
 

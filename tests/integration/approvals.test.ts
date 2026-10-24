@@ -208,10 +208,12 @@ describe("decide", () => {
     expect((await post(approve, pending.id, { version: pending.version }, recruiter)).status).toBe(403);
   });
 
-  it("A3: a decision on a requisition that isn't in first approval returns 409", async () => {
+  // Task 30 (L2) made re-approval decidable (tests in requisition-reapproval.test.ts);
+  // a requisition that isn't pending at all still gets 409.
+  it("A3: a decision on a requisition that isn't pending approval returns 409", async () => {
     const approver = await signedIn("HIRING_MANAGER");
-    const reapproval = await draft(approver.userId, { state: "PENDING_APPROVAL", approvedAt: new Date(), approverId: approver.userId });
-    const response = await post(approve, reapproval.id, { version: 1 }, approver);
+    const live = await draft(approver.userId, { state: "APPROVED", approvedAt: new Date(), approverId: approver.userId });
+    const response = await post(approve, live.id, { version: 1 }, approver);
     expect(response.status).toBe(409);
     expect((await response.json()).message).toBe("This requisition is not awaiting approval.");
   });

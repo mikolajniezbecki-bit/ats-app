@@ -536,7 +536,9 @@
       "alreadyPublished": "The posting is already published.",
       "alreadyUnpublished": "The posting is already unpublished.",
       "closeCommentRequired": "Add a comment to close.",
-      "reopenCommentRequired": "Add a comment to reopen."
+      "reopenCommentRequired": "Add a comment to reopen.",
+      "openingsBelowHired": "Openings can't be lower than the {hired} already hired.",
+      "reapprovalApproverRequired": "This change needs re-approval. Choose an approver."
     },
     "lifecycle": {
       "title": "Lifecycle",
@@ -572,7 +574,9 @@
       "commentOptional": "Comment (optional)",
       "cancel": "Cancel",
       "failed": "The action could not be completed. Try again."
-    }
+    },
+    "reapprovalNote": "Changing this field needs re-approval. The posting stays live meanwhile.",
+    "reapprovalApprover": "Approver for the re-approval"
   },
   "Prescreen": {
     "title": "Pre-screening questions",
@@ -689,6 +693,15 @@
       "commentOptional": "Comment (optional)",
       "cancel": "Cancel",
       "failed": "The action could not be completed. Try again."
+    },
+    "reApproval": "Re-approval",
+    "changes": "Changes to approve",
+    "change": "{field}: {from} → {to}",
+    "l2Fields": {
+      "openingsCount": "Openings",
+      "departmentId": "Department",
+      "hiringManagerId": "Hiring manager",
+      "legalEntityId": "Legal entity"
     }
   },
   "Careers": {
