@@ -40,6 +40,7 @@ export const PERMISSIONS = {
   "requisition.manage": ADMIN_RECRUITER,
   "requisition.publish": ADMIN_RECRUITER,
   "application.changeStatus": ADMIN_RECRUITER,
+  "application.bulkEmail": ADMIN_RECRUITER, // §5.4 bulk actions
   "interview.manage": ADMIN_RECRUITER,
   "offer.manage": ADMIN_RECRUITER,
   "export.hires": ADMIN_RECRUITER, // V10

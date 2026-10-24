@@ -873,5 +873,46 @@
       "REQ_CANCELLED": "Requisition cancelled",
       "OTHER": "Other"
     }
+  },
+  "Bulk": {
+    "errors": {
+      "tooMany": "Select at most 100 applications.",
+      "empty": "Select at least one application.",
+      "duplicate": "An application was selected more than once.",
+      "invalid": "Check the selection and try again.",
+      "notFound": "This application can't be found.",
+      "anonymized": "This application has been anonymized.",
+      "failed": "Something went wrong with this application. Request ID: {requestId}",
+      "templateUnusable": "This template can no longer be used for bulk email.",
+      "requestFailed": "The request failed. Try again."
+    },
+    "selectRow": "Select {name}",
+    "selectAll": "Select all on this page",
+    "selected": "{count} selected",
+    "move": "Move status",
+    "email": "Send email",
+    "moveTitle": "Move applications",
+    "target": "New status",
+    "choose": "Choose a status",
+    "comment": "Comment (optional; required to reopen)",
+    "confirmMove": "Move {count} applications to {status}?",
+    "emailTitle": "Send email",
+    "template": "Template",
+    "chooseTemplate": "Choose a template",
+    "preview": "Preview (sent as written; tokens are filled in per application)",
+    "previewSubject": "Subject",
+    "previewBody": "Body",
+    "noTemplates": "No bulk email templates are active.",
+    "confirmEmail": "Send '{name}' to {count} applications?",
+    "confirm": "Confirm",
+    "working": "Working…",
+    "cancel": "Cancel",
+    "close": "Close",
+    "resultsTitle": "Results",
+    "candidate": "Candidate",
+    "result": "Result",
+    "moved": "Moved to {status}",
+    "queued": "Queued",
+    "queuedNote": "Queued; delivery status is shown on each application's timeline."
   }
 }
