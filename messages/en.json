@@ -524,7 +524,54 @@
       "approverSelf": "You can't approve your own submission.",
       "commentRequired": "Add a comment to reject.",
       "commentTooLong": "Comments are at most 2,000 characters.",
-      "descriptionRequired": "Add a job description before submitting."
+      "descriptionRequired": "Add a job description before submitting.",
+      "closed": "This requisition is closed. An Admin can reopen it.",
+      "fieldLocked": "This field can't be changed in the current state.",
+      "descriptionEmptyApproved": "The job description can't be empty once approved.",
+      "holdNotAllowed": "This requisition can't be put on hold in its current state.",
+      "resumeNotAllowed": "Only a requisition on hold can be resumed.",
+      "closeNotAllowed": "This requisition can't be closed in its current state.",
+      "reopenNotAllowed": "Only a closed requisition can be reopened.",
+      "publishNotAllowed": "Publishing can be changed only while the requisition is approved.",
+      "alreadyPublished": "The posting is already published.",
+      "alreadyUnpublished": "The posting is already unpublished.",
+      "closeCommentRequired": "Add a comment to close.",
+      "reopenCommentRequired": "Add a comment to reopen."
+    },
+    "lifecycle": {
+      "title": "Lifecycle",
+      "published": "Published",
+      "unpublished": "Not published",
+      "posting": "Posting",
+      "pausedDays": "Paused days",
+      "onHoldSince": "On hold since",
+      "closedAt": "Closed",
+      "closeReason": "Close reason",
+      "closeReasons": {
+        "FILLED": "Filled",
+        "CANCELLED": "Cancelled"
+      },
+      "actions": {
+        "hold": "Put on hold",
+        "resume": "Resume",
+        "close": "Close",
+        "reopen": "Reopen",
+        "unpublish": "Unpublish",
+        "republish": "Republish"
+      },
+      "confirm": {
+        "hold": "The posting is unpublished and the hold time is counted as paused.",
+        "resume": "The requisition is approved and published again.",
+        "close": "The requisition is closed as cancelled and unpublished.",
+        "reopen": "The requisition is approved and published again. Rejected applications stay rejected.",
+        "unpublish": "The posting disappears from the job board and stops accepting applications.",
+        "republish": "The posting appears on the job board again."
+      },
+      "closeImpact": "{applications, plural, one {# open application} other {# open applications}} will be rejected and {offers, plural, one {# offer} other {# offers}} withdrawn.",
+      "commentRequired": "Comment (required)",
+      "commentOptional": "Comment (optional)",
+      "cancel": "Cancel",
+      "failed": "The action could not be completed. Try again."
     }
   },
   "Prescreen": {

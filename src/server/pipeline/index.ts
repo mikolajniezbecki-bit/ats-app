@@ -113,41 +113,66 @@ export async function changeApplicationStatus(
   });
   if (!check.ok) return { ok: false, reason: check.reason, message: check.message };
 
-  const cancelledEmails = await cancelQueuedEmails(tx, applicationId);
+  const updated = await applyStatusChange(tx, application, toStatus, {
+    actor,
+    comment,
+    reasonCode: toStatus === "REJECTED" ? "OTHER" : null,
+    isReopen: check.isReopen,
+  });
+  return { ok: true, status: updated.status, version: updated.version };
+}
+
+type ApplicationRow = typeof applications.$inferSelect;
+
+/**
+ * The writing steps of a status change, after every check passed, for an
+ * application row the caller locked FOR UPDATE: cancel queued emails (R7),
+ * update with the row's version (D7), write history (R8), queue the stage
+ * email (E8, E9). changeApplicationStatus uses it for manual moves; a
+ * requisition close (L6) uses it with a system reason code. Callers never
+ * write `applications.status` themselves.
+ */
+export async function applyStatusChange(
+  tx: Tx,
+  application: ApplicationRow,
+  toStatus: PipelineStatus,
+  change: { actor: { id: string }; comment: string | null; reasonCode: ApplicationRow["reasonCode"]; isReopen: boolean },
+): Promise<ApplicationRow> {
+  const cancelledEmails = await cancelQueuedEmails(tx, application.id);
 
   const now = new Date();
-  const reasonCode = toStatus === "REJECTED" ? ("OTHER" as const) : null;
   const final = !isOpenStatus(toStatus);
-  const updated = await updateWithVersion(tx, applications, applicationId, version, {
+  const updated = await updateWithVersion(tx, applications, application.id, application.version, {
     status: toStatus,
-    reasonCode,
+    reasonCode: change.reasonCode,
     dispositionedAt: final ? now : null,
     ...(toStatus === "HIRED" ? { hiredAt: now } : {}),
   });
 
   await tx.insert(applicationHistory).values({
-    applicationId,
+    applicationId: application.id,
     fromStatus: application.status,
     toStatus,
-    changedByUserId: actor.id,
-    comment,
-    reasonCode,
-    isReopen: check.isReopen,
+    changedByUserId: change.actor.id,
+    comment: change.comment,
+    reasonCode: change.reasonCode,
+    isReopen: change.isReopen,
   });
 
-  await queueStageEmail(tx, applicationId, toStatus, now);
+  await queueStageEmail(tx, application.id, toStatus, now);
 
   logger.info(
     {
-      application_id: applicationId,
-      requisition_id: found.requisitionId,
-      user_id: actor.id,
+      application_id: application.id,
+      requisition_id: application.requisitionId,
+      user_id: change.actor.id,
       from_status: application.status,
       to_status: toStatus,
-      reopen: check.isReopen,
+      reason_code: change.reasonCode,
+      reopen: change.isReopen,
       cancelled_emails: cancelledEmails,
     },
     "application status changed",
   );
-  return { ok: true, status: updated.status, version: updated.version };
+  return updated;
 }

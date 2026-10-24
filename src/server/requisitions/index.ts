@@ -27,6 +27,7 @@ import {
   normalizeCustomFields,
 } from "../domain/requisitions/custom-fields";
 import { MAX_DESCRIPTION_LENGTH, hasVisibleText, sanitizeDescription } from "../domain/requisitions/description";
+import { allowsFreeEdits } from "../domain/requisitions/lifecycle";
 import { generatePrivateSlug } from "../domain/requisitions/slug";
 import { logger } from "../logger";
 import { scopeRequisitionsFor } from "../policy/filters";
@@ -113,7 +114,7 @@ export type FieldErrors = Record<string, string>;
 export type RequisitionResult =
   | { ok: true; requisition: RequisitionRow }
   | { ok: false; reason: "invalid"; fields: FieldErrors }
-  | { ok: false; reason: "notFound" | "forbidden" | "stale" | "notEditable" | "awaitingApproval" };
+  | { ok: false; reason: "notFound" | "forbidden" | "stale" | "notEditable" | "awaitingApproval" | "closed" | "fieldLocked" };
 
 /** The editable values of a requisition, as the service checks them. */
 type Values = {
@@ -364,7 +365,16 @@ export async function updateRequisition(tx: Tx, user: PolicyUser, id: string, in
   if (current.version !== version) return { ok: false, reason: "stale" };
   // L8: nothing changes while a first approval is pending (A9 withdraws it).
   if (isFirstApprovalPending(current)) return { ok: false, reason: "awaitingApproval" };
-  if (current.state !== "DRAFT") return { ok: false, reason: "notEditable" };
+  // L1: CLOSED is read-only until an Admin reopens it (L7).
+  if (current.state === "CLOSED") return { ok: false, reason: "closed" };
+  const freeEdit = allowsFreeEdits(current);
+  if (current.state !== "DRAFT" && !freeEdit) return { ok: false, reason: "notEditable" };
+  if (freeEdit) {
+    // L1: free edits are for Admins and Recruiters; the L2 fields wait for
+    // re-approval (task 30). The form sends them unchanged, which is fine.
+    if (!can(user, "requisition.manage")) return { ok: false, reason: "forbidden" };
+    if (L2_FIELDS.some((field) => changes[field] !== undefined && changes[field] !== current[field])) return { ok: false, reason: "fieldLocked" };
+  }
 
   const storedCustom = (current.customFieldsJson as Record<string, unknown>) ?? {};
   const descriptionHtml = changes.descriptionHtml === undefined ? current.descriptionHtml : sanitizeDescription(changes.descriptionHtml);
@@ -383,6 +393,8 @@ export async function updateRequisition(tx: Tx, user: PolicyUser, id: string, in
 
   const errors = await referenceErrors(tx, next, current);
   if (descriptionHtml.length > MAX_DESCRIPTION_LENGTH) errors.descriptionHtml = "tooLong";
+  // L1: outside DRAFT the description keeps visible text.
+  else if (freeEdit && !hasVisibleText(descriptionHtml)) errors.descriptionHtml = "descriptionEmptyApproved";
   // A deactivated template keeps working for requisitions that use it.
   const template = current.templateId ? await loadTemplateSchema(tx, current.templateId) : undefined;
   const custom = await customFieldCheck(tx, template?.schema ?? [], next.customFields, storedCustom);
