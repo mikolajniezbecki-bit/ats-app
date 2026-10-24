@@ -3,6 +3,7 @@
 import { getTranslations } from "next-intl/server";
 import { ApprovalActions } from "@/components/requisitions/approval-actions";
 import { PrescreenEditor } from "@/components/requisitions/prescreen-editor";
+import { countRequisitionApplications } from "@/server/applications";
 import { latestRequisitionApprovalEvent, listApproverOptions, requisitionApproval } from "@/server/approvals";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -22,6 +23,8 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
   const { requisition, template } = detail;
   const t = await getTranslations("Requisitions");
   const a = await getTranslations("Approvals.panel");
+  const apps = await getTranslations("Applications");
+  const applicationCount = can(user, "application.read") ? await countRequisitionApplications(user, requisition.id) : null;
   const pendingFirst = isFirstApprovalPending(requisition);
   const canSubmit = requisition.state === "DRAFT" && can(user, "requisition.edit", requisition);
   const approvers = canSubmit ? await listApproverOptions(user) : null;
@@ -77,6 +80,11 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
         {can(user, "requisition.create") && (
           <Link href={`/requisitions/new?from=${requisition.id}`} className="rounded border px-4 py-2">
             {t("duplicate")}
+          </Link>
+        )}
+        {applicationCount !== null && (
+          <Link href={`/requisitions/${requisition.id}/applications`} className="rounded border px-4 py-2">
+            {apps("listLink", { count: applicationCount })}
           </Link>
         )}
       </div>

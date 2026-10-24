@@ -739,5 +739,139 @@
       "invalid": "Check the status change.",
       "commentTooLong": "Enter a comment of at most 2,000 characters."
     }
+  },
+  "Applications": {
+    "listTitle": "Applications: {reqNumber} · {title}",
+    "listLink": "Applications ({count})",
+    "backToRequisition": "Back to the requisition",
+    "filterLabel": "Status",
+    "all": "All ({count})",
+    "statusCount": "{status} ({count})",
+    "empty": "No applications.",
+    "columns": {
+      "name": "Name",
+      "email": "Email",
+      "status": "Status",
+      "score": "Score",
+      "source": "Source",
+      "applied": "Applied",
+      "open": "Application"
+    },
+    "open": "Open",
+    "disqualified": "Disqualified",
+    "anonymized": "Anonymized",
+    "failedEmailIcon": "An email to this candidate failed to send",
+    "group": "{count} applications from the same email address",
+    "alsoAppliedTo": "Also applied to:",
+    "related": "{reqNumber} ({status})",
+    "sources": {
+      "CAREER_SITE": "Career site",
+      "PRIVATE_LINK": "Private link"
+    },
+    "pageLabel": "Pages",
+    "previous": "Previous page",
+    "next": "Next page",
+    "pageOf": "Page {page} of {pages}",
+    "detail": {
+      "pageTitle": "Application",
+      "anonymizedName": "Anonymized applicant",
+      "anonymizedNotice": "This application has been anonymized.",
+      "failedBanner": "An email to this candidate failed to send. Check the timeline.",
+      "fields": {
+        "email": "Email",
+        "phone": "Phone",
+        "requisition": "Requisition",
+        "status": "Status",
+        "score": "Pre-screening score",
+        "source": "Source",
+        "applied": "Applied",
+        "consent": "Consent",
+        "consentValue": "Version {version}, <date></date>",
+        "version": "Version"
+      },
+      "others": "Other applications by this candidate",
+      "noOthers": "None.",
+      "documents": "Documents",
+      "kinds": {
+        "CV": "CV",
+        "COVER_LETTER": "Cover letter"
+      },
+      "fileDeleted": "This file has been deleted.",
+      "noDocuments": "No documents.",
+      "prescreen": "Pre-screening",
+      "noQuestions": "No pre-screening questions.",
+      "question": "Question",
+      "answer": "Answer",
+      "points": "Points",
+      "notAnswered": "Not answered",
+      "inactiveQuestion": "(question deactivated)",
+      "timeline": "Timeline",
+      "noTimeline": "Nothing yet."
+    },
+    "status": {
+      "title": "Change status",
+      "target": "New status",
+      "choose": "Choose a status",
+      "reopen": "{status} (reopen)",
+      "comment": "Comment (optional)",
+      "commentRequired": "Comment (required to reopen)",
+      "submit": "Change status",
+      "submitting": "Changing…",
+      "done": "Status changed to {status}.",
+      "failed": "The status could not be changed. Try again.",
+      "none": "No status change is possible now."
+    },
+    "timeline": {
+      "applied": "Applied",
+      "change": "{from} → {to}",
+      "by": "by {name}",
+      "system": "System",
+      "reopened": "Reopened",
+      "reason": "Reason: {reason}",
+      "removed": "Removed by retention",
+      "email": "Email",
+      "audience": {
+        "CANDIDATE": "to the candidate",
+        "STAFF": "to staff"
+      },
+      "scheduledFor": "Scheduled for <time></time>",
+      "view": "View",
+      "bodyTitle": "Email body",
+      "failed": "This email could not be sent.",
+      "interview": "Interview, {minutes} minutes",
+      "interviewStatuses": {
+        "SCHEDULED": "Scheduled",
+        "COMPLETED": "Completed",
+        "CANCELLED": "Cancelled",
+        "NO_SHOW": "No-show"
+      },
+      "scorecard": "Scorecard by {name}",
+      "rating": "Rating {rating}/5",
+      "thumbsUp": "Thumbs up",
+      "thumbsDown": "Thumbs down",
+      "offer": "Offer: {title}",
+      "offerApproval": "Approval: {status}",
+      "offerResponse": "Candidate response: {response}",
+      "offerSent": "Sent <time></time>",
+      "offerResponded": "Responded <time></time>",
+      "offerApprovalStatuses": {
+        "DRAFT": "Draft",
+        "PENDING": "Pending",
+        "APPROVED": "Approved",
+        "REJECTED": "Rejected",
+        "WITHDRAWN": "Withdrawn"
+      },
+      "offerResponses": {
+        "PENDING": "Pending",
+        "ACCEPTED": "Accepted",
+        "DECLINED": "Declined"
+      }
+    },
+    "reasons": {
+      "DISQUALIFIED": "Disqualified by pre-screening",
+      "REQ_FILLED": "Requisition filled",
+      "REQ_CANCELLED": "Requisition cancelled",
+      "OTHER": "Other"
+    }
   }
 }

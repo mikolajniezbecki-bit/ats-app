@@ -422,7 +422,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `E8:` / `E9:` tests: `REJECTED` queues a delayed email, `INTERVIEW` and `OFFER` send nothing; `R9:` test: a stale update fails with the reload message.
 - A Hiring Manager calling the status-change API gets 403.
 
-## 27. Recruiter workbench
+## 27. Recruiter workbench ✅
 
 **Issue:** [#33](https://github.com/mikolajniezbecki-bit/ats-app/issues/33)
 
