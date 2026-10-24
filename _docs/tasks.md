@@ -439,7 +439,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - The CV opens inline from the detail page through a signed link.
 - The timeline lists status changes and emails in order, and a `FAILED` email shows a warning on the application.
 
-## 28. Bulk actions
+## 28. Bulk actions ✅
 
 **Issue:** [#34](https://github.com/mikolajniezbecki-bit/ats-app/issues/34)
 

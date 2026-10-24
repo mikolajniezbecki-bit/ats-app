@@ -6,10 +6,13 @@
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BulkBar, BulkProvider, BulkRowCheckbox, BulkSelectAll } from "@/components/applications/bulk-actions";
 import { LocalTime } from "@/components/local-time";
 import { type ApplicationStatus, listRequisitionApplications } from "@/server/applications";
 import { APPLICATION_STATUSES } from "@/server/db/schema";
+import { listBulkTemplates } from "@/server/email/bulk";
 import { requirePermission } from "@/server/policy/guards";
+import { can } from "@/server/policy/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +36,13 @@ export default async function RequisitionApplicationsPage({ params, searchParams
     return text ? `${base}?${text}` : base;
   };
   const all = Object.values(list.counts).reduce((sum, n) => sum + n, 0);
+  // Bulk actions (§5.4): only for users who may change status.
+  const bulk = can(user, "application.changeStatus");
+  const nameOf = (row: (typeof list.rows)[number]) => (row.anonymized ? t("anonymized") : `${row.firstName} ${row.lastName}`);
+  const bulkTemplates = bulk && can(user, "application.bulkEmail") ? await listBulkTemplates() : [];
+  const statusLabels = Object.fromEntries(APPLICATION_STATUSES.map((value) => [value, statuses(value)]));
 
-  return (
+  const content = (
     <main className="flex flex-1 flex-col gap-4 p-8">
       <Link href={`/requisitions/${requisition.id}`} className="text-sm underline">
         {t("backToRequisition")}
@@ -56,6 +64,7 @@ export default async function RequisitionApplicationsPage({ params, searchParams
           </Link>
         ))}
       </nav>
+      {bulk && list.rows.length > 0 && <BulkBar templates={bulkTemplates} statusLabels={statusLabels} />}
       {list.rows.length === 0 ? (
         <p className="text-sm">{t("empty")}</p>
       ) : (
@@ -63,6 +72,11 @@ export default async function RequisitionApplicationsPage({ params, searchParams
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b">
+                {bulk && (
+                  <th className="py-1 pr-2">
+                    <BulkSelectAll />
+                  </th>
+                )}
                 <th className="py-1 pr-4">{t("columns.name")}</th>
                 <th className="py-1 pr-4">{t("columns.email")}</th>
                 <th className="py-1 pr-4">{t("columns.status")}</th>
@@ -74,9 +88,14 @@ export default async function RequisitionApplicationsPage({ params, searchParams
             </thead>
             <tbody>
               {list.rows.flatMap((row) => {
-                const name = row.anonymized ? t("anonymized") : `${row.firstName} ${row.lastName}`;
+                const name = nameOf(row);
                 const cells = (
                   <tr key={row.id} className={`border-b align-top ${row.groupSize > 1 ? "bg-gray-50" : ""}`} data-testid={`application-row-${row.id}`}>
+                    {bulk && (
+                      <td className="py-2 pr-2">
+                        <BulkRowCheckbox id={row.id} name={name} />
+                      </td>
+                    )}
                     <td className="py-2 pr-4">
                       <span className={row.groupSize > 1 ? "pl-4" : undefined}>{name}</span>
                       {row.hasFailedEmail && (
@@ -118,7 +137,7 @@ export default async function RequisitionApplicationsPage({ params, searchParams
                 if (!row.groupStart) return [cells];
                 return [
                   <tr key={`group-${row.id}`} className="border-b bg-gray-100" data-testid="application-group">
-                    <th scope="rowgroup" colSpan={7} className="py-1 text-left text-xs font-medium">
+                    <th scope="rowgroup" colSpan={bulk ? 8 : 7} className="py-1 text-left text-xs font-medium">
                       {t("group", { count: row.groupSize })}
                     </th>
                   </tr>,
@@ -144,4 +163,5 @@ export default async function RequisitionApplicationsPage({ params, searchParams
       </nav>
     </main>
   );
+  return bulk ? <BulkProvider items={list.rows.map((row) => ({ id: row.id, version: row.version, name: nameOf(row) }))}>{content}</BulkProvider> : content;
 }

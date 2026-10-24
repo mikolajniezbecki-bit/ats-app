@@ -22,6 +22,7 @@ const ADMIN_RECRUITER: Action[] = [
   "requisition.manage",
   "requisition.publish",
   "application.changeStatus",
+  "application.bulkEmail",
   "interview.manage",
   "offer.manage",
   "export.hires",
