@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/applications/[id]/status/route";
-import { getBoss } from "@/server/adapters/job-queue";
+import { getBoss, jobQueue } from "@/server/adapters/job-queue";
 import { type Tx, getDb, withTransaction } from "@/server/db";
 import { applicationHistory, applications, emailLog, offers, settings, templates } from "@/server/db/schema";
 import type { PipelineStatus } from "@/server/domain/pipeline";
@@ -23,8 +23,21 @@ const STALE = "This record was changed by someone else. Reload and try again.";
 // The worker database is shared with other files, which own the trigger
 // statuses: templates this file created are deactivated and lose their
 // trigger status again (email_log rows still reference them, so they stay).
+// Emails this file queued and didn't send are cancelled again, so another
+// file's processDueJobs (with its own fake transport) never picks them up.
 const createdTemplateIds: string[] = [];
+const createdApplicationIds: string[] = [];
 afterAll(async () => {
+  if (createdApplicationIds.length > 0) {
+    await withTransaction(async (tx) => {
+      const queued = await tx
+        .update(emailLog)
+        .set({ status: "CANCELLED" })
+        .where(and(inArray(emailLog.applicationId, createdApplicationIds), eq(emailLog.status, "QUEUED")))
+        .returning({ jobId: emailLog.jobId });
+      for (const { jobId } of queued) if (jobId) await jobQueue.cancel(tx, "email.send", jobId);
+    });
+  }
   if (createdTemplateIds.length > 0) await getDb().update(templates).set({ isActive: false, triggerStatus: null }).where(inArray(templates.id, createdTemplateIds));
 });
 
@@ -69,7 +82,9 @@ async function withRejectionDelay(hours: number, fn: () => Promise<void>) {
 /** An application on an APPROVED requisition, in `status`. */
 async function application(overrides: Partial<typeof applications.$inferInsert> = {}, requisitionOverrides: Parameters<typeof insertRequisition>[1] = {}) {
   const requisition = await insertRequisition(db(), { state: "APPROVED", approvedAt: new Date(), isPublished: true, ...requisitionOverrides });
-  return insertApplication(db(), { requisitionId: requisition.id, ...overrides });
+  const created = await insertApplication(db(), { requisitionId: requisition.id, ...overrides });
+  createdApplicationIds.push(created.id);
+  return created;
 }
 
 async function row(id: string) {
@@ -147,6 +162,7 @@ describe("changeApplicationStatus", () => {
 
   it("R11: hiring from OFFER with an accepted offer sets dispositioned_at and hired_at; is_disqualified is kept", async () => {
     const values = await offerValues(db());
+    createdApplicationIds.push(values.applicationId);
     await getDb().update(applications).set({ status: "OFFER", isDisqualified: true }).where(eq(applications.id, values.applicationId));
     const approver = await insertUser(db(), "HIRING_MANAGER");
     await getDb()
