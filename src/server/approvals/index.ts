@@ -4,7 +4,7 @@
 // now, an offer in task 36) supplies its own state transitions. Every
 // transition updates `WHERE id AND version AND state`, so of two concurrent
 // actions on the same version exactly one wins. Logs carry IDs only (M2).
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { type Db, type Tx, getDb } from "../db";
@@ -13,7 +13,7 @@ import { queueRequisitionApprovalRequest } from "../email/approval-request";
 import { logger } from "../logger";
 import { listActiveUsers } from "../users";
 import { type ApprovalResource, type PolicyUser, can } from "../policy/permissions";
-import { type FieldErrors, type RequisitionRow, findVisibleRequisition, isFirstApprovalPending, submissionErrors } from "../requisitions";
+import { type FieldErrors, L2_FIELDS, type RequisitionRow, findVisibleRequisition, isFirstApprovalPending, submissionErrors } from "../requisitions";
 
 export const APPROVER_ROLES = ["HIRING_MANAGER", "ADMIN"] as const;
 export const MAX_COMMENT_LENGTH = 2_000;
@@ -69,7 +69,8 @@ export async function recordApprovalEvent(
 
 /** The approval view of a requisition, for can() (A2, A3, A9). */
 export function requisitionApproval(requisition: RequisitionRow): ApprovalResource {
-  return { pending: isFirstApprovalPending(requisition), approverId: requisition.approverId, submittedByUserId: requisition.submittedByUserId };
+  // First approval and re-approval alike (L2, A3, A9).
+  return { pending: requisition.state === "PENDING_APPROVAL", approverId: requisition.approverId, submittedByUserId: requisition.submittedByUserId };
 }
 
 /** Moves the requisition from `from` to the changes, only at `version` (D7) and in `from`. */
@@ -130,15 +131,16 @@ export async function submitRequisition(tx: Tx, user: PolicyUser, id: string, in
 }
 
 /**
- * A3, first approval: only the current approver, never the submitter, while
- * the requisition is in first-approval PENDING_APPROVAL. Approve publishes
- * it; reject (comment required) returns it to DRAFT. The submission fields
- * stay as they were (§7).
+ * A3: only the current approver, never the submitter, while the requisition
+ * is PENDING_APPROVAL. First approval: approve publishes it; reject (comment
+ * required) returns it to DRAFT; the submission fields stay (§7).
+ * Re-approval (L2): approve keeps the new values; reject restores the saved
+ * ones. Either way `approved_at` and `is_published` stay as they are (Q3).
  */
 export async function decideRequisition(tx: Tx, user: PolicyUser, id: string, decision: "approve" | "reject", input: unknown): Promise<ApprovalResult> {
   const current = await findVisibleRequisition(user, id, tx);
   if (!current) return { ok: false, reason: "notFound" };
-  if (!isFirstApprovalPending(current)) return { ok: false, reason: "notPending" };
+  if (current.state !== "PENDING_APPROVAL") return { ok: false, reason: "notPending" };
   if (!can(user, "approval.decide", requisitionApproval(current))) return { ok: false, reason: "forbidden" };
   const parsed = decisionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, reason: "invalid", fields: zodFields(parsed.error) };
@@ -147,37 +149,104 @@ export async function decideRequisition(tx: Tx, user: PolicyUser, id: string, de
   if (current.version !== version) return { ok: false, reason: "stale" };
 
   const approve = decision === "approve";
-  const requisition = await transition(
-    tx,
-    id,
-    version,
-    "PENDING_APPROVAL",
-    approve ? { state: "APPROVED", approvedAt: new Date(), isPublished: true } : { state: "DRAFT" },
-  );
+  let requisition: RequisitionRow | undefined;
+  if (!isFirstApprovalPending(current)) {
+    requisition = approve
+      ? await transition(tx, id, version, "PENDING_APPROVAL", { state: "APPROVED", previousL2ValuesJson: null })
+      : await restoreL2Values(tx, current, user.id, note);
+  } else {
+    requisition = await transition(
+      tx,
+      id,
+      version,
+      "PENDING_APPROVAL",
+      approve ? { state: "APPROVED", approvedAt: new Date(), isPublished: true } : { state: "DRAFT" },
+    );
+  }
   if (!requisition) return { ok: false, reason: "stale" };
   await recordApprovalEvent(tx, { subjectType: "REQUISITION", subjectId: id, event: approve ? "APPROVED" : "REJECTED", actorUserId: user.id, comment: note });
   await stateHistory(tx, id, "PENDING_APPROVAL", requisition.state, user.id, note);
-  logger.info({ requisition_id: id, user_id: user.id, decision }, "requisition decided");
+  logger.info({ requisition_id: id, user_id: user.id, decision, re_approval: current.approvedAt !== null }, "requisition decided");
   return { ok: true, requisition };
 }
 
-/** A9, first approval: the submitter, a Recruiter or an Admin returns a pending requisition to DRAFT. */
+/**
+ * A9: the submitter, a Recruiter or an Admin withdraws a pending requisition:
+ * back to DRAFT from first approval, back to APPROVED with the saved L2
+ * values from re-approval.
+ */
 export async function withdrawRequisition(tx: Tx, user: PolicyUser, id: string, input: unknown): Promise<ApprovalResult> {
   const current = await findVisibleRequisition(user, id, tx);
   if (!current) return { ok: false, reason: "notFound" };
-  if (!isFirstApprovalPending(current)) return { ok: false, reason: "notPending" };
+  if (current.state !== "PENDING_APPROVAL") return { ok: false, reason: "notPending" };
   if (!can(user, "approval.withdraw", requisitionApproval(current))) return { ok: false, reason: "forbidden" };
   const parsed = decisionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, reason: "invalid", fields: zodFields(parsed.error) };
   const { version, comment: note } = parsed.data;
   if (current.version !== version) return { ok: false, reason: "stale" };
 
-  const requisition = await transition(tx, id, version, "PENDING_APPROVAL", { state: "DRAFT" });
+  const requisition = isFirstApprovalPending(current)
+    ? await transition(tx, id, version, "PENDING_APPROVAL", { state: "DRAFT" })
+    : await restoreL2Values(tx, current, user.id, note);
   if (!requisition) return { ok: false, reason: "stale" };
   await recordApprovalEvent(tx, { subjectType: "REQUISITION", subjectId: id, event: "WITHDRAWN", actorUserId: user.id, fromApproverId: current.approverId, comment: note });
-  await stateHistory(tx, id, "PENDING_APPROVAL", "DRAFT", user.id, note);
-  logger.info({ requisition_id: id, user_id: user.id }, "requisition withdrawn");
+  await stateHistory(tx, id, "PENDING_APPROVAL", requisition.state, user.id, note);
+  logger.info({ requisition_id: id, user_id: user.id, re_approval: current.approvedAt !== null }, "requisition withdrawn");
   return { ok: true, requisition };
+}
+
+/** The four L2 fields as saved in `previous_l2_values_json` (snake_case, §7). */
+export type SavedL2Values = { openings_count: number; department_id: string; hiring_manager_id: string; legal_entity_id: string };
+
+const SAVED_KEYS = {
+  openingsCount: "openings_count",
+  departmentId: "department_id",
+  hiringManagerId: "hiring_manager_id",
+  legalEntityId: "legal_entity_id",
+} as const satisfies Record<(typeof L2_FIELDS)[number], keyof SavedL2Values>;
+
+/** The current L2 values, in the saved shape. */
+export function savedL2Values(requisition: RequisitionRow): SavedL2Values {
+  return {
+    openings_count: requisition.openingsCount,
+    department_id: requisition.departmentId,
+    hiring_manager_id: requisition.hiringManagerId,
+    legal_entity_id: requisition.legalEntityId,
+  };
+}
+
+/**
+ * L2, A3, A9: a rejected or withdrawn re-approval puts the saved values back
+ * as stored (even if one was deactivated since, Q4), clears them and returns
+ * to APPROVED, with a FIELD_CHANGE row per restored field.
+ */
+async function restoreL2Values(tx: Tx, current: RequisitionRow, userId: string, note: string | undefined): Promise<RequisitionRow | undefined> {
+  const saved = current.previousL2ValuesJson as SavedL2Values | null;
+  const restored = saved
+    ? {
+        openingsCount: saved.openings_count,
+        departmentId: saved.department_id,
+        hiringManagerId: saved.hiring_manager_id,
+        legalEntityId: saved.legal_entity_id,
+      }
+    : {};
+  const requisition = await transition(tx, current.id, current.version, "PENDING_APPROVAL", { state: "APPROVED", previousL2ValuesJson: null, ...restored });
+  if (!requisition || !saved) return requisition;
+  const changed = L2_FIELDS.filter((field) => String(current[field]) !== String(requisition[field]));
+  if (changed.length > 0) {
+    await tx.insert(requisitionHistory).values(
+      changed.map((field) => ({
+        requisitionId: current.id,
+        event: "FIELD_CHANGE" as const,
+        field: SAVED_KEYS[field],
+        oldValue: String(current[field]),
+        newValue: String(requisition[field]),
+        userId,
+        comment: note || null,
+      })),
+    );
+  }
+  return requisition;
 }
 
 /**
@@ -192,7 +261,7 @@ export async function listApproverOptions(user: PolicyUser, db: Db | Tx = getDb(
 /** "My approvals": requisitions waiting for this approver, oldest submission first. */
 export async function listMyRequisitionApprovals(user: PolicyUser, db: Db | Tx = getDb()) {
   const submitter = alias(users, "submitter");
-  return db
+  const rows = await db
     .select({
       id: requisitions.id,
       reqNumber: requisitions.reqNumber,
@@ -200,12 +269,41 @@ export async function listMyRequisitionApprovals(user: PolicyUser, db: Db | Tx =
       department: masterData.label,
       submitter: submitter.name,
       submittedAt: requisitions.submittedAt,
+      reApproval: sql<boolean>`${requisitions.approvedAt} is not null`,
     })
     .from(requisitions)
     .innerJoin(masterData, eq(masterData.id, requisitions.departmentId))
     .leftJoin(submitter, eq(submitter.id, requisitions.submittedByUserId))
     .where(and(eq(requisitions.state, "PENDING_APPROVAL"), eq(requisitions.approverId, user.id)))
     .orderBy(asc(requisitions.submittedAt));
+  // Re-approvals show what changed (L2): old → new per L2 field.
+  const reApprovals = rows.filter((row) => row.reApproval).map((row) => row.id);
+  const full = reApprovals.length ? await db.select().from(requisitions).where(inArray(requisitions.id, reApprovals)) : [];
+  const changes = new Map(await Promise.all(full.map(async (row) => [row.id, await reApprovalChanges(row, db)] as const)));
+  return rows.map((row) => ({ ...row, changes: changes.get(row.id) ?? [] }));
+}
+
+export type L2Change = { field: (typeof L2_FIELDS)[number]; from: string; to: string };
+
+/**
+ * A re-approval's changed L2 fields as "old → new" labels (department and
+ * legal entity labels, hiring manager names, openings as numbers), so the
+ * approver sees what they approve. Empty outside re-approval.
+ */
+export async function reApprovalChanges(requisition: RequisitionRow, db: Db | Tx = getDb()): Promise<L2Change[]> {
+  const saved = requisition.previousL2ValuesJson as SavedL2Values | null;
+  if (requisition.state !== "PENDING_APPROVAL" || !saved) return [];
+  const before = { openingsCount: saved.openings_count, departmentId: saved.department_id, hiringManagerId: saved.hiring_manager_id, legalEntityId: saved.legal_entity_id };
+  const changed = L2_FIELDS.filter((field) => String(before[field]) !== String(requisition[field]));
+  const ids = changed.filter((field) => field !== "openingsCount").flatMap((field) => [String(before[field]), String(requisition[field])]);
+  const [refs, people] = ids.length
+    ? await Promise.all([
+        db.select({ id: masterData.id, label: masterData.label }).from(masterData).where(inArray(masterData.id, ids)),
+        db.select({ id: users.id, label: users.name }).from(users).where(inArray(users.id, ids)),
+      ])
+    : [[], []];
+  const label = (value: string | number) => [...refs, ...people].find((row) => row.id === value)?.label ?? String(value);
+  return changed.map((field) => ({ field, from: label(before[field]), to: label(requisition[field]) }));
 }
 
 /** The latest approval event of a requisition, with the actor's name, for its page. */

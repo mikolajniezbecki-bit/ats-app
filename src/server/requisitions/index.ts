@@ -12,6 +12,7 @@ import { rootCause } from "../db/migrator";
 import { RecordNotFoundError, StaleRecordError, updateWithVersion } from "../db/optimistic-lock";
 import {
   POSTING_TYPES,
+  applications,
   REQUISITION_STATES,
   masterData,
   prescreenQuestions,
@@ -28,6 +29,10 @@ import {
 } from "../domain/requisitions/custom-fields";
 import { MAX_DESCRIPTION_LENGTH, hasVisibleText, sanitizeDescription } from "../domain/requisitions/description";
 import { allowsFreeEdits } from "../domain/requisitions/lifecycle";
+// Function-level imports only, so the cycle with ../approvals is harmless.
+import { approverError, recordApprovalEvent, savedL2Values } from "../approvals";
+import { queueRequisitionApprovalRequest } from "../email/approval-request";
+import { closeRequisition } from "./lifecycle";
 import { generatePrivateSlug } from "../domain/requisitions/slug";
 import { logger } from "../logger";
 import { scopeRequisitionsFor } from "../policy/filters";
@@ -100,6 +105,8 @@ export const updateRequisitionSchema = z
     descriptionHtml: fields.descriptionHtml.optional(),
     postingType: fields.postingType.optional(),
     customFields: fields.customFields.optional(),
+    // L2: the approver of the re-approval a triggering save starts (Q1).
+    approverId: z.string().max(100).optional(),
   })
   .strict();
 
@@ -113,7 +120,7 @@ export type FieldErrors = Record<string, string>;
 
 export type RequisitionResult =
   | { ok: true; requisition: RequisitionRow }
-  | { ok: false; reason: "invalid"; fields: FieldErrors }
+  | { ok: false; reason: "invalid"; fields: FieldErrors; params?: Record<string, Record<string, string>> }
   | { ok: false; reason: "notFound" | "forbidden" | "stale" | "notEditable" | "awaitingApproval" | "closed" | "fieldLocked" };
 
 /** The editable values of a requisition, as the service checks them. */
@@ -356,12 +363,15 @@ export async function findVisibleRequisition(user: PolicyUser, id: string, db: D
  * history (L11).
  */
 export async function updateRequisition(tx: Tx, user: PolicyUser, id: string, input: unknown): Promise<RequisitionResult> {
+  // The row is locked for the whole edit, so a concurrent hire (task 38) or
+  // lifecycle action sees either the old or the new state.
+  if (z.uuid().safeParse(id).success) await tx.select({ id: requisitions.id }).from(requisitions).where(eq(requisitions.id, id)).for("update");
   const current = await findVisibleRequisition(user, id, tx);
   if (!current) return { ok: false, reason: "notFound" };
   if (!can(user, "requisition.edit", current)) return { ok: false, reason: "forbidden" };
   const parsed = updateRequisitionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, reason: "invalid", fields: zodFields(parsed.error) };
-  const { version, ...changes } = parsed.data;
+  const { version, approverId, ...changes } = parsed.data;
   if (current.version !== version) return { ok: false, reason: "stale" };
   // L8: nothing changes while a first approval is pending (A9 withdraws it).
   if (isFirstApprovalPending(current)) return { ok: false, reason: "awaitingApproval" };
@@ -373,7 +383,10 @@ export async function updateRequisition(tx: Tx, user: PolicyUser, id: string, in
     // L1: free edits are for Admins and Recruiters; the L2 fields wait for
     // re-approval (task 30). The form sends them unchanged, which is fine.
     if (!can(user, "requisition.manage")) return { ok: false, reason: "forbidden" };
-    if (L2_FIELDS.some((field) => changes[field] !== undefined && changes[field] !== current[field])) return { ok: false, reason: "fieldLocked" };
+    // L2: only APPROVED takes L2 changes (with re-approval or as a decrease);
+    // ON_HOLD and re-approval keep them locked. The form sends them unchanged.
+    const l2Changed = L2_FIELDS.some((field) => changes[field] !== undefined && changes[field] !== current[field]);
+    if (l2Changed && current.state !== "APPROVED") return { ok: false, reason: "fieldLocked" };
   }
 
   const storedCustom = (current.customFieldsJson as Record<string, unknown>) ?? {};
@@ -399,7 +412,24 @@ export async function updateRequisition(tx: Tx, user: PolicyUser, id: string, in
   const template = current.templateId ? await loadTemplateSchema(tx, current.templateId) : undefined;
   const custom = await customFieldCheck(tx, template?.schema ?? [], next.customFields, storedCustom);
   Object.assign(errors, custom.errors);
-  if (Object.keys(errors).length > 0) return { ok: false, reason: "invalid", fields: errors };
+
+  // L2 from APPROVED: a higher openings count or another department, hiring
+  // manager or legal entity starts re-approval with a named approver (Q1);
+  // openings never go below the hired count.
+  const reApproval = current.state === "APPROVED" && l2Trigger(current, next);
+  const params: Record<string, Record<string, string>> = {};
+  if (current.state === "APPROVED" && next.openingsCount < current.openingsCount) {
+    const hired = await hiredCount(tx, id);
+    if (next.openingsCount < hired) {
+      errors.openingsCount = "openingsBelowHired";
+      params.openingsCount = { hired: String(hired) };
+    }
+  }
+  if (reApproval) {
+    const approverCode = approverId === undefined ? "reapprovalApproverRequired" : await approverError(tx, approverId, user.id);
+    if (approverCode) errors.approverId = approverCode;
+  }
+  if (Object.keys(errors).length > 0) return { ok: false, reason: "invalid", fields: errors, ...(Object.keys(params).length > 0 ? { params } : {}) };
 
   const needsSlug = next.postingType === "PRIVATE" && !current.privateSlug;
   let requisition: RequisitionRow;
@@ -417,6 +447,17 @@ export async function updateRequisition(tx: Tx, user: PolicyUser, id: string, in
         postingType: next.postingType,
         customFieldsJson: custom.normalized,
         ...(slug ? { privateSlug: slug } : {}),
+        // L2: the old values of all four fields, then a new approval (A1, A2);
+        // approved_at and is_published stay as they are.
+        ...(reApproval
+          ? {
+              state: "PENDING_APPROVAL" as const,
+              previousL2ValuesJson: savedL2Values(current),
+              submittedByUserId: user.id,
+              submittedAt: new Date(),
+              approverId,
+            }
+          : {}),
       }),
     );
   } catch (err) {
@@ -434,8 +475,43 @@ export async function updateRequisition(tx: Tx, user: PolicyUser, id: string, in
     userId: user.id,
   }));
   if (history.length > 0) await tx.insert(requisitionHistory).values(history);
-  logger.info({ requisition_id: id, user_id: user.id, l2_changes: history.length }, "requisition updated");
+  logger.info({ requisition_id: id, user_id: user.id, l2_changes: history.length, re_approval: reApproval }, "requisition updated");
+
+  if (reApproval) {
+    await tx.insert(requisitionHistory).values({
+      requisitionId: id,
+      event: "STATE_CHANGE",
+      field: "state",
+      oldValue: "APPROVED",
+      newValue: "PENDING_APPROVAL",
+      userId: user.id,
+    });
+    await recordApprovalEvent(tx, { subjectType: "REQUISITION", subjectId: id, event: "SUBMITTED", actorUserId: user.id, toApproverId: approverId });
+    await queueRequisitionApprovalRequest(tx, id);
+  } else if (current.state === "APPROVED" && next.openingsCount < current.openingsCount && next.openingsCount === (await hiredCount(tx, id))) {
+    // L2, R6: lowered to the hired count (≥ 1, since openings are ≥ 1): the
+    // requisition is filled and closes in this transaction (L6).
+    requisition = (await closeRequisition(tx, { requisition, reason: "FILLED", actor: user, comment: null })).requisition;
+  }
   return { ok: true, requisition };
+}
+
+/** L2: a change that needs re-approval from APPROVED (a decrease of openings alone doesn't). */
+function l2Trigger(current: RequisitionRow, next: Values): boolean {
+  return (
+    next.openingsCount > current.openingsCount ||
+    next.departmentId !== current.departmentId ||
+    next.hiringManagerId !== current.hiringManagerId ||
+    next.legalEntityId !== current.legalEntityId
+  );
+}
+
+async function hiredCount(tx: Tx, requisitionId: string): Promise<number> {
+  const [{ total }] = await tx
+    .select({ total: count() })
+    .from(applications)
+    .where(and(eq(applications.requisitionId, requisitionId), eq(applications.status, "HIRED")));
+  return total;
 }
 
 /** The values a duplicate starts from (§5.2); undefined when the source isn't visible. */

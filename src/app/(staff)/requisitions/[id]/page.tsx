@@ -6,7 +6,7 @@ import { LifecycleActions } from "@/components/requisitions/lifecycle-actions";
 import { PrescreenEditor } from "@/components/requisitions/prescreen-editor";
 import { LocalTime } from "@/components/local-time";
 import { countRequisitionApplications } from "@/server/applications";
-import { latestRequisitionApprovalEvent, listApproverOptions, requisitionApproval } from "@/server/approvals";
+import { latestRequisitionApprovalEvent, listApproverOptions, reApprovalChanges, requisitionApproval } from "@/server/approvals";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sanitizeDescription } from "@/server/domain/requisitions/description";
@@ -42,6 +42,8 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
   const approvers = canSubmit ? await listApproverOptions(user) : null;
   const approval = requisitionApproval(requisition);
   const latest = await latestRequisitionApprovalEvent(requisition.id);
+  const changes = await reApprovalChanges(requisition);
+  const ap = await getTranslations("Approvals");
   const approverName = detail.approver?.name ?? "—";
   const utc = (date: Date) => date.toISOString().slice(0, 16).replace("T", " ");
   const questions = (await listQuestionRows(requisition.id)).map((row) => ({ id: row.id, isActive: row.isActive, ...storedDefinition(row) }));
@@ -144,6 +146,16 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
         </h2>
         {requisition.state === "PENDING_APPROVAL" && requisition.submittedAt && (
           <p data-testid="approval-status">{a("pending", { approver: approverName, time: utc(requisition.submittedAt) })}</p>
+        )}
+        {changes.length > 0 && (
+          <div className="rounded border border-amber-700 bg-amber-50 px-3 py-2 text-amber-900" data-testid="reapproval-changes">
+            <p className="font-medium">{ap("reApproval")}</p>
+            <ul className="list-disc pl-5 text-sm">
+              {changes.map((change) => (
+                <li key={change.field}>{ap("change", { field: ap(`l2Fields.${change.field}`), from: change.from, to: change.to })}</li>
+              ))}
+            </ul>
+          </div>
         )}
         {pendingFirst && (
           <p role="status" className="rounded border border-amber-700 bg-amber-50 px-3 py-2 text-amber-900">

@@ -31,12 +31,14 @@ type Props = {
   existing?: { id: string; version: number; templateName?: string; schema: CustomFieldDefinition[] };
   /** Creating a duplicate: the source, whose active questions are copied on save. */
   duplicateOfId?: string;
-  /** Fields shown read-only, e.g. the L2 fields of an approved requisition (L1); they are still sent unchanged. */
+  /** Fields shown read-only, e.g. the L2 fields outside APPROVED (L1, L2); they are still sent unchanged. */
   locked?: readonly string[];
+  /** An APPROVED requisition (L2): the approvers offered when a change needs re-approval. */
+  reApprovalApprovers?: { id: string; name: string }[];
 };
 type ApiError = { message?: string; fields?: Record<string, string> };
 
-export function RequisitionForm({ options, initial, existing, duplicateOfId, locked = [] }: Props) {
+export function RequisitionForm({ options, initial, existing, duplicateOfId, locked = [], reApprovalApprovers }: Props) {
   const t = useTranslations("Requisitions");
   const router = useRouter();
   const [values, setValues] = useState<FormValues>({
@@ -54,6 +56,15 @@ export function RequisitionForm({ options, initial, existing, duplicateOfId, loc
   });
   const [errors, setErrors] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
+  const [approverId, setApproverId] = useState("");
+  // L2: a higher openings count or another department, hiring manager or legal entity needs re-approval.
+  const needsReApproval =
+    reApprovalApprovers !== undefined &&
+    initial !== undefined &&
+    ((Number.isInteger(values.openingsCount) && values.openingsCount > (initial.openingsCount ?? 0)) ||
+      values.departmentId !== initial.departmentId ||
+      values.hiringManagerId !== initial.hiringManagerId ||
+      values.legalEntityId !== initial.legalEntityId);
 
   const schema = existing ? existing.schema : (options.templates.find((template) => template.id === values.templateId)?.schema ?? []);
   const set = (change: Partial<FormValues>) => setValues((current) => ({ ...current, ...change }));
@@ -80,7 +91,7 @@ export function RequisitionForm({ options, initial, existing, duplicateOfId, loc
     const response = await fetch(existing ? `/api/requisitions/${existing.id}` : "/api/requisitions", {
       method: existing ? "PATCH" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(existing ? { version: existing.version, ...content } : { templateId: values.templateId, ...(duplicateOfId ? { duplicateOfId } : {}), ...content }),
+      body: JSON.stringify(existing ? { version: existing.version, ...content, ...(needsReApproval ? { approverId } : {}) } : { templateId: values.templateId, ...(duplicateOfId ? { duplicateOfId } : {}), ...content }),
     }).catch(() => null);
     setPending(false);
     if (response?.ok) {
@@ -302,6 +313,30 @@ export function RequisitionForm({ options, initial, existing, duplicateOfId, loc
             .map(([, text]) => text)
             .join(" ")}
         </p>
+      )}
+      {needsReApproval && (
+        <div className="space-y-1 rounded border border-amber-700 bg-amber-50 p-3" data-testid="reapproval-picker">
+          <p className="text-sm text-amber-900">{t("reapprovalNote")}</p>
+          <label htmlFor="requisition-approverId" className="block text-sm font-medium">
+            {t("reapprovalApprover")}
+          </label>
+          <select
+            id="requisition-approverId"
+            value={approverId}
+            onChange={(event) => setApproverId(event.target.value)}
+            required
+            {...invalid("approverId")}
+            className="w-full rounded border px-3 py-2"
+          >
+            <option value="">{t("fields.select")}</option>
+            {(reApprovalApprovers ?? []).map((approver) => (
+              <option key={approver.id} value={approver.id}>
+                {approver.name}
+              </option>
+            ))}
+          </select>
+          {fieldError("approverId")}
+        </div>
       )}
       <div>
         <button type="submit" disabled={pending} className="rounded bg-black px-4 py-2 text-white disabled:opacity-60">

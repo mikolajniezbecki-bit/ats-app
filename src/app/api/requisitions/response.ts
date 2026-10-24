@@ -26,8 +26,8 @@ const STATUS = {
 } as const;
 
 /** A field's text: its own for a generic error, else the code's (custom fields share theirs). */
-function fieldText(field: string, code: string): string {
-  if (code !== "invalid") return message(`Requisitions.errors.${code}`);
+function fieldText(field: string, code: string, params?: Record<string, string>): string {
+  if (code !== "invalid") return message(`Requisitions.errors.${code}`, params);
   const base = field.startsWith("customFields.") ? "customField" : field;
   try {
     return message(`Requisitions.errors.fields.${base}`);
@@ -43,7 +43,7 @@ export function requisitionResponse(result: RequisitionResult | ApprovalResult |
     message: message(`Requisitions.errors.${result.reason}`),
   };
   if (result.reason === "invalid") {
-    body.fields = Object.fromEntries(Object.entries(result.fields).map(([field, code]) => [field, fieldText(field, code)]));
+    body.fields = Object.fromEntries(Object.entries(result.fields).map(([field, code]) => [field, fieldText(field, code, "params" in result ? result.params?.[field] : undefined)]));
   }
   return Response.json(body, { status: STATUS[result.reason] });
 }

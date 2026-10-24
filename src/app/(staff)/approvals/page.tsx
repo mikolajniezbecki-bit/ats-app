@@ -39,7 +39,19 @@ export default async function ApprovalsPage() {
                       {row.reqNumber}
                     </Link>
                   </td>
-                  <td className="py-2 pr-4">{row.title}</td>
+                  <td className="py-2 pr-4">
+                    {row.title}
+                    {row.reApproval && (
+                      <>
+                        <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{t("reApproval")}</span>
+                        <ul className="mt-1 list-disc pl-5 text-xs">
+                          {row.changes.map((change) => (
+                            <li key={change.field}>{t("change", { field: t(`l2Fields.${change.field}`), from: change.from, to: change.to })}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </td>
                   <td className="py-2 pr-4">{row.department}</td>
                   <td className="py-2 pr-4">{row.submitter}</td>
                   <td className="py-2 pr-4">{row.submittedAt ? `${row.submittedAt.toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}</td>

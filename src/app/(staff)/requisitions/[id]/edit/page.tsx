@@ -7,6 +7,7 @@ import { forbidden, notFound } from "next/navigation";
 import { RequisitionForm } from "@/components/requisitions/requisition-form";
 import { requirePermission } from "@/server/policy/guards";
 import { can } from "@/server/policy/permissions";
+import { listApproverOptions } from "@/server/approvals";
 import { allowsFreeEdits } from "@/server/domain/requisitions/lifecycle";
 import { L2_FIELDS, getRequisitionDetail } from "@/server/requisitions";
 import { requisitionFormOptions } from "@/server/requisitions/form-options";
@@ -54,7 +55,8 @@ export default async function EditRequisitionPage({ params }: PageProps<"/requis
         </p>
       ) : (
         <RequisitionForm
-          locked={freeEdit ? L2_FIELDS : []}
+          locked={freeEdit && requisition.state !== "APPROVED" ? L2_FIELDS : []}
+          reApprovalApprovers={requisition.state === "APPROVED" ? await listApproverOptions(user) : undefined}
           options={options}
           existing={{ id: requisition.id, version: requisition.version, templateName: template?.name, schema: template?.schema ?? [] }}
           initial={{
