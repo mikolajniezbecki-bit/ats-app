@@ -456,7 +456,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - The bulk email picker lists only active templates without `trigger_status`; each recipient's email has its tokens resolved and is logged.
 - Bulk actions are unavailable to Hiring Managers and Interviewers at API level.
 
-## 29. Requisition hold, resume, close, reopen and publishing
+## 29. Requisition hold, resume, close, reopen and publishing ✅
 
 **Issue:** [#35](https://github.com/mikolajniezbecki-bit/ats-app/issues/35)
 
