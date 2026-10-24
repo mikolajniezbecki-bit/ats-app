@@ -2,7 +2,6 @@
 // and the sanitized description with an Apply link while published; only the
 // title and "no longer accepting applications" otherwise.
 import { getTranslations } from "next-intl/server";
-import Link from "next/link";
 import { sanitizeDescription } from "@/server/domain/requisitions/description";
 import type { PublicJob } from "@/server/careers";
 
@@ -32,9 +31,10 @@ export async function JobView({ job, applyHref }: { job: PublicJob; applyHref: s
         className="space-y-3 leading-relaxed [&_a]:text-blue-800 [&_a]:underline [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
         dangerouslySetInnerHTML={{ __html: sanitizeDescription(job.descriptionHtml) }}
       />
-      <Link href={applyHref} className="inline-block rounded bg-neutral-900 px-6 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
+      {/* A full page load, so the apply page gets its own CSP (Turnstile, F6); a client-side navigation keeps this page's. */}
+      <a href={applyHref} className="inline-block rounded bg-neutral-900 px-6 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
         {t("apply")}
-      </Link>
+      </a>
     </article>
   );
 }

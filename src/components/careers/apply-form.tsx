@@ -9,17 +9,19 @@ import { useRouter } from "next/navigation";
 import { type ChangeEvent, type FormEvent, useState, useTransition } from "react";
 import { type ApplyState, applyAction } from "@/app/(public)/apply/actions";
 import type { FormQuestion } from "@/server/apply";
+import { TurnstileWidget } from "./turnstile-widget";
 
 type Props = {
   route: { kind: "external" | "private"; key: string };
   questions: FormQuestion[];
   privacy: { version: string; text: string };
   maxMb: number;
+  turnstile: { siteKey: string; nonce?: string };
 };
 
 const BYTES_PER_MB = 1_048_576;
 
-export function ApplyForm({ route, questions: initialQuestions, privacy: initialPrivacy, maxMb }: Props) {
+export function ApplyForm({ route, questions: initialQuestions, privacy: initialPrivacy, maxMb, turnstile }: Props) {
   const t = useTranslations("Apply");
   const router = useRouter();
   const [questions, setQuestions] = useState(initialQuestions);
@@ -27,6 +29,8 @@ export function ApplyForm({ route, questions: initialQuestions, privacy: initial
   const [state, setState] = useState<Extract<ApplyState, { status: "error" }> | null>(null);
   const [fileErrors, setFileErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
+  // Bumped after every refusal, so the single-use Turnstile token is renewed.
+  const [attempt, setAttempt] = useState(0);
 
   function checkFile(event: ChangeEvent<HTMLInputElement>) {
     const { name, files } = event.target;
@@ -52,6 +56,7 @@ export function ApplyForm({ route, questions: initialQuestions, privacy: initial
         result = await applyAction(data);
       } catch {
         setState({ status: "error", message: t("errors.uploadTooLarge"), fields: {} });
+        setAttempt((value) => value + 1);
         return;
       }
       if (result.status === "ok") {
@@ -63,6 +68,7 @@ export function ApplyForm({ route, questions: initialQuestions, privacy: initial
         setPrivacy(result.refresh.privacy);
       }
       setState(result);
+      setAttempt((value) => value + 1);
     });
   }
 
@@ -184,6 +190,14 @@ export function ApplyForm({ route, questions: initialQuestions, privacy: initial
         </label>
         {fieldError("consent")}
       </fieldset>
+
+      {/* Honeypot (F6): off-screen, skipped by the keyboard and screen readers; people leave it empty. */}
+      <div aria-hidden="true" className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden">
+        <label htmlFor="apply-website">{t("honeypot")}</label>
+        <input id="apply-website" name="website" type="text" tabIndex={-1} autoComplete="off" aria-hidden="true" defaultValue="" />
+      </div>
+
+      <TurnstileWidget siteKey={turnstile.siteKey} nonce={turnstile.nonce} resetKey={attempt} label={t("verification")} />
 
       <button type="submit" disabled={pending} className="rounded bg-neutral-900 px-6 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:opacity-60">
         {pending ? t("submitting") : t("submit")}

@@ -3,6 +3,8 @@
 // The Quick Apply server action (ats-project-scope.md §5.3): turns the form
 // data into submitApplication() input and its result into texts for the
 // form. No rule lives here; the service decides.
+import { headers } from "next/headers";
+import { checkApplyAttempt } from "@/server/apply/guard";
 import { message } from "@/server/messages";
 import { type ApplyInput, type ApplyRoute, type FormQuestion, findJobForRoute, loadApplyForm, submitApplication } from "@/server/apply";
 
@@ -10,6 +12,8 @@ export type ApplyState =
   | { status: "ok" }
   | {
       status: "error";
+      /** The status a JSON API would answer with; a server action's response is always 200. */
+      httpStatus?: 400 | 429;
       message: string;
       fields: Record<string, string>;
       /** Set when the form must show the current questions or privacy statement again. */
@@ -40,6 +44,14 @@ function fieldText(field: string, code: string, maxMb: number | undefined): stri
 
 export async function applyAction(form: FormData): Promise<ApplyState> {
   const route = routeOf(form);
+  // F6: every POST counts; rate limit, honeypot and Turnstile come before anything else.
+  const refusal = await checkApplyAttempt({
+    headers: await headers(),
+    honeypot: String(form.get("website") ?? ""),
+    captchaToken: typeof form.get("cf-turnstile-response") === "string" ? String(form.get("cf-turnstile-response")) : null,
+    requisitionId: async () => (route ? (await findJobForRoute(route))?.id : undefined),
+  });
+  if (refusal) return { status: "error", httpStatus: refusal.httpStatus, message: message(`Apply.errors.${refusal.reason}`), fields: {} };
   if (!route) return { status: "error", message: message("Apply.errors.notFound"), fields: {} };
   const answers: Record<string, string[]> = {};
   for (const [name, value] of form.entries()) {

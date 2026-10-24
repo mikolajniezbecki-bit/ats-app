@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { type Page, expect, test } from "@playwright/test";
 import { waitForMessage } from "../support/mailpit";
-import { VALID_PDF, fillApplication, newCandidate } from "./support/apply";
+import { VALID_PDF, fillApplication, newCandidate, waitForTurnstile } from "./support/apply";
 import { query } from "./support/db";
 import { insertQuestion, insertRequisition } from "./support/requisitions";
 
@@ -89,6 +89,8 @@ test("missing answers and fields are shown next to their fields, with no axe vio
   await insertQuestion(job.id, { text: "Can you relocate?", type: "YES_NO" });
   await page.goto(`/apply/${job.id}`);
   const form = page.getByRole("form", { name: "Application form" });
+  // Turnstile is checked before the fields since task 25 (F6), so wait for its token.
+  await waitForTurnstile(page);
   await form.getByRole("button", { name: "Submit application" }).click();
   await expect(form.getByText("Enter your first name (1 to 100 characters).")).toBeVisible();
   await expect(form.getByText("Choose your CV as a PDF file.")).toBeVisible();

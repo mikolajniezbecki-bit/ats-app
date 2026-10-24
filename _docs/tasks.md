@@ -387,7 +387,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - A disqualifying answer creates a `REJECTED` application with a queued rejection email scheduled after the delay.
 - `F7:` test: a second application within 24 h shows "You have already applied for this position."; a unit test shows `email_hash` is 64 lowercase hex characters of the trimmed, lower-cased email.
 
-## 25. Apply anti-spam
+## 25. Apply anti-spam ✅
 
 **Issue:** [#31](https://github.com/mikolajniezbecki-bit/ats-app/issues/31)
 

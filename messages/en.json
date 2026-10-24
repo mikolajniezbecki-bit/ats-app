@@ -715,7 +715,12 @@
         "email": "Enter a valid email address.",
         "phone": "Enter a phone number of 6 to 30 characters: digits, spaces, + - ( ), with at least 6 digits.",
         "consent": "Please confirm that you have read the privacy statement."
-      }
-    }
+      },
+      "rateLimited": "Too many applications from your network. Please try again later.",
+      "honeypot": "Your application could not be submitted. Please try again.",
+      "captcha": "Please complete the verification and try again."
+    },
+    "honeypot": "Leave this field empty",
+    "verification": "Verification"
   }
 }
