@@ -43,6 +43,8 @@ export type ApplicationListRow = {
   lastName: string | null;
   email: string | null;
   status: ApplicationStatus;
+  /** The version a bulk move sends back (R9). */
+  version: number;
   prescreenScore: number;
   isDisqualified: boolean;
   source: "CAREER_SITE" | "PRIVATE_LINK";
@@ -132,6 +134,7 @@ export async function listRequisitionApplications(
       email: applications.email,
       emailHash: applications.emailHash,
       status: applications.status,
+      version: applications.version,
       prescreenScore: applications.prescreenScore,
       isDisqualified: applications.isDisqualified,
       source: applications.source,
@@ -157,6 +160,7 @@ export async function listRequisitionApplications(
       lastName: row.lastName,
       email: row.email,
       status: row.status,
+      version: row.version,
       prescreenScore: row.prescreenScore,
       isDisqualified: row.isDisqualified,
       source: row.source,
