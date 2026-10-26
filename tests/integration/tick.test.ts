@@ -103,7 +103,11 @@ describe("tick authentication", () => {
 
 describe("tick", () => {
   it("W4: queues the due daily tasks and responds only after both runs are COMPLETED", async () => {
-    await startWorker(handlers, { pollingIntervalSeconds: 0.5 });
+    // The real daily tasks, with email.send faked as in the tests below: since
+    // task 31, approvals.remind queues a reminder for every pending requisition
+    // other files left in this worker's database, and sending them all over
+    // SMTP made the wait depend on that leftover data.
+    await startWorker({ ...handlers, ...emailHandler }, { pollingIntervalSeconds: 0.5 });
     const testNow = "2031-01-06T09:00:00Z"; // 10:00 in Warsaw
 
     const { status, body } = await tick({ "x-test-now": testNow });
