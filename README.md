@@ -273,6 +273,7 @@ Copy `.env.example` to `.env` and fill the empty values you need. `.env` is git-
 - `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`: Cloudflare's [Turnstile test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/).
 - `DEMO_USER_PASSWORD`: any local password of at least 12 characters.
 - `MICROSOFT_*`: leave all three empty locally unless you test Entra sign-in; they are set together or not at all, and the tenant ID must be a GUID.
+- `pnpm dev` in Codespaces, opened through the forwarded `https://<codespace>-3000.app.github.dev` URL: set `BETTER_AUTH_URL` to that URL and uncomment `BETTER_AUTH_TRUSTED_ORIGINS=https://localhost:3000,http://localhost:3000`, then restart `pnpm dev`. The port-forwarding proxy rewrites the browser's `Origin` header to `localhost:3000`, so without it Better Auth logs `Invalid origin: https://localhost:3000` and sign-in fails with a 403. Better Auth reads this variable itself; it is not part of `getConfig()` and is never set in Azure.
 
 Refused combinations: `AUTH_DEV_LOGIN=true` with `APP_ENV=azure` or `EMAIL_PROVIDER=outbox` (AU7), and `APP_ENV=azure` without `EMAIL_PROVIDER=outbox` (§3 rule 10). `NODE_ENV` plays no part in these checks.
 
