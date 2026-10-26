@@ -526,7 +526,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `I6:` / `I7:` / `I8:` tests: email time is in the interview's zone and `.ics` in UTC; a past interview shows "Awaiting outcome"; scheduling leaves the status unchanged.
 - `R12:` test: rejecting an application cancels its future scheduled interviews.
 
-## 33. Scorecards and feedback summary
+## 33. Scorecards and feedback summary ✅
 
 **Issue:** [#39](https://github.com/mikolajniezbecki-bit/ats-app/issues/39)
 

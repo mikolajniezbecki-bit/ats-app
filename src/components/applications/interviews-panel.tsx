@@ -30,6 +30,8 @@ type Props = {
   participantOptions: { id: string; name: string }[];
   canManage: boolean;
   canSchedule: boolean;
+  /** I9: participants get a link to their scorecard. */
+  currentUserId: string;
 };
 type ApiError = { message?: string; fields?: Record<string, string> };
 type Mode = { kind: "schedule" } | { kind: "edit"; interview: PanelInterview } | { kind: "cancel"; interview: PanelInterview } | null;
@@ -46,7 +48,7 @@ function browserZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
-export function InterviewsPanel({ applicationId, interviews, participantOptions, canManage, canSchedule }: Props) {
+export function InterviewsPanel({ applicationId, interviews, participantOptions, canManage, canSchedule, currentUserId }: Props) {
   const t = useTranslations("Interviews");
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
@@ -124,6 +126,11 @@ export function InterviewsPanel({ applicationId, interviews, participantOptions,
                   .map((p) => (p.removed ? t("removed", { name: p.name }) : p.isActive ? p.name : t("inactive", { name: p.name })))
                   .join(", ")}
               </p>
+              {interview.status !== "CANCELLED" && interview.participants.some((p) => p.userId === currentUserId && !p.removed) && (
+                <a href={`/interviews/${interview.id}/scorecard`} className="mt-1 inline-block underline">
+                  {t("scorecard")}
+                </a>
+              )}
               {canManage && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {interview.status === "SCHEDULED" && (

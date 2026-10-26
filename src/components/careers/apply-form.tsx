@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { type ChangeEvent, type FormEvent, useState, useTransition } from "react";
 import { type ApplyState, applyAction } from "@/app/(public)/apply/actions";
 import type { FormQuestion } from "@/server/apply";
+import { pdfFileProblem } from "@/components/pdf-file-check";
 import { TurnstileWidget } from "./turnstile-widget";
 
 type Props = {
@@ -18,8 +19,6 @@ type Props = {
   maxMb: number;
   turnstile: { siteKey: string; nonce?: string };
 };
-
-const BYTES_PER_MB = 1_048_576;
 
 export function ApplyForm({ route, questions: initialQuestions, privacy: initialPrivacy, maxMb, turnstile }: Props) {
   const t = useTranslations("Apply");
@@ -34,10 +33,8 @@ export function ApplyForm({ route, questions: initialQuestions, privacy: initial
 
   function checkFile(event: ChangeEvent<HTMLInputElement>) {
     const { name, files } = event.target;
-    const chosen = files?.[0];
-    let error = "";
-    if (chosen && chosen.size === 0) error = t("errors.fileEmpty");
-    else if (chosen && chosen.size > maxMb * BYTES_PER_MB) error = t("errors.fileTooLarge", { max: String(maxMb) });
+    const problem = pdfFileProblem(files?.[0], maxMb);
+    const error = problem === "empty" ? t("errors.fileEmpty") : problem === "tooLarge" ? t("errors.fileTooLarge", { max: String(maxMb) }) : "";
     setFileErrors((current) => ({ ...current, [name]: error }));
   }
 
