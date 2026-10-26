@@ -17,6 +17,11 @@ export type StorePdfInput = {
   /** The uploaded file name; personal data, stored only in the database (RT4). */
   originalName: string | null;
   bytes: Uint8Array;
+  /**
+   * Generated files (the P7 offer letter, task 37 Q4) skip the F2
+   * `MAX_UPLOAD_MB` limit, which is about uploads; all other checks apply.
+   */
+  generated?: boolean;
 };
 
 /** A refused upload; `code` maps to its `Files.errors` message. */
@@ -39,7 +44,7 @@ export async function maxUploadBytes(tx?: Tx): Promise<{ maxMb: number; maxBytes
 /** Validates, uploads and records the file in `tx`; throws PdfRejectedError for an invalid file. */
 export async function storePdf(tx: Tx, input: StorePdfInput): Promise<FileRow> {
   const { maxMb, maxBytes } = await maxUploadBytes(tx);
-  const validation = await validatePdfUpload(input.bytes, { maxBytes });
+  const validation = await validatePdfUpload(input.bytes, { maxBytes: input.generated ? Number.POSITIVE_INFINITY : maxBytes });
   if (!validation.ok) throw new PdfRejectedError(validation.code, maxMb);
 
   const storage = getStorage();

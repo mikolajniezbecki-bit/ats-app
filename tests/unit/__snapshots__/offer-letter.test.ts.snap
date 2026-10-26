@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`snapshot (P8) > P8: the seeded Default offer letter with fixed values gives the committed text, with every token resolved 1`] = `
+"15 January 2027
+Offer of employment
+Dear Ada Lovelace,
+We are pleased to offer you the position of Backend Engineer at Demo Sp. z o.o..
+Terms
+• Gross annual salary: 85,000.00 EUR
+• Start date: 1 March 2027
+• Reporting to: Grace Hopper
+This offer is subject to the terms of the employment contract, which we will send separately.
+Please let Alan Turing know whether you accept this offer.
+We look forward to welcoming you to the team.
+Demo Sp. z o.o.
+Demo Sp. z o.o. Page 1 of 1"
+`;

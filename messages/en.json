@@ -366,6 +366,11 @@
     "offerApprovalReminder": {
       "subject": "Reminder: offer approval needed: [[REQ_NUMBER]] [[CANDIDATE_FULL_NAME]]",
       "body": "Hello,\n\nAn offer is still waiting for your approval.\n\n- Requisition: **[[REQ_NUMBER]]**\n- Candidate: [[CANDIDATE_FULL_NAME]]\n- Job title: {job}\n- Submitted by: {submitter}\n- Days waiting: {days}\n\nReview it here:\n{link}\n\nThis is an automatic message from the ATS."
+    },
+    "offerLetter": {
+      "subject": "Your offer for [[JOB_TITLE]]",
+      "subjectUpdated": "Your updated offer for [[JOB_TITLE]]",
+      "body": "[[LOGO]]\n\nDear [[CANDIDATE_FULL_NAME]],\n\nWe're pleased to send you our offer for **[[JOB_TITLE]]**, starting on [[START_DATE]].\n\nThe offer letter is attached as a PDF. Reply to this email if you have any questions.\n\nKind regards,\n[[RECRUITER_FULL_NAME]]"
     }
   },
   "EmailStatuses": {
@@ -1267,7 +1272,10 @@
       "WITHDRAWN": "Withdrawn",
       "REASSIGNED": "Reassigned",
       "REMINDED": "Reminded"
-    }
+    },
+    "preview": "Preview PDF",
+    "letterPending": "Letter not issued yet",
+    "letterSent": "Letter sent"
   },
   "MyInterviews": {
     "title": "My interviews",

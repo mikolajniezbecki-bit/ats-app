@@ -7,6 +7,9 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["pg", "pg-boss", "pino", "@react-pdf/renderer"],
+  // P4, P5 (task 37 Q10): the offer letter reads its fonts from disk, which
+  // standalone tracing can't see; public/ is copied by the Dockerfile.
+  outputFileTracingIncludes: { "/**": ["./src/server/pdf/fonts/**"] },
   // AGENTS.md is owner-maintained; stop `next dev` from writing into it.
   agentRules: false,
   experimental: {
