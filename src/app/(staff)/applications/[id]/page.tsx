@@ -1,16 +1,21 @@
 // One application (ats-project-scope.md §5.4 Recruiter workbench, E5, F5,
 // R9, RT4, V11): the candidate, the documents in the inline PDF viewer, the
-// pre-screening answers, the status control and the timeline. Admin and
+// pre-screening answers, the status control, the interviews (I1–I7) and the
+// timeline. Admin and
 // Recruiter only until task 34; 404 for an unknown application (V9).
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ApplicationTimeline } from "@/components/applications/application-timeline";
+import { InterviewsPanel } from "@/components/applications/interviews-panel";
 import { StatusControl } from "@/components/applications/status-control";
 import { LocalTime } from "@/components/local-time";
 import { PdfViewer } from "@/components/pdf-viewer";
 import { getApplicationDetail } from "@/server/applications";
 import { APPLICATION_STATUSES } from "@/server/db/schema";
+import { awaitingOutcome } from "@/server/domain/interviews";
+import { isOpenStatus } from "@/server/domain/pipeline";
+import { listApplicationInterviews, listParticipantOptions, utcToLocal } from "@/server/interviews";
 import { requirePermission } from "@/server/policy/guards";
 import { can } from "@/server/policy/permissions";
 
@@ -28,6 +33,23 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
   const statusLabels = Object.fromEntries(APPLICATION_STATUSES.map((status) => [status, statuses(status)]));
   const name = anonymized ? d("anonymizedName") : `${application.firstName} ${application.lastName}`;
   const when = (value: Date, dateOnly = false) => <LocalTime value={value.toISOString()} dateOnly={dateOnly} />;
+  const i = await getTranslations("Interviews");
+  const now = new Date();
+  const canManageInterviews = can(user, "interview.manage");
+  const interviews = (await listApplicationInterviews(application.id, now)).map((interview) => ({
+    id: interview.id,
+    startsAtUtc: interview.startsAtUtc.toISOString(),
+    startLocal: utcToLocal(interview.startsAtUtc, interview.timezone),
+    durationMinutes: interview.durationMinutes,
+    timezone: interview.timezone,
+    locationOrLink: interview.locationOrLink,
+    status: interview.status,
+    icsSequence: interview.icsSequence,
+    awaitingOutcome: awaitingOutcome(interview, now),
+    started: interview.startsAtUtc <= now,
+    participants: interview.participants,
+  }));
+  const participantOptions = canManageInterviews ? await listParticipantOptions(application.id) : [];
 
   const fields: [string, React.ReactNode][] = [
     ...(anonymized
@@ -165,6 +187,19 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
           )}
         </section>
       )}
+
+      <section aria-labelledby="interviews-heading" className="space-y-2">
+        <h2 id="interviews-heading" className="text-xl font-semibold">
+          {i("title")}
+        </h2>
+        <InterviewsPanel
+          applicationId={application.id}
+          interviews={interviews}
+          participantOptions={participantOptions}
+          canManage={canManageInterviews}
+          canSchedule={isOpenStatus(application.status) && !anonymized}
+        />
+      </section>
 
       <section aria-labelledby="timeline-heading" className="space-y-2">
         <h2 id="timeline-heading" className="text-xl font-semibold">

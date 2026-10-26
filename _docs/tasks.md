@@ -508,7 +508,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `A5:` test: deactivating a user with a pending approval, or changing their role to Recruiter or Interviewer, is refused, and succeeds after reassignment.
 - `A6:` test using the tick and `TEST_NOW`: a reminder is sent after the configured days with the submitter in Cc, recorded as `REMINDED`, and not repeated on the same day.
 
-## 32. Interview scheduling and calendar invites
+## 32. Interview scheduling and calendar invites ✅
 
 **Issue:** [#38](https://github.com/mikolajniezbecki-bit/ats-app/issues/38)
 
