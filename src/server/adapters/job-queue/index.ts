@@ -28,6 +28,12 @@ export interface JobQueue {
    * an email as cancelled only when it really won't be sent (J2, R7).
    */
   cancel(tx: Tx, queue: QueueName, jobId: string): Promise<boolean>;
+  /**
+   * Cancels every waiting job of `queue` whose payload contains `data`
+   * (e.g. `{ offerId }`), in `tx`; returns how many (J2). Active and finished
+   * jobs are left to their handler's state check (J3).
+   */
+  cancelWaiting(tx: Tx, queue: QueueName, data: JobPayload): Promise<number>;
 }
 
 const WAITING_STATES: ReadonlySet<string> = new Set(["created", "retry"]);
@@ -62,6 +68,16 @@ export const jobQueue: JobQueue = {
     const { affected } = (await boss.cancel(queue, jobId, { db })) as { affected: number };
     logger.debug({ queue, job_id: jobId, cancelled: affected > 0 }, "job cancel");
     return affected > 0;
+  },
+
+  async cancelWaiting(tx, queue, data) {
+    assertQueue(queue);
+    const boss = await getBoss();
+    const db = fromDrizzle(tx, sql);
+    const jobs = await boss.findJobs(queue, { data, db });
+    let cancelled = 0;
+    for (const job of jobs) if (WAITING_STATES.has(job.state) && (await jobQueue.cancel(tx, queue, job.id))) cancelled += 1;
+    return cancelled;
   },
 };
 

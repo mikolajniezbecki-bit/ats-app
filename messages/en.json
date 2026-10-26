@@ -358,6 +358,14 @@
           "body": "Hello,\n\nThe interview with **[[CANDIDATE_FULL_NAME]]** for [[JOB_TITLE]] on [[INTERVIEW_DATETIME]] has been cancelled, or you are no longer on its panel.\n\nThe calendar cancellation is attached.\n\nThis is an automatic message from the ATS."
         }
       }
+    },
+    "offerApprovalRequest": {
+      "subject": "Offer approval needed: [[REQ_NUMBER]] [[CANDIDATE_FULL_NAME]]",
+      "body": "Hello,\n\n{submitter} has submitted an offer for your approval.\n\n- Requisition: **[[REQ_NUMBER]]**\n- Candidate: [[CANDIDATE_FULL_NAME]]\n- Job title: {job}\n- Submitted by: {submitter}\n\nReview it here:\n{link}\n\nThis is an automatic message from the ATS."
+    },
+    "offerApprovalReminder": {
+      "subject": "Reminder: offer approval needed: [[REQ_NUMBER]] [[CANDIDATE_FULL_NAME]]",
+      "body": "Hello,\n\nAn offer is still waiting for your approval.\n\n- Requisition: **[[REQ_NUMBER]]**\n- Candidate: [[CANDIDATE_FULL_NAME]]\n- Job title: {job}\n- Submitted by: {submitter}\n- Days waiting: {days}\n\nReview it here:\n{link}\n\nThis is an automatic message from the ATS."
     }
   },
   "EmailStatuses": {
@@ -769,6 +777,12 @@
     "tabs": {
       "mine": "My approvals",
       "all": "All pending approvals"
+    },
+    "offers": {
+      "title": "Offers",
+      "empty": "No offers are waiting.",
+      "jobTitle": "Job title",
+      "candidate": "Candidate"
     }
   },
   "Careers": {
@@ -914,7 +928,10 @@
         "applied": "Applied",
         "consent": "Consent",
         "consentValue": "Version {version}, <date></date>",
-        "version": "Version"
+        "version": "Version",
+        "department": "Department",
+        "location": "Location",
+        "openings": "Openings"
       },
       "others": "Other applications by this candidate",
       "noOthers": "None.",
@@ -1189,7 +1206,12 @@
       "currency": "Currency",
       "startDate": "Start date",
       "templateId": "Offer template",
-      "chooseTemplate": "Choose a template…"
+      "chooseTemplate": "Choose a template…",
+      "approver": "Approver",
+      "chooseApprover": "Choose an approver…",
+      "comment": "Comment",
+      "commentOptional": "Comment (optional)",
+      "reason": "Reason"
     },
     "errors": {
       "invalid": "Check the highlighted fields.",
@@ -1211,8 +1233,40 @@
         "currency": "Choose a currency.",
         "startDate": "Choose a start date from today on.",
         "templateId": "Choose an active offer template.",
-        "invalid": "Check this value."
-      }
+        "invalid": "Check this value.",
+        "approverId": "Choose an active Hiring Manager or Admin as approver.",
+        "approverInvalid": "Choose an active Hiring Manager or Admin as approver.",
+        "approverSelf": "You can't approve your own submission.",
+        "approverSubmitter": "The submitter can't approve their own submission.",
+        "approverCurrent": "This user is already the approver.",
+        "reapprovalApproverRequired": "Changing an approved offer needs re-approval. Choose an approver.",
+        "reasonRequired": "Add a reason for the reassignment.",
+        "commentRequired": "Add a comment to reject.",
+        "commentTooLong": "Comments are at most 2,000 characters."
+      },
+      "forbidden": "You can't take this action on this offer.",
+      "notPending": "This offer is not awaiting approval.",
+      "notSubmittable": "Only draft or rejected offers can be submitted.",
+      "submitBlocked": "Offers can't be submitted while the requisition is on hold or awaiting approval.",
+      "approveBlocked": "Offers can't be approved while the requisition is on hold or awaiting approval, or while the application isn't in Offer."
+    },
+    "submit": "Submit for approval",
+    "approve": "Approve",
+    "reject": "Reject",
+    "withdraw": "Withdraw request",
+    "reassign": "Reassign",
+    "awaiting": "Awaiting approval by {approver}, submitted by {submitter}:",
+    "latest": "Latest: {event} by {actor}",
+    "latestComment": "Comment: {comment}",
+    "system": "the system",
+    "reapprovalNote": "This offer is approved. Changing its terms needs a new approval.",
+    "events": {
+      "SUBMITTED": "Submitted",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "WITHDRAWN": "Withdrawn",
+      "REASSIGNED": "Reassigned",
+      "REMINDED": "Reminded"
     }
   },
   "MyInterviews": {

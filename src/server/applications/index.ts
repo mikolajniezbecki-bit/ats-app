@@ -5,6 +5,7 @@
 // shaping here rather than in components. Nothing here is logged: it is
 // personal data and email content (M2).
 import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { activeQuestions } from "../apply";
 import { type Db, getDb } from "../db";
@@ -16,6 +17,7 @@ import {
   files,
   interviewScorecards,
   interviews,
+  masterData,
   offers,
   prescreenAnswers,
   prescreenQuestions,
@@ -24,7 +26,7 @@ import {
 } from "../db/schema";
 import { type PipelineStatus, checkTransition } from "../domain/pipeline";
 import type { PolicyUser } from "../policy/permissions";
-import { scopeApplicationsFor } from "../policy/filters";
+import { scopeApplicationsFor, scopeRequisitionsFor } from "../policy/filters";
 import { findVisibleRequisition } from "../requisitions";
 import { type TimelineEntry, buildTimeline } from "./timeline";
 
@@ -196,7 +198,18 @@ export type StatusTarget = { status: PipelineStatus; needsComment: boolean };
 
 export type ApplicationDetail = {
   application: typeof applications.$inferSelect;
-  requisition: { id: string; reqNumber: string; title: string; state: string };
+  /** The requisition header (V3b: shown on the application page, without the requisition's own pages). */
+  requisition: {
+    id: string;
+    reqNumber: string;
+    title: string;
+    state: string;
+    department: string;
+    location: string;
+    openingsCount: number;
+    /** False for a Hiring Manager who reaches the application only through V3b. */
+    visible: boolean;
+  };
   anonymized: boolean;
   documents: DocumentFile[];
   answers: AnswerView[];
@@ -332,13 +345,27 @@ async function statusTargets(application: typeof applications.$inferSelect, requ
 /** The application page for `user`, or undefined when it doesn't exist or isn't visible. */
 export async function getApplicationDetail(user: PolicyUser, id: string, db: Db = getDb()): Promise<ApplicationDetail | undefined> {
   if (!z.uuid().safeParse(id).success) return undefined;
+  const department = alias(masterData, "department");
+  const location = alias(masterData, "location");
   const [row] = await db
     .select({
       application: applications,
-      requisition: { id: requisitions.id, reqNumber: requisitions.reqNumber, title: requisitions.title, state: requisitions.state, approvedAt: requisitions.approvedAt },
+      requisition: {
+        id: requisitions.id,
+        reqNumber: requisitions.reqNumber,
+        title: requisitions.title,
+        state: requisitions.state,
+        approvedAt: requisitions.approvedAt,
+        openingsCount: requisitions.openingsCount,
+        department: department.label,
+        location: location.label,
+        visible: sql<boolean>`${scopeRequisitionsFor(user)}`,
+      },
     })
     .from(applications)
     .innerJoin(requisitions, eq(requisitions.id, applications.requisitionId))
+    .innerJoin(department, eq(department.id, requisitions.departmentId))
+    .innerJoin(location, eq(location.id, requisitions.locationId))
     .where(and(scopeApplicationsFor(user), eq(applications.id, id)));
   if (!row) return undefined;
   const { application } = row;
@@ -365,7 +392,16 @@ export async function getApplicationDetail(user: PolicyUser, id: string, db: Db 
 
   return {
     application,
-    requisition: { id: row.requisition.id, reqNumber: row.requisition.reqNumber, title: row.requisition.title, state: row.requisition.state },
+    requisition: {
+      id: row.requisition.id,
+      reqNumber: row.requisition.reqNumber,
+      title: row.requisition.title,
+      state: row.requisition.state,
+      department: row.requisition.department,
+      location: row.requisition.location,
+      openingsCount: row.requisition.openingsCount,
+      visible: row.requisition.visible,
+    },
     anonymized,
     documents,
     answers,

@@ -92,12 +92,12 @@ export function inRequisitionScope(user: PolicyUser, requisition: RequisitionRes
  * it is open and not anonymized, and whether the user is a current
  * participant of a non-cancelled interview on it.
  */
-export type ApplicationResource = { requisition: RequisitionResource; open: boolean; participant: boolean };
+export type ApplicationResource = { requisition: RequisitionResource; open: boolean; participant: boolean; offerApprover?: boolean };
 
-/** V3a, V4, V5: may `user` read this application at all? */
+/** V3a, V3b, V4, V5: may `user` read this application at all? */
 function readsApplication(user: PolicyUser, application: ApplicationResource): boolean {
   if (user.role === "ADMIN" || user.role === "RECRUITER") return true;
-  if (user.role === "HIRING_MANAGER") return inRequisitionScope(user, application.requisition);
+  if (user.role === "HIRING_MANAGER") return inRequisitionScope(user, application.requisition) || application.offerApprover === true;
   return user.role === "INTERVIEWER" && application.open && application.participant;
 }
 
@@ -131,7 +131,7 @@ const RESOURCE_RULES: Partial<Record<Action, ResourceRule>> = {
   // V7 narrows Interviewers further in scopeScorecardsFor().
   "scorecard.read": (user, resource) => readsApplication(user, resource as ApplicationResource),
   // V6: never Interviewers (not in the matrix); V4: Hiring Managers within V3a.
-  "offer.read": (user, resource) => user.role !== "HIRING_MANAGER" || inRequisitionScope(user, (resource as ApplicationResource).requisition),
+  "offer.read": (user, resource) => user.role !== "HIRING_MANAGER" || readsApplication(user, resource as ApplicationResource),
   "file.view": (user, resource) => {
     const file = resource as FileResource;
     // Scorecard notes follow the scorecard for every role: drafts stay
@@ -141,7 +141,7 @@ const RESOURCE_RULES: Partial<Record<Action, ResourceRule>> = {
     if (!file.application) return false;
     // V4, V5: CV and cover letter; offer letters for Hiring Managers only (V6).
     if (file.ownerType === "APPLICATION") return readsApplication(user, file.application);
-    return file.ownerType === "OFFER" && user.role === "HIRING_MANAGER" && inRequisitionScope(user, file.application.requisition);
+    return file.ownerType === "OFFER" && user.role === "HIRING_MANAGER" && readsApplication(user, file.application);
   },
   "approval.withdraw": (user, resource) => {
     const approval = resource as ApprovalResource;

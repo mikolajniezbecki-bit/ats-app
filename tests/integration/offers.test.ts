@@ -216,7 +216,7 @@ describe("edit", () => {
     expect((await call(patchOffer as Handler, "PATCH", offer.id, { version: 2, templateId: other.id }, recruiter)).status).toBe(400);
   });
 
-  it("a REJECTED latest offer is editable and stays REJECTED; PENDING and APPROVED return 409", async () => {
+  it("a REJECTED latest offer is editable and stays REJECTED; PENDING returns 409; APPROVED needs an approver (A8)", async () => {
     const recruiter = await signedIn("RECRUITER");
     const approver = await insertUser(db(), "HIRING_MANAGER");
     const { application, template } = await setup();
@@ -224,13 +224,15 @@ describe("edit", () => {
     await getDb().update(offers).set({ approvalStatus: "REJECTED", approverId: approver.id }).where(eq(offers.id, offer.id));
     expect((await call(patchOffer as Handler, "PATCH", offer.id, { version: 1, jobTitle: "Senior Engineer" }, recruiter)).status).toBe(200);
     expect(await offerRow(offer.id)).toMatchObject({ approvalStatus: "REJECTED", jobTitle: "Senior Engineer" });
-    const texts = { PENDING: "This offer is awaiting approval. Withdraw the request to make changes.", APPROVED: "Changing an approved offer needs re-approval." };
-    for (const [status, text] of Object.entries(texts)) {
-      await getDb().update(offers).set({ approvalStatus: status as "PENDING" | "APPROVED" }).where(eq(offers.id, offer.id));
-      const response = await call(patchOffer as Handler, "PATCH", offer.id, { version: 2, salary: "1" }, recruiter);
-      expect(response.status, status).toBe(409);
-      expect((await response.json()).message).toBe(text);
-    }
+    await getDb().update(offers).set({ approvalStatus: "PENDING" }).where(eq(offers.id, offer.id));
+    const pending = await call(patchOffer as Handler, "PATCH", offer.id, { version: 2, salary: "1" }, recruiter);
+    expect(pending.status).toBe(409);
+    expect((await pending.json()).message).toBe("This offer is awaiting approval. Withdraw the request to make changes.");
+    // Since task 36 (A8) a change to an APPROVED offer goes through re-approval and needs an approver.
+    await getDb().update(offers).set({ approvalStatus: "APPROVED" }).where(eq(offers.id, offer.id));
+    const approved = await call(patchOffer as Handler, "PATCH", offer.id, { version: 2, salary: "1" }, recruiter);
+    expect(approved.status).toBe(400);
+    expect((await approved.json()).fields).toEqual({ approverId: "Changing an approved offer needs re-approval. Choose an approver." });
   });
 });
 

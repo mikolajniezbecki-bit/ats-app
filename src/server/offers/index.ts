@@ -5,18 +5,33 @@
 // creates, so "latest offer" is well defined), then the offer. The rules are
 // the pure checks in domain/offers. Logs carry IDs only, never salaries,
 // titles or names.
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { type Db, type Tx, getDb } from "../db";
-import { applications, auditLog, offers, requisitions, templates, users } from "../db/schema";
+import { applications, approvalEvents, auditLog, offers, requisitions, templates, users } from "../db/schema";
 import { warsawRunDate } from "../domain/daily-tasks";
-import { type CreateRefusal, type EditRefusal, canDiscard, createRefusal, editRefusal, isFrozen, offerFieldErrors } from "../domain/offers";
+import { jobQueue } from "../adapters/job-queue";
+import { approverError, recordApprovalEvent } from "../approvals";
+import {
+  type CreateRefusal,
+  type EditRefusal,
+  canDiscard,
+  changedTerms,
+  createRefusal,
+  editRefusal,
+  isFrozen,
+  isReapprovable,
+  offerFieldErrors,
+  submitRefusal,
+} from "../domain/offers";
+import { queueOfferApprovalRequest } from "../email/approval-request";
 import { logger } from "../logger";
 import { scopeApplicationsFor, scopeOffersFor } from "../policy/filters";
-import { type PolicyUser, can } from "../policy/permissions";
+import { type ApprovalResource, type PolicyUser, can } from "../policy/permissions";
 
 export type OfferRow = typeof offers.$inferSelect;
-export type OfferError = "invalid" | "notFound" | "stale" | "notDiscardable" | CreateRefusal | EditRefusal;
+export type OfferError = "invalid" | "notFound" | "stale" | "notDiscardable" | "submitBlocked" | CreateRefusal | EditRefusal;
 export type OfferResult = { ok: true; offer: OfferRow } | { ok: false; reason: OfferError; fields?: Record<string, string> };
 
 const salary = z.union([z.string().trim(), z.number().transform(String)]);
@@ -28,7 +43,8 @@ const fields = {
   templateId: z.string(),
 };
 const createSchema = z.object(fields).strict();
-const updateSchema = z.object(fields).partial().extend({ version: z.number().int().min(1) }).strict();
+// approverId: only for changing an APPROVED offer, which needs re-approval (A8).
+const updateSchema = z.object(fields).partial().extend({ version: z.number().int().min(1), approverId: z.string().optional() }).strict();
 const versionSchema = z.object({ version: z.number().int().min(1) }).strict();
 
 function zodFields(error: z.ZodError): Record<string, string> {
@@ -41,7 +57,7 @@ function zodFields(error: z.ZodError): Record<string, string> {
 }
 
 /** Q5: the field errors by field (codes are the field names), with the active-template check. */
-async function validate(
+export async function validateOfferFields(
   tx: Tx,
   data: Partial<{ jobTitle: string; salary: string; currency: string; startDate: string; templateId: string }>,
   now: Date,
@@ -96,7 +112,7 @@ export async function createOffer(tx: Tx, user: PolicyUser, applicationId: strin
   if (!locked) return { ok: false, reason: "notFound" };
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) return { ok: false, reason: "invalid", fields: zodFields(parsed.error) };
-  const errors = await validate(tx, parsed.data, now);
+  const errors = await validateOfferFields(tx, parsed.data, now);
   if (Object.keys(errors).length > 0) return { ok: false, reason: "invalid", fields: errors };
   const refused = createRefusal({
     applicationStatus: locked.application.status,
@@ -125,8 +141,8 @@ export async function createOffer(tx: Tx, user: PolicyUser, applicationId: strin
   return { ok: true, offer };
 }
 
-/** The offer in `user`'s scope with its application locked, or undefined. */
-async function lockOffer(tx: Tx, user: PolicyUser, offerId: string) {
+/** The offer in `user`'s scope with its application locked (and its requisition FOR SHARE), or undefined. */
+export async function lockOffer(tx: Tx, user: PolicyUser, offerId: string) {
   if (!z.uuid().safeParse(offerId).success) return undefined;
   const [found] = await tx.select({ applicationId: offers.applicationId }).from(offers).where(and(eq(offers.id, offerId), scopeOffersFor(user)));
   if (!found) return undefined;
@@ -146,10 +162,11 @@ export async function updateOffer(tx: Tx, user: PolicyUser, offerId: string, inp
   if (!locked) return { ok: false, reason: "notFound" };
   const parsed = updateSchema.safeParse(input);
   if (!parsed.success) return { ok: false, reason: "invalid", fields: zodFields(parsed.error) };
-  const { version, ...changes } = parsed.data;
+  const { version, approverId, ...changes } = parsed.data;
+  if (isReapprovable(locked.offer, locked.offers, locked.application.status)) return changeApprovedOffer(tx, user, locked, { version, approverId, changes }, now);
   const refused = editRefusal(locked.offer, locked.offers, locked.application.status);
   if (refused) return { ok: false, reason: refused };
-  const errors = await validate(tx, changes, now, locked.offer.templateId);
+  const errors = await validateOfferFields(tx, changes, now, locked.offer.templateId);
   if (Object.keys(errors).length > 0) return { ok: false, reason: "invalid", fields: errors };
   if (locked.offer.version !== version) return { ok: false, reason: "stale" };
 
@@ -161,6 +178,55 @@ export async function updateOffer(tx: Tx, user: PolicyUser, offerId: string, inp
   if (!offer) return { ok: false, reason: "stale" };
   logger.info({ offer_id: offerId, user_id: user.id, version: offer.version }, "offer updated");
   return { ok: true, offer };
+}
+
+/**
+ * A8 (task 36 Q2, Q9): a change to the terms of an APPROVED offer before the
+ * candidate's response needs a new approver. It applies the change, sets
+ * PENDING with a new submission, clears `sent_at`, writes SUBMITTED, emails
+ * the approver and cancels a queued letter render (J2); the earlier letter
+ * file stays (P7). Refused during L8 like a submission. A save that changes
+ * nothing is a no-op.
+ */
+async function changeApprovedOffer(
+  tx: Tx,
+  user: PolicyUser,
+  locked: Locked & { offer: OfferRow },
+  input: { version: number; approverId?: string; changes: Partial<Record<"jobTitle" | "salary" | "currency" | "startDate" | "templateId", string>> },
+  now: Date,
+): Promise<OfferResult> {
+  const { offer } = locked;
+  const errors = await validateOfferFields(tx, input.changes, now, offer.templateId);
+  if (Object.keys(errors).length > 0) return { ok: false, reason: "invalid", fields: errors };
+  if (offer.version !== input.version) return { ok: false, reason: "stale" };
+  const changed = changedTerms(offer, input.changes);
+  if (changed.length === 0) return { ok: true, offer };
+  if (input.approverId === undefined) return { ok: false, reason: "invalid", fields: { approverId: "reapprovalApproverRequired" } };
+  if (locked.requisitionState !== "APPROVED") return { ok: false, reason: "submitBlocked" };
+  const approver = await approverError(tx, input.approverId, user.id);
+  if (approver) return { ok: false, reason: "invalid", fields: { approverId: approver } };
+
+  const values = Object.fromEntries(changed.map((field) => [field, field === "jobTitle" ? input.changes.jobTitle!.trim() : input.changes[field]]));
+  const [updated] = await tx
+    .update(offers)
+    .set({
+      ...values,
+      approvalStatus: "PENDING",
+      sentAt: null,
+      submittedByUserId: user.id,
+      submittedAt: now,
+      approverId: input.approverId,
+      version: sql`${offers.version} + 1`,
+      updatedAt: now,
+    })
+    .where(and(eq(offers.id, offer.id), eq(offers.version, input.version), eq(offers.approvalStatus, "APPROVED")))
+    .returning();
+  if (!updated) return { ok: false, reason: "stale" };
+  await recordApprovalEvent(tx, { subjectType: "OFFER", subjectId: offer.id, event: "SUBMITTED", actorUserId: user.id, toApproverId: input.approverId });
+  await queueOfferApprovalRequest(tx, offer.id);
+  const cancelled = await jobQueue.cancelWaiting(tx, "offer.render-pdf", { offerId: offer.id });
+  logger.info({ offer_id: offer.id, user_id: user.id, approver_id: input.approverId, fields: changed.length, cancelled_renders: cancelled }, "approved offer changed, re-approval started");
+  return { ok: true, offer: updated };
 }
 
 /** §5.6 Discard offer (Q7, Q8): DRAFT or REJECTED latest offer → WITHDRAWN, audited with IDs only. */
@@ -203,29 +269,84 @@ export async function withdrawPendingOffers(tx: Tx, applicationId: string, now =
   return rows.length;
 }
 
-export type OfferListItem = OfferRow & { templateName: string; createdBy: string; frozen: boolean; editable: boolean; discardable: boolean };
+/** The approval view of an offer, for can() (A2, A3, A9). */
+export function offerApproval(offer: Pick<OfferRow, "approvalStatus" | "approverId" | "submittedByUserId">): ApprovalResource {
+  return { pending: offer.approvalStatus === "PENDING", approverId: offer.approverId, submittedByUserId: offer.submittedByUserId };
+}
+
+export type OfferListItem = OfferRow & {
+  templateName: string;
+  createdBy: string;
+  approver: string | null;
+  submitter: string | null;
+  latestEvent: { event: string; actor: string | null; comment: string | null; createdAt: Date } | null;
+  frozen: boolean;
+  editable: boolean;
+  /** A8: an edit of this approved offer needs a new approver. */
+  needsReapproval: boolean;
+  discardable: boolean;
+  submittable: boolean;
+  decidable: boolean;
+  withdrawable: boolean;
+  reassignable: boolean;
+};
 
 /** The application page's offers, newest first, with what the user may do with each (the API checks again). */
 export async function listOffersForPage(user: PolicyUser, applicationId: string, db: Db | Tx = getDb()): Promise<OfferListItem[]> {
   if (!can(user, "offer.read")) return [];
+  const approver = alias(users, "approver");
+  const submitter = alias(users, "submitter");
   const rows = await db
-    .select({ offer: offers, templateName: templates.name, createdBy: users.name, applicationStatus: applications.status })
+    .select({
+      offer: offers,
+      templateName: templates.name,
+      createdBy: users.name,
+      approver: approver.name,
+      submitter: submitter.name,
+      applicationStatus: applications.status,
+      requisitionState: requisitions.state,
+    })
     .from(offers)
     .innerJoin(templates, eq(templates.id, offers.templateId))
     .innerJoin(users, eq(users.id, offers.createdByUserId))
     .innerJoin(applications, eq(applications.id, offers.applicationId))
+    .innerJoin(requisitions, eq(requisitions.id, applications.requisitionId))
+    .leftJoin(approver, eq(approver.id, offers.approverId))
+    .leftJoin(submitter, eq(submitter.id, offers.submittedByUserId))
     .where(and(eq(offers.applicationId, applicationId), scopeOffersFor(user)))
     .orderBy(asc(offers.createdAt), asc(offers.id));
   const all = rows.map((row) => row.offer);
+  const actor = alias(users, "actor");
+  const events = all.length
+    ? await db
+        .select({ subjectId: approvalEvents.subjectId, event: approvalEvents.event, comment: approvalEvents.comment, createdAt: approvalEvents.createdAt, actor: actor.name })
+        .from(approvalEvents)
+        .leftJoin(actor, eq(actor.id, approvalEvents.actorUserId))
+        .where(and(eq(approvalEvents.subjectType, "OFFER"), inArray(approvalEvents.subjectId, all.map((offer) => offer.id))))
+        .orderBy(asc(approvalEvents.createdAt))
+    : [];
   const manage = can(user, "offer.manage");
   return rows
-    .map((row) => ({
-      ...row.offer,
-      templateName: row.templateName,
-      createdBy: row.createdBy,
-      frozen: isFrozen(row.offer, all),
-      editable: manage && editRefusal(row.offer, all, row.applicationStatus) === undefined,
-      discardable: manage && canDiscard(row.offer, all),
-    }))
+    .map((row) => {
+      const approval = offerApproval(row.offer);
+      const latest = events.filter((event) => event.subjectId === row.offer.id).at(-1);
+      const reapproval = isReapprovable(row.offer, all, row.applicationStatus);
+      return {
+        ...row.offer,
+        templateName: row.templateName,
+        createdBy: row.createdBy,
+        approver: row.approver,
+        submitter: row.submitter,
+        latestEvent: latest ? { event: latest.event, actor: latest.actor, comment: latest.comment, createdAt: latest.createdAt } : null,
+        frozen: isFrozen(row.offer, all),
+        editable: manage && (reapproval || editRefusal(row.offer, all, row.applicationStatus) === undefined),
+        needsReapproval: reapproval,
+        discardable: manage && canDiscard(row.offer, all),
+        submittable: manage && submitRefusal(row.offer, all, row.applicationStatus, row.requisitionState) === undefined,
+        decidable: can(user, "approval.decide", approval),
+        withdrawable: can(user, "approval.withdraw", approval),
+        reassignable: approval.pending && can(user, "approval.reassign"),
+      };
+    })
     .reverse();
 }
