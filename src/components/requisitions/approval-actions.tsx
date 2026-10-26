@@ -1,6 +1,6 @@
 "use client";
 
-// Approval actions on the requisition page (ats-project-scope.md A1, A3, A9):
+// Approval actions on the requisition page (ats-project-scope.md A1, A3, A4, A9):
 // the page decides which actions to show with the same policy checks the
 // API runs; the API checks everything again.
 import { useTranslations } from "next-intl";
@@ -11,13 +11,15 @@ type Props = {
   requisitionId: string;
   version: number;
   approvers: { id: string; name: string }[] | null;
+  /** A4: the reassignment picker, or null when the user can't reassign. */
+  reassignApprovers: { id: string; name: string }[] | null;
   canDecide: boolean;
   canWithdraw: boolean;
 };
 type ApiError = { message?: string; fields?: Record<string, string> };
-type Mode = "submit" | "approve" | "reject" | "withdraw" | null;
+type Mode = "submit" | "approve" | "reject" | "withdraw" | "reassign" | null;
 
-export function ApprovalActions({ requisitionId, version, approvers, canDecide, canWithdraw }: Props) {
+export function ApprovalActions({ requisitionId, version, approvers, reassignApprovers, canDecide, canWithdraw }: Props) {
   const t = useTranslations("Approvals.panel");
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
@@ -46,6 +48,7 @@ export function ApprovalActions({ requisitionId, version, approvers, canDecide, 
     const form = new FormData(event.currentTarget);
     const comment = String(form.get("comment") ?? "");
     if (mode === "submit") void run("submit", { approverId: String(form.get("approverId") ?? "") });
+    else if (mode === "reassign") void run("reassign", { approverId: String(form.get("approverId") ?? ""), reason: String(form.get("reason") ?? "") });
     else if (mode) void run(mode, comment.trim() === "" && mode !== "reject" ? {} : { comment });
   }
 
@@ -60,9 +63,9 @@ export function ApprovalActions({ requisitionId, version, approvers, canDecide, 
     setErrors(null);
     setMode(next);
   };
-  const otherErrors = errors?.fields ? Object.entries(errors.fields).filter(([key]) => key !== "approverId" && key !== "comment") : [];
+  const otherErrors = errors?.fields ? Object.entries(errors.fields).filter(([key]) => key !== "approverId" && key !== "comment" && key !== "reason") : [];
 
-  if (!approvers && !canDecide && !canWithdraw) return null;
+  if (!approvers && !reassignApprovers && !canDecide && !canWithdraw) return null;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
@@ -86,10 +89,39 @@ export function ApprovalActions({ requisitionId, version, approvers, canDecide, 
             {t("withdraw")}
           </button>
         )}
+        {reassignApprovers && (
+          <button type="button" onClick={() => open("reassign")} className="rounded border px-4 py-2">
+            {t("reassign")}
+          </button>
+        )}
       </div>
       {mode && (
         <form onSubmit={onSubmit} aria-label={t(mode === "submit" ? "submit" : mode)} className="max-w-xl space-y-3 rounded border p-4" noValidate>
-          {mode === "submit" ? (
+          {mode === "reassign" ? (
+            <>
+              <div className="space-y-1">
+                <label htmlFor="approval-approverId" className="block text-sm font-medium">
+                  {t("newApprover")}
+                </label>
+                <select id="approval-approverId" name="approverId" required defaultValue="" {...invalid("approverId")} className="w-full rounded border px-3 py-2">
+                  <option value="">{t("chooseApprover")}</option>
+                  {(reassignApprovers ?? []).map((approver) => (
+                    <option key={approver.id} value={approver.id}>
+                      {approver.name}
+                    </option>
+                  ))}
+                </select>
+                {fieldError("approverId")}
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="approval-reason" className="block text-sm font-medium">
+                  {t("reason")}
+                </label>
+                <textarea id="approval-reason" name="reason" rows={3} required maxLength={2000} {...invalid("reason")} className="w-full rounded border px-3 py-2" />
+                {fieldError("reason")}
+              </div>
+            </>
+          ) : mode === "submit" ? (
             <div className="space-y-1">
               <label htmlFor="approval-approverId" className="block text-sm font-medium">
                 {t("approver")}
@@ -127,7 +159,7 @@ export function ApprovalActions({ requisitionId, version, approvers, canDecide, 
           )}
           <div className="flex gap-2">
             <button type="submit" disabled={pending} className="rounded bg-black px-4 py-2 text-white disabled:opacity-60">
-              {mode === "submit" ? t("confirmSubmit") : t(mode)}
+              {mode === "submit" ? t("confirmSubmit") : mode === "reassign" ? t("confirmReassign") : t(mode)}
             </button>
             <button type="button" onClick={() => setMode(null)} className="rounded border px-4 py-2">
               {t("cancel")}

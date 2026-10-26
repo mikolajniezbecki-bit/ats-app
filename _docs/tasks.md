@@ -491,7 +491,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `A3:` / `A9:` re-approval tests: approve keeps `approved_at`; reject and withdraw restore the previous values.
 - `L2:` tests: the four fields are refused in `ON_HOLD`, `PENDING_APPROVAL` and `CLOSED`; lowering openings to the hired count closes the requisition as `FILLED`.
 
-## 31. Approval reassignment, deactivation guard and reminders
+## 31. Approval reassignment, deactivation guard and reminders ✅
 
 **Issue:** [#37](https://github.com/mikolajniezbecki-bit/ats-app/issues/37)
 

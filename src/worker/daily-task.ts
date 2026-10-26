@@ -37,5 +37,5 @@ export function dailyTaskHandler(run: DailyTaskRun): JobHandler {
   };
 }
 
-/** Stub until the real work lands: approvals.remind in task 31, retention.purge in task 40. */
+/** Stub until the real work lands: retention.purge in task 40. */
 export const stubDailyTask: DailyTaskRun = async () => undefined;

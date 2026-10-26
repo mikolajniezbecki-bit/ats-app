@@ -1,20 +1,103 @@
-// "My approvals" (ats-project-scope.md A1, A3): requisitions in
-// PENDING_APPROVAL whose approver is the current user. Offers are added in
-// task 36.
+// Approvals (ats-project-scope.md A1, A3, A4, A5). "My approvals": the
+// requisitions in PENDING_APPROVAL whose approver is the current user.
+// "All pending approvals" (`?view=all`, `approval.reassign`): every pending
+// requisition with its approver, so Recruiters and Admins can find what to
+// reassign, also before a deactivation. Offers are added in task 36.
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
-import { listMyRequisitionApprovals } from "@/server/approvals";
-import { requirePermission } from "@/server/policy/guards";
+import { forbidden } from "next/navigation";
+import { listAllPendingRequisitionApprovals, listMyRequisitionApprovals } from "@/server/approvals";
+import { warsawRunDate } from "@/server/domain/daily-tasks";
+import { requireUser } from "@/server/policy/guards";
+import { can } from "@/server/policy/permissions";
 
 export const dynamic = "force-dynamic";
 
-export default async function ApprovalsPage() {
-  const user = await requirePermission("approval.decide", undefined, "/approvals");
-  const t = await getTranslations("Approvals");
-  const rows = await listMyRequisitionApprovals(user);
+const utc = (date: Date | null) => (date ? `${date.toISOString().slice(0, 16).replace("T", " ")} UTC` : "");
 
+/** Europe/Warsaw calendar days from `since` to today, as the reminders count them (A6). */
+function daysWaiting(since: Date | null, today: string): number | null {
+  if (!since) return null;
+  return Math.round((Date.parse(today) - Date.parse(warsawRunDate(since))) / 86_400_000);
+}
+
+export default async function ApprovalsPage({ searchParams }: PageProps<"/approvals">) {
+  const { view } = await searchParams;
+  const user = await requireUser("/approvals");
+  const canDecide = can(user, "approval.decide");
+  const canReassign = can(user, "approval.reassign");
+  const all = view === "all";
+  if (all ? !canReassign : !canDecide) forbidden();
+  const t = await getTranslations("Approvals");
+
+  const tabs = canDecide && canReassign && (
+    <nav aria-label={t("title")} className="flex gap-4 text-sm">
+      {(["mine", "all"] as const).map((tab) => (
+        <Link
+          key={tab}
+          href={tab === "all" ? "/approvals?view=all" : "/approvals"}
+          aria-current={(tab === "all") === all ? "page" : undefined}
+          className={(tab === "all") === all ? "font-semibold underline" : "underline"}
+        >
+          {t(`tabs.${tab}`)}
+        </Link>
+      ))}
+    </nav>
+  );
+
+  if (all) {
+    const rows = await listAllPendingRequisitionApprovals();
+    const today = warsawRunDate(new Date());
+    return (
+      <main className="flex flex-1 flex-col gap-6 p-8">
+        {tabs}
+        <h1 className="text-2xl font-semibold">{t("all.title")}</h1>
+        <p className="text-sm text-neutral-700">{t("all.description")}</p>
+        {rows.length === 0 ? (
+          <p>{t("all.empty")}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="py-1 pr-4">{t("columns.reqNumber")}</th>
+                  <th className="py-1 pr-4">{t("columns.title")}</th>
+                  <th className="py-1 pr-4">{t("all.approver")}</th>
+                  <th className="py-1 pr-4">{t("columns.submitter")}</th>
+                  <th className="py-1 pr-4">{t("columns.submittedAt")}</th>
+                  <th className="py-1 pr-4">{t("all.daysWaiting")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-b" data-testid={`pending-${row.reqNumber}`}>
+                    <td className="py-2 pr-4">
+                      <Link href={`/requisitions/${row.id}`} className="underline">
+                        {row.reqNumber}
+                      </Link>
+                    </td>
+                    <td className="py-2 pr-4">
+                      {row.title}
+                      {row.reApproval && <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">{t("reApproval")}</span>}
+                    </td>
+                    <td className="py-2 pr-4">{row.approver && (row.approverActive ? row.approver : t("all.inactive", { name: row.approver }))}</td>
+                    <td className="py-2 pr-4">{row.submitter}</td>
+                    <td className="py-2 pr-4">{utc(row.submittedAt)}</td>
+                    <td className="py-2 pr-4">{daysWaiting(row.submittedAt, today)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </main>
+    );
+  }
+
+  const rows = await listMyRequisitionApprovals(user);
   return (
     <main className="flex flex-1 flex-col gap-6 p-8">
+      {tabs}
       <h1 className="text-2xl font-semibold">{t("title")}</h1>
       <p className="text-sm text-neutral-700">{t("description")}</p>
       {rows.length === 0 ? (
@@ -54,7 +137,7 @@ export default async function ApprovalsPage() {
                   </td>
                   <td className="py-2 pr-4">{row.department}</td>
                   <td className="py-2 pr-4">{row.submitter}</td>
-                  <td className="py-2 pr-4">{row.submittedAt ? `${row.submittedAt.toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}</td>
+                  <td className="py-2 pr-4">{utc(row.submittedAt)}</td>
                 </tr>
               ))}
             </tbody>
