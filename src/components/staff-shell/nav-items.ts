@@ -17,4 +17,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/approvals", labelKey: "approvals", action: "approval.decide" },
   // A4: Recruiters and Admins find pending items to reassign.
   { href: "/approvals?view=all", labelKey: "allApprovals", action: "approval.reassign" },
+  // Every role can be an interview participant (I1, task 34 Q6); last, so
+  // the other items keep their order.
+  { href: "/interviews", labelKey: "myInterviews", action: "staff.area" },
 ];
