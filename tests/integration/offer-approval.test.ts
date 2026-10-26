@@ -23,7 +23,20 @@ import { getBoss, jobQueue } from "@/server/adapters/job-queue";
 import { listMyOfferApprovals } from "@/server/approvals/offers";
 import { getConfig } from "@/server/config";
 import { type Tx, getDb, withTransaction } from "@/server/db";
-import { applicationHistory, approvalEvents, emailLog, offers, prescreenAnswers, prescreenQuestions, requisitions, templates, users } from "@/server/db/schema";
+import {
+  applicationHistory,
+  approvalEvents,
+  emailLog,
+  interviewParticipants,
+  interviewScorecards,
+  interviews,
+  offers,
+  prescreenAnswers,
+  prescreenQuestions,
+  requisitions,
+  templates,
+  users,
+} from "@/server/db/schema";
 import { warsawRunDate } from "@/server/domain/daily-tasks";
 import { handleTick } from "@/server/domain/tick";
 import { storePdf } from "@/server/files/store-pdf";
@@ -355,7 +368,7 @@ describe("reassign, guard, reminders (A4, A5, A6, A7)", () => {
 });
 
 describe("approver access (V3b)", () => {
-  it("V3: an offer approver without V3a sees that application in full and its CV, not other applications or the requisition; after reassignment nothing", async () => {
+  it("V3: an offer approver without V3a sees that application in full (submitted scorecards, offer letter, CV), not other applications or the requisition; after reassignment nothing", async () => {
     const recruiter = await signedIn("RECRUITER");
     const approver = await signedIn("HIRING_MANAGER");
     const replacement = await insertUser(db(), "HIRING_MANAGER");
@@ -365,6 +378,19 @@ describe("approver access (V3b)", () => {
     await getDb().insert(prescreenAnswers).values({ applicationId: application.id, questionId: question.id, answerJson: "One month", points: 0 });
     await getDb().insert(applicationHistory).values({ applicationId: application.id, fromStatus: "INTERVIEW", toStatus: "OFFER", comment: "Great final round." });
     const cv = await withTransaction((tx) => storePdf(tx, { ownerType: "APPLICATION", ownerId: application.id, kind: "CV", originalName: "cv.pdf", bytes: VALID_PDF }));
+    const letter = await withTransaction((tx) => storePdf(tx, { ownerType: "OFFER", ownerId: offer.id, kind: "OFFER_LETTER", originalName: "offer.pdf", bytes: VALID_PDF }));
+    // A submitted scorecard and another interviewer's draft on the same application.
+    const writer = await insertUser(db(), "INTERVIEWER");
+    const drafter = await insertUser(db(), "INTERVIEWER");
+    const [interview] = await getDb()
+      .insert(interviews)
+      .values({ applicationId: application.id, startsAtUtc: new Date(Date.now() - 3_600_000), durationMinutes: 60, timezone: "UTC", locationOrLink: "Room", icsUid: `${randomUUID()}@ats`, createdByUserId: recruiter.userId })
+      .returning();
+    await getDb().insert(interviewParticipants).values([writer, drafter].map((person) => ({ interviewId: interview.id, userId: person.id })));
+    await getDb().insert(interviewScorecards).values([
+      { interviewId: interview.id, interviewerId: writer.id, overallRating: 4, thumbsUp: true, submittedAt: new Date() },
+      { interviewId: interview.id, interviewerId: drafter.id, overallRating: 1, thumbsUp: false },
+    ]);
 
     const response = await get(getApplication as Handler, application.id, approver);
     expect(response.status).toBe(200);
@@ -373,13 +399,21 @@ describe("approver access (V3b)", () => {
     expect(view.timeline.some((entry: { comment?: string }) => entry.comment === "Great final round.")).toBe(true);
     expect(view.offers.map((row: { id: string; salary: string }) => [row.id, row.salary])).toEqual([[offer.id, "85000.00"]]);
     expect(view.requisition).toMatchObject({ reqNumber: requisition.reqNumber, openingsCount: 2 });
+    // V3b: submitted scorecards and the summary, never others' drafts.
+    expect(view.feedback.scorecards.map((card: { interviewerId: string }) => card.interviewerId)).toEqual([writer.id]);
+    expect(view.feedback.summary).toEqual({ count: 1, average: "4.0", thumbsUp: 1, thumbsDown: 0 });
     expect((await get(fileUrl as Handler, cv.id, approver)).status).toBe(200);
+    expect((await get(fileUrl as Handler, letter.id, approver)).status).toBe(200);
     expect((await get(getApplication as Handler, sibling.id, approver)).status).toBe(404);
     expect((await get(getRequisition as Handler, requisition.id, approver)).status).toBe(404);
 
     expect((await call(reassign as Handler, "POST", offer.id, { approverId: replacement.id, reason: "Away", version: offer.version }, recruiter)).status).toBe(200);
     expect((await get(getApplication as Handler, application.id, approver)).status).toBe(404);
     expect((await get(fileUrl as Handler, cv.id, approver)).status).toBe(404);
+    expect((await get(fileUrl as Handler, letter.id, approver)).status).toBe(404);
+    // The scorecards go with the application: none are readable through any read model.
+    const { listApplicationScorecards } = await import("@/server/scorecards");
+    expect(await listApplicationScorecards({ id: approver.userId, role: "HIRING_MANAGER" }, application.id)).toEqual([]);
   });
 
   it("V3b: the approver keeps access after deciding (approver_id is kept)", async () => {
