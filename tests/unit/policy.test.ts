@@ -36,9 +36,10 @@ const CREATORS: Action[] = ["requisition.create", "requisition.edit", "approval.
 const ALLOWED: Record<Role, Action[]> = {
   ADMIN: [...ACTIONS],
   RECRUITER: ["staff.area", ...ADMIN_RECRUITER, ...CREATORS],
-  // requisition.read: within V3a only (resource rule, task 20).
-  HIRING_MANAGER: ["staff.area", ...CREATORS, "approval.decide", "requisition.read"],
-  INTERVIEWER: ["staff.area"],
+  // requisition.read: within V3a only (resource rule, task 20). file.view:
+  // scorecard notes they may read only (resource rule, task 33).
+  HIRING_MANAGER: ["staff.area", ...CREATORS, "approval.decide", "requisition.read", "file.view"],
+  INTERVIEWER: ["staff.area", "file.view"],
 };
 
 describe("can()", () => {
@@ -61,8 +62,9 @@ describe("can()", () => {
 
   it("AU9: Hiring Manager and Interviewer are signed in but denied reads until their rules exist", () => {
     for (const role of ["HIRING_MANAGER", "INTERVIEWER"] as const) {
-      // A Hiring Manager's requisition reads have their rule since task 20 (V3a, below).
-      const pending = role === "HIRING_MANAGER" ? READS.filter((action) => action !== "requisition.read") : READS;
+      // A Hiring Manager's requisition reads have their rule since task 20 (V3a,
+      // below); file.view has its resource rule since task 33 (tested below).
+      const pending = READS.filter((action) => action !== "file.view" && (role !== "HIRING_MANAGER" || action !== "requisition.read"));
       for (const action of pending) expect(can(user(role), action), `${role} ${action}`).toBe(false);
     }
     expect(can(user("INTERVIEWER"), "requisition.read")).toBe(false);
@@ -94,6 +96,26 @@ describe("can()", () => {
       expect(can(hm, "requisition.edit", requisition({ createdByUserId: hm.id }))).toBe(true);
       expect(can(hm, "requisition.edit", requisition({ hiringManagerId: hm.id }))).toBe(false);
       expect(can(user("INTERVIEWER"), "requisition.edit", requisition({ createdByUserId: user("INTERVIEWER").id }))).toBe(false);
+    });
+  });
+
+  describe("file resource rule", () => {
+    it("V11: Admins and Recruiters view every file; Hiring Managers and Interviewers no application or offer file", () => {
+      for (const ownerType of ["APPLICATION", "OFFER", "SCORECARD"]) {
+        expect(can(user("ADMIN"), "file.view", { ownerType })).toBe(true);
+        expect(can(user("RECRUITER"), "file.view", { ownerType })).toBe(true);
+      }
+      for (const role of ["HIRING_MANAGER", "INTERVIEWER"] as const) {
+        expect(can(user(role), "file.view", { ownerType: "APPLICATION", scorecardVisible: true })).toBe(false);
+        expect(can(user(role), "file.view", { ownerType: "OFFER" })).toBe(false);
+      }
+    });
+
+    it("V7: other roles view scorecard notes only when the scorecard is visible to them", () => {
+      expect(can(user("INTERVIEWER"), "file.view", { ownerType: "SCORECARD", scorecardVisible: true })).toBe(true);
+      expect(can(user("INTERVIEWER"), "file.view", { ownerType: "SCORECARD", scorecardVisible: false })).toBe(false);
+      expect(can(user("INTERVIEWER"), "file.view", { ownerType: "SCORECARD" })).toBe(false);
+      expect(can(user("INTERVIEWER", false), "file.view", { ownerType: "SCORECARD", scorecardVisible: true })).toBe(false);
     });
   });
 

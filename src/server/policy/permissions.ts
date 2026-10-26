@@ -68,7 +68,9 @@ export const PERMISSIONS = {
   "application.read": ADMIN_RECRUITER,
   "scorecard.read": ADMIN_RECRUITER,
   "offer.read": ADMIN_RECRUITER,
-  "file.view": ADMIN_RECRUITER,
+  // Admin and Recruiter see every file; other roles only scorecard notes
+  // they may read (V7, V11; resource rule below; task 34 adds V4/V6 files).
+  "file.view": EVERY_ROLE,
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Action = keyof typeof PERMISSIONS;
@@ -82,6 +84,12 @@ export type RequisitionResource = { hiringManagerId: string; approverId: string 
 export function inRequisitionScope(user: PolicyUser, requisition: RequisitionResource): boolean {
   return requisition.hiringManagerId === user.id || requisition.approverId === user.id || requisition.createdByUserId === user.id;
 }
+
+/**
+ * A file as the `file.view` rule sees it. `scorecardVisible` is set by the
+ * caller for SCORECARD files, after the scopeScorecardsFor() query (V7).
+ */
+export type FileResource = { ownerType: string; scorecardVisible?: boolean };
 
 /** A pending or decided approval: a requisition or an offer (A1–A9). */
 export type ApprovalResource = { pending: boolean; approverId: string | null; submittedByUserId: string | null };
@@ -101,6 +109,11 @@ const RESOURCE_RULES: Partial<Record<Action, ResourceRule>> = {
   "approval.decide": (user, resource) => {
     const approval = resource as ApprovalResource;
     return approval.pending && approval.approverId === user.id && approval.submittedByUserId !== user.id;
+  },
+  "file.view": (user, resource) => {
+    if (user.role === "ADMIN" || user.role === "RECRUITER") return true;
+    const file = resource as FileResource;
+    return file.ownerType === "SCORECARD" && file.scorecardVisible === true;
   },
   "approval.withdraw": (user, resource) => {
     const approval = resource as ApprovalResource;
