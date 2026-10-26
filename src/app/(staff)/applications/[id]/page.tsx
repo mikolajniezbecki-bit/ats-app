@@ -10,13 +10,17 @@ import { notFound } from "next/navigation";
 import { ApplicationTimeline } from "@/components/applications/application-timeline";
 import { InterviewerApplication } from "@/components/applications/interviewer-application";
 import { InterviewsPanel } from "@/components/applications/interviews-panel";
+import { OffersPanel } from "@/components/applications/offers-panel";
 import { ReopenScorecardButton } from "@/components/applications/reopen-scorecard-button";
 import { StatusControl } from "@/components/applications/status-control";
 import { LocalTime } from "@/components/local-time";
 import { PdfViewer } from "@/components/pdf-viewer";
 import { getApplicationDetail } from "@/server/applications";
 import { getApplicationFeedback } from "@/server/applications/feedback";
-import { getInterviewerApplication, listApplicationOffers } from "@/server/applications/views";
+import { getInterviewerApplication } from "@/server/applications/views";
+import { CURRENCIES } from "@/server/domain/offers/currencies";
+import { listOffersForPage, offerCreateBlock } from "@/server/offers";
+import { listActiveTemplates } from "@/server/templates";
 import { APPLICATION_STATUSES } from "@/server/db/schema";
 import { awaitingOutcome } from "@/server/domain/interviews";
 import { isOpenStatus } from "@/server/domain/pipeline";
@@ -63,7 +67,10 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
   const feedback = await getApplicationFeedback(user, application.id);
   const f = await getTranslations("Feedback");
   const o = await getTranslations("Offers");
-  const offerRows = can(user, "offer.read") ? await listApplicationOffers(user, application.id) : null;
+  const offerRows = can(user, "offer.read") ? await listOffersForPage(user, application.id) : null;
+  const canManageOffers = can(user, "offer.manage");
+  const offerTemplates = canManageOffers ? await listActiveTemplates({ type: "OFFER" }) : [];
+  const createBlock = canManageOffers ? await offerCreateBlock(application.id) : undefined;
   const sc = await getTranslations("Scorecards");
 
   const fields: [string, React.ReactNode][] = [
@@ -255,19 +262,34 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
           <h2 id="offers-heading" className="text-xl font-semibold">
             {o("title")}
           </h2>
-          {offerRows.length === 0 ? (
-            <p className="text-sm">{o("empty")}</p>
-          ) : (
-            <ul className="max-w-4xl space-y-2 text-sm">
-              {offerRows.map((offer) => (
-                <li key={offer.id} className="rounded border p-3">
-                  <p className="font-medium">{o("entry", { jobTitle: offer.jobTitle, salary: offer.salary, currency: offer.currency, startDate: offer.startDate })}</p>
-                  <p>{o("approval", { status: offer.approvalStatus })}</p>
-                  <p>{o("response", { response: offer.candidateResponse })}</p>
-                </li>
-              ))}
-            </ul>
-          )}
+          <OffersPanel
+            applicationId={application.id}
+            offers={offerRows.map((offer) => ({
+              id: offer.id,
+              version: offer.version,
+              jobTitle: offer.jobTitle,
+              salary: offer.salary,
+              currency: offer.currency,
+              startDate: offer.startDate,
+              templateId: offer.templateId,
+              templateName: offer.templateName,
+              approvalStatus: offer.approvalStatus,
+              candidateResponse: offer.candidateResponse,
+              createdBy: offer.createdBy,
+              createdAt: offer.createdAt.toISOString(),
+              frozen: offer.frozen,
+              editable: offer.editable,
+              discardable: offer.discardable,
+            }))}
+            createBlock={canManageOffers ? (createBlock ? o(`errors.${createBlock}`) : "") : null}
+            templates={offerTemplates}
+            currencies={CURRENCIES}
+            defaults={{
+              jobTitle: requisition.title,
+              templateId: offerTemplates.find((template) => template.name === "Default offer letter")?.id ?? "",
+              currency: "EUR",
+            }}
+          />
         </section>
       )}
 
