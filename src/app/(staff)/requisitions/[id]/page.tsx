@@ -6,7 +6,7 @@ import { LifecycleActions } from "@/components/requisitions/lifecycle-actions";
 import { PrescreenEditor } from "@/components/requisitions/prescreen-editor";
 import { LocalTime } from "@/components/local-time";
 import { countRequisitionApplications } from "@/server/applications";
-import { latestRequisitionApprovalEvent, listApproverOptions, reApprovalChanges, requisitionApproval } from "@/server/approvals";
+import { latestRequisitionApprovalEvent, listApproverOptions, listReassignOptions, reApprovalChanges, requisitionApproval } from "@/server/approvals";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sanitizeDescription } from "@/server/domain/requisitions/description";
@@ -41,6 +41,8 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
   const canSubmit = requisition.state === "DRAFT" && can(user, "requisition.edit", requisition);
   const approvers = canSubmit ? await listApproverOptions(user) : null;
   const approval = requisitionApproval(requisition);
+  // A4: Recruiters and Admins hand a pending approval to someone else.
+  const reassignApprovers = approval.pending && can(user, "approval.reassign") ? await listReassignOptions(requisition) : null;
   const latest = await latestRequisitionApprovalEvent(requisition.id);
   const changes = await reApprovalChanges(requisition);
   const ap = await getTranslations("Approvals");
@@ -172,6 +174,7 @@ export default async function RequisitionPage({ params }: PageProps<"/requisitio
           requisitionId={requisition.id}
           version={requisition.version}
           approvers={approvers}
+          reassignApprovers={reassignApprovers}
           canDecide={can(user, "approval.decide", approval)}
           canWithdraw={can(user, "approval.withdraw", approval)}
         />
