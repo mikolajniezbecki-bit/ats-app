@@ -146,7 +146,7 @@ export type FullApplicationView = {
     consentAcceptedAt: Date;
     anonymized: boolean;
   };
-  requisition: { id: string; reqNumber: string; title: string };
+  requisition: { id: string; reqNumber: string; title: string; department: string; location: string; openingsCount: number };
   documents: DocumentFile[];
   answers: NonNullable<Awaited<ReturnType<typeof getApplicationDetail>>>["answers"];
   others: NonNullable<Awaited<ReturnType<typeof getApplicationDetail>>>["others"];
@@ -180,7 +180,14 @@ export async function getApplicationView(user: PolicyUser, id: string, db: Db = 
       consentAcceptedAt: application.consentAcceptedAt,
       anonymized: detail.anonymized,
     },
-    requisition: { id: detail.requisition.id, reqNumber: detail.requisition.reqNumber, title: detail.requisition.title },
+    requisition: {
+      id: detail.requisition.id,
+      reqNumber: detail.requisition.reqNumber,
+      title: detail.requisition.title,
+      department: detail.requisition.department,
+      location: detail.requisition.location,
+      openingsCount: detail.requisition.openingsCount,
+    },
     documents: detail.documents,
     answers: detail.answers,
     others: detail.others,

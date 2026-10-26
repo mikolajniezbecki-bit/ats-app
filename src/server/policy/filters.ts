@@ -8,8 +8,10 @@
 // Admin (V1) and Recruiter (V2) see everything. Hiring Managers see what
 // belongs to their V3a requisitions (V3a, V4); the one V3a condition below is
 // shared by all four filters. Interviewers see open applications they
-// interview for (V5) and scorecards under V7; never offers (V6).
-// Offer-approver access (V3b) comes with task 36.
+// interview for (V5) and scorecards under V7; never offers (V6). V3b: a
+// Hiring Manager who is (or was last) the approver of an offer on an
+// application also sees that application, its offers, submitted scorecards
+// and files, but not its requisition's pages (scopeRequisitionsFor stays V3a).
 import { type SQL, sql } from "drizzle-orm";
 import { requisitions } from "../db/schema";
 import { OPEN_STATUSES } from "../domain/pipeline";
@@ -34,6 +36,15 @@ export function inV3a(user: PolicyUser, requisitionId: SQL): SQL {
   )`;
 }
 
+/**
+ * V3b: `user` is `approver_id` of an offer on the application
+ * `applicationId` (an SQL expression). Kept after the decision and after a
+ * withdrawal, because `approver_id` keeps the latest submission (§7, Q3).
+ */
+export function approvesOfferOn(user: PolicyUser, applicationId: SQL): SQL {
+  return sql`exists (select 1 from offers v3b where v3b.application_id = ${applicationId} and v3b.approver_id = ${user.id})`;
+}
+
 /** V1, V2; V3a: a Hiring Manager's requisitions as hiring manager, approver or creator. */
 export function scopeRequisitionsFor(user: PolicyUser | null | undefined): SQL {
   if (!active(user)) return NO_ROWS;
@@ -45,7 +56,7 @@ export function scopeRequisitionsFor(user: PolicyUser | null | undefined): SQL {
 export function scopeApplicationsFor(user: PolicyUser | null | undefined): SQL {
   if (!active(user)) return NO_ROWS;
   if (broad(user)) return ALL_ROWS;
-  if (user.role === "HIRING_MANAGER") return inV3a(user, sql`"applications"."requisition_id"`);
+  if (user.role === "HIRING_MANAGER") return sql`(${inV3a(user, sql`"applications"."requisition_id"`)} or ${approvesOfferOn(user, sql`"applications"."id"`)})`;
   return user.role === "INTERVIEWER" ? participatesIn(user, sql`"applications"."id"`) : NO_ROWS;
 }
 
@@ -53,7 +64,9 @@ export function scopeApplicationsFor(user: PolicyUser | null | undefined): SQL {
 export function scopeOffersFor(user: PolicyUser | null | undefined): SQL {
   if (!active(user)) return NO_ROWS;
   if (broad(user)) return ALL_ROWS;
-  if (user.role === "HIRING_MANAGER") return inV3a(user, sql`(select oa.requisition_id from applications oa where oa.id = "offers"."application_id")`);
+  if (user.role === "HIRING_MANAGER") {
+    return sql`(${inV3a(user, sql`(select oa.requisition_id from applications oa where oa.id = "offers"."application_id")`)} or ${approvesOfferOn(user, sql`"offers"."application_id"`)})`;
+  }
   return NO_ROWS;
 }
 
@@ -96,7 +109,8 @@ export function scopeScorecardsFor(user: PolicyUser | null | undefined): SQL {
   const ownOrSubmitted = sql`(interview_scorecards.interviewer_id = ${user.id} or interview_scorecards.submitted_at is not null)`;
   if (user.role === "HIRING_MANAGER") {
     const requisition = sql`(select sa.requisition_id from interviews si join applications sa on sa.id = si.application_id where si.id = interview_scorecards.interview_id)`;
-    return sql`(${inV3a(user, requisition)} and ${ownOrSubmitted})`;
+    const application = sql`(select si.application_id from interviews si where si.id = interview_scorecards.interview_id)`;
+    return sql`((${inV3a(user, requisition)} or ${approvesOfferOn(user, application)}) and ${ownOrSubmitted})`;
   }
   if (user.role !== "INTERVIEWER") return NO_ROWS;
   const application = sql`(select si.application_id from interviews si where si.id = interview_scorecards.interview_id)`;

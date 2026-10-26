@@ -95,3 +95,39 @@ export function offerFieldErrors(
   }
   return errors;
 }
+
+export type SubmitRefusal = "frozen" | "responded" | "notSubmittable" | "notInOffer" | "submitBlocked";
+
+/**
+ * Submitting (A1, A3, L8, Q2): the latest offer, before the candidate's
+ * response, from DRAFT or (rejected, A3) REJECTED, with the application in
+ * OFFER and the requisition APPROVED.
+ */
+export function submitRefusal(offer: OfferState, offers: readonly OfferState[], applicationStatus: string, requisitionState: string): SubmitRefusal | undefined {
+  if (isFrozen(offer, offers)) return "frozen";
+  if (offer.candidateResponse !== "PENDING") return "responded";
+  if (offer.approvalStatus !== "DRAFT" && offer.approvalStatus !== "REJECTED") return "notSubmittable";
+  if (applicationStatus !== "OFFER") return "notInOffer";
+  if (requisitionState !== "APPROVED") return "submitBlocked";
+  return undefined;
+}
+
+/** A8: an APPROVED latest offer before the response can change its terms through re-approval. */
+export function isReapprovable(offer: OfferState, offers: readonly OfferState[], applicationStatus: string): boolean {
+  return offer.approvalStatus === "APPROVED" && offer.candidateResponse === "PENDING" && !isFrozen(offer, offers) && applicationStatus === "OFFER";
+}
+
+/** The offer fields whose change needs re-approval once approved (A8, Q2). */
+export const OFFER_TERMS = ["jobTitle", "salary", "currency", "startDate", "templateId"] as const;
+export type OfferTerms = Record<(typeof OFFER_TERMS)[number], string>;
+
+/** The terms that differ; salaries compare as amounts, so `85000` equals `85000.00`. */
+export function changedTerms(before: OfferTerms, after: Partial<OfferTerms>): (typeof OFFER_TERMS)[number][] {
+  return OFFER_TERMS.filter((field) => {
+    const value = after[field];
+    if (value === undefined) return false;
+    if (field === "salary") return Number(value) !== Number(before.salary);
+    if (field === "jobTitle") return value.trim() !== before.jobTitle;
+    return value !== before[field];
+  });
+}

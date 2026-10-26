@@ -10,8 +10,8 @@ import { applications, offers, requisitions } from "../db/schema";
 export const APPROVER_ROLES = ["HIRING_MANAGER", "ADMIN"] as const;
 
 /**
- * The approver's pending items, each by its requisition number (offers in
- * task 36 add the candidate), requisitions first.
+ * The approver's pending items, requisitions by their number, offers as
+ * "REQ-00012 (Jane Doe)" (task 36), requisitions first.
  */
 export async function pendingApprovalsOf(db: Db | Tx, userId: string): Promise<string[]> {
   // One after the other: a transaction has a single connection.
@@ -21,11 +21,14 @@ export async function pendingApprovalsOf(db: Db | Tx, userId: string): Promise<s
     .where(and(eq(requisitions.state, "PENDING_APPROVAL"), eq(requisitions.approverId, userId)))
     .orderBy(asc(requisitions.reqNumber));
   const pendingOffers = await db
-    .select({ reqNumber: requisitions.reqNumber })
+    .select({ reqNumber: requisitions.reqNumber, firstName: applications.firstName, lastName: applications.lastName })
     .from(offers)
     .innerJoin(applications, eq(applications.id, offers.applicationId))
     .innerJoin(requisitions, eq(requisitions.id, applications.requisitionId))
     .where(and(eq(offers.approvalStatus, "PENDING"), eq(offers.approverId, userId)))
     .orderBy(asc(requisitions.reqNumber));
-  return [...pendingRequisitions, ...pendingOffers].map((row) => row.reqNumber);
+  return [
+    ...pendingRequisitions.map((row) => row.reqNumber),
+    ...pendingOffers.map((row) => `${row.reqNumber} (${`${row.firstName ?? ""} ${row.lastName ?? ""}`.trim()})`),
+  ];
 }

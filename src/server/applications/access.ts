@@ -28,7 +28,14 @@ export async function applicationResource(user: PolicyUser, applicationId: strin
     .innerJoin(interviews, eq(interviews.id, interviewParticipants.interviewId))
     .where(and(eq(interviews.applicationId, applicationId), ne(interviews.status, "CANCELLED"), eq(interviewParticipants.userId, user.id), isNull(interviewParticipants.removedAt)))
     .limit(1);
-  return { requisition: row.requisition, open: isOpenStatus(row.status) && row.anonymizedAt === null, participant: participation !== undefined };
+  // V3b: the approver of any offer on this application (kept after decisions, §7).
+  const [approval] = await db.select({ id: offers.id }).from(offers).where(and(eq(offers.applicationId, applicationId), eq(offers.approverId, user.id))).limit(1);
+  return {
+    requisition: row.requisition,
+    open: isOpenStatus(row.status) && row.anonymizedAt === null,
+    participant: participation !== undefined,
+    offerApprover: approval !== undefined,
+  };
 }
 
 /** The application an offer belongs to (offer letters are OFFER files). */
