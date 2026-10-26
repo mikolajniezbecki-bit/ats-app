@@ -317,6 +317,46 @@
     "approvalReminder": {
       "subject": "Reminder: approval needed: [[REQ_NUMBER]] [[JOB_TITLE]]",
       "body": "Hello,\n\nA requisition is still waiting for your approval.\n\n- Requisition: **[[REQ_NUMBER]]** [[JOB_TITLE]]\n- Hiring manager: [[HIRING_MGR_FULL_NAME]]\n- Submitted by: {submitter}\n- Days waiting: {days}\n\nReview it here:\n{link}\n\nThis is an automatic message from the ATS."
+    },
+    "interview": {
+      "icsSummary": {
+        "candidate": "Interview: {job}",
+        "staff": "Interview: {candidate}, {job}"
+      },
+      "icsDescription": {
+        "candidate": "Interview for {job}.",
+        "staff": "Interview with {candidate} for {job}.\n{link}"
+      },
+      "invite": {
+        "candidate": {
+          "subject": "Interview invitation: [[JOB_TITLE]]",
+          "body": "Hello [[CANDIDATE_FULL_NAME]],\n\nWe'd like to invite you to an interview for **[[JOB_TITLE]]**.\n\n- When: [[INTERVIEW_DATETIME]]\n- Duration: {duration} minutes\n- Where: [[INTERVIEW_LOCATION]]\n\nThe calendar invite is attached."
+        },
+        "staff": {
+          "subject": "Interview: [[CANDIDATE_FULL_NAME]], [[JOB_TITLE]]",
+          "body": "Hello,\n\nYou're on the panel for an interview with **[[CANDIDATE_FULL_NAME]]** for [[JOB_TITLE]].\n\n- When: [[INTERVIEW_DATETIME]]\n- Duration: {duration} minutes\n- Where: [[INTERVIEW_LOCATION]]\n\nApplication:\n{link}\n\nThe calendar invite is attached.\n\nThis is an automatic message from the ATS."
+        }
+      },
+      "update": {
+        "candidate": {
+          "subject": "Interview updated: [[JOB_TITLE]]",
+          "body": "Hello [[CANDIDATE_FULL_NAME]],\n\nYour interview for **[[JOB_TITLE]]** has changed. The new details:\n\n- When: [[INTERVIEW_DATETIME]]\n- Duration: {duration} minutes\n- Where: [[INTERVIEW_LOCATION]]\n\nThe calendar invite is attached."
+        },
+        "staff": {
+          "subject": "Interview updated: [[CANDIDATE_FULL_NAME]], [[JOB_TITLE]]",
+          "body": "Hello,\n\nThe interview with **[[CANDIDATE_FULL_NAME]]** for [[JOB_TITLE]] has changed. The new details:\n\n- When: [[INTERVIEW_DATETIME]]\n- Duration: {duration} minutes\n- Where: [[INTERVIEW_LOCATION]]\n\nApplication:\n{link}\n\nThe calendar invite is attached.\n\nThis is an automatic message from the ATS."
+        }
+      },
+      "cancel": {
+        "candidate": {
+          "subject": "Interview cancelled: [[JOB_TITLE]]",
+          "body": "Hello [[CANDIDATE_FULL_NAME]],\n\nYour interview for **[[JOB_TITLE]]** on [[INTERVIEW_DATETIME]] has been cancelled.\n\nThe calendar cancellation is attached."
+        },
+        "staff": {
+          "subject": "Interview cancelled: [[CANDIDATE_FULL_NAME]], [[JOB_TITLE]]",
+          "body": "Hello,\n\nThe interview with **[[CANDIDATE_FULL_NAME]]** for [[JOB_TITLE]] on [[INTERVIEW_DATETIME]] has been cancelled, or you are no longer on its panel.\n\nThe calendar cancellation is attached.\n\nThis is an automatic message from the ATS."
+        }
+      }
     }
   },
   "EmailStatuses": {
@@ -1000,5 +1040,58 @@
     "moved": "Moved to {status}",
     "queued": "Queued",
     "queuedNote": "Queued; delivery status is shown on each application's timeline."
+  },
+  "Interviews": {
+    "title": "Interviews",
+    "empty": "No interviews yet.",
+    "schedule": "Schedule interview",
+    "edit": "Edit",
+    "cancel": "Cancel interview",
+    "confirmCancel": "Cancel interview",
+    "close": "Close",
+    "save": "Save",
+    "saveSchedule": "Schedule",
+    "completed": "Completed",
+    "noShow": "No-show",
+    "awaitingOutcome": "Awaiting outcome",
+    "removed": "{name} (removed)",
+    "inactive": "{name} (inactive)",
+    "durationValue": "{minutes} min",
+    "statuses": {
+      "SCHEDULED": "Scheduled",
+      "COMPLETED": "Completed",
+      "CANCELLED": "Cancelled",
+      "NO_SHOW": "No-show"
+    },
+    "fields": {
+      "start": "Date and start time",
+      "timezone": "Time zone",
+      "duration": "Duration (minutes)",
+      "location": "Location or meeting link",
+      "participants": "Participants",
+      "when": "When",
+      "status": "Status"
+    },
+    "failed": "The action could not be completed. Try again.",
+    "errors": {
+      "invalid": "Check the highlighted fields.",
+      "notFound": "This interview or application no longer exists.",
+      "notOpen": "Interviews can be scheduled only for open applications.",
+      "locked": "This interview can no longer be changed.",
+      "stale": "This record was changed by someone else. Reload and try again.",
+      "notStarted": "The outcome can be marked once the interview has started.",
+      "fields": {
+        "startInvalid": "Enter a valid date and time.",
+        "startNonexistent": "This time doesn't exist in the chosen time zone.",
+        "startPast": "The start time is in the past.",
+        "timezone": "Choose a valid time zone.",
+        "duration": "Enter 15 to 480 minutes.",
+        "location": "Enter 1 to 500 characters.",
+        "participantsCount": "Choose 1 to 10 participants.",
+        "participantsDuplicate": "Each participant can be chosen only once.",
+        "participantInvalid": "Choose active Interviewers, Recruiters or Admins, or a Hiring Manager of this requisition.",
+        "invalid": "Check this value."
+      }
+    }
   }
 }
