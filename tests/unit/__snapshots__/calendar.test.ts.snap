@@ -1,0 +1,24 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildInvite > I1: a fixed input matches the committed snapshot 1`] = `
+"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//ATS//Interview invites//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:0b8f2c1e-5d1a-4c55-9d7e-2f0c6c4d8a11@ats
+SEQUENCE:0
+DTSTAMP:20270110T093000Z
+DTSTART:20270115T130000Z
+DTEND:20270115T134500Z
+SUMMARY:Interview: Backend Engineer
+LOCATION:Room 4
+DESCRIPTION:Interview for Backend Engineer.
+ORGANIZER;CN="ATS":mailto:careers@ats-demo.local
+ATTENDEE;CN="Ada Lovelace";RSVP=FALSE:mailto:ada@example.com
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
+"
+`;
