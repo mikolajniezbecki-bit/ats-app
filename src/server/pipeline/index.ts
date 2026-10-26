@@ -14,6 +14,7 @@ import { applicationHistory, applications, emailLog, offers, requisitions } from
 import { type PipelineStatus, type TransitionRefusal, checkTransition, isOpenStatus } from "../domain/pipeline";
 import { queueTemplateEmail } from "../email";
 import { cancelFutureInterviews } from "../interviews";
+import { withdrawPendingOffers } from "../offers";
 import { logger } from "../logger";
 import { message } from "../messages";
 import { getSetting } from "../settings";
@@ -129,7 +130,8 @@ type ApplicationRow = typeof applications.$inferSelect;
  * The writing steps of a status change, after every check passed, for an
  * application row the caller locked FOR UPDATE: cancel queued emails (R7),
  * update with the row's version (D7), write history (R8), cancel future
- * interviews on a final status (R12), queue the stage email (E8, E9). changeApplicationStatus uses it for manual moves; a
+ * interviews on a final status (R12), withdraw offers still waiting for the
+ * candidate on REJECTED/WITHDRAWN (task 35 Q1), queue the stage email (E8, E9). changeApplicationStatus uses it for manual moves; a
  * requisition close (L6) uses it with a system reason code. Callers never
  * write `applications.status` themselves.
  */
@@ -162,6 +164,8 @@ export async function applyStatusChange(
 
   // R12: after the R7 cancellation, so the CANCEL invites stay queued.
   const cancelledInterviews = final ? await cancelFutureInterviews(tx, application.id, now) : 0;
+  // Task 35 Q1 (owner decision): like L6 on a close; HIRED changes no offer.
+  const withdrawnOffers = toStatus === "REJECTED" || toStatus === "WITHDRAWN" ? await withdrawPendingOffers(tx, application.id, now) : 0;
 
   await queueStageEmail(tx, application.id, toStatus, now);
 
@@ -176,6 +180,7 @@ export async function applyStatusChange(
       reopen: change.isReopen,
       cancelled_emails: cancelledEmails,
       cancelled_interviews: cancelledInterviews,
+      withdrawn_offers: withdrawnOffers,
     },
     "application status changed",
   );

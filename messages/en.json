@@ -1159,7 +1159,61 @@
     "empty": "No offers yet.",
     "entry": "{jobTitle}: {salary} {currency}, start {startDate}",
     "approval": "Approval: {status}",
-    "response": "Candidate response: {response}"
+    "response": "Candidate response: {response}",
+    "create": "Create offer",
+    "edit": "Edit",
+    "discard": "Discard offer",
+    "confirmDiscard": "Discard this offer? It will be withdrawn and can't be used again.",
+    "confirm": "Discard",
+    "save": "Save",
+    "cancel": "Cancel",
+    "frozen": "Read-only (a newer offer exists)",
+    "template": "Template: {name}",
+    "createdBy": "Created by {name}",
+    "failed": "The action could not be completed. Try again.",
+    "approvalStatuses": {
+      "DRAFT": "Draft",
+      "PENDING": "Awaiting approval",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "WITHDRAWN": "Withdrawn"
+    },
+    "responses": {
+      "PENDING": "No response yet",
+      "ACCEPTED": "Accepted",
+      "DECLINED": "Declined"
+    },
+    "fields": {
+      "jobTitle": "Job title",
+      "salary": "Gross annual salary",
+      "currency": "Currency",
+      "startDate": "Start date",
+      "templateId": "Offer template",
+      "chooseTemplate": "Choose a template…"
+    },
+    "errors": {
+      "invalid": "Check the highlighted fields.",
+      "notFound": "This offer or application no longer exists.",
+      "stale": "This record was changed by someone else. Reload and try again.",
+      "notInOffer": "An offer can be created only when the application is in Offer.",
+      "requisitionBlocked": "Offers can't be created while the requisition is on hold or awaiting approval.",
+      "activeOffer": "This application already has an active offer.",
+      "anonymized": "This application has been anonymized.",
+      "frozen": "This offer is read-only because a newer offer exists.",
+      "responded": "Accepted and declined offers can't be changed.",
+      "pending": "This offer is awaiting approval. Withdraw the request to make changes.",
+      "approved": "Changing an approved offer needs re-approval.",
+      "withdrawn": "This offer has been withdrawn.",
+      "notDiscardable": "Only draft or rejected offers can be discarded.",
+      "fields": {
+        "jobTitle": "Enter 1 to 200 characters.",
+        "salary": "Enter an amount greater than 0 with at most 2 decimals.",
+        "currency": "Choose a currency.",
+        "startDate": "Choose a start date from today on.",
+        "templateId": "Choose an active offer template.",
+        "invalid": "Check this value."
+      }
+    }
   },
   "MyInterviews": {
     "title": "My interviews",

@@ -561,7 +561,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `V5:` API test: an Interviewer loses access after removal, cancellation or a final status.
 - `V6:` API test: Interviewer responses never contain salary, offers, pre-screening answers, score, status comments or other applications by the same person.
 
-## 35. Offer drafting
+## 35. Offer drafting ✅
 
 **Issue:** [#41](https://github.com/mikolajniezbecki-bit/ats-app/issues/41)
 
