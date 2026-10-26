@@ -159,11 +159,13 @@ describe("GET /api/files/[id]/url", () => {
     expect((await call(file.id, (await signedIn("ADMIN")).cookie)).status).toBe(200);
   });
 
-  it("V11: a Hiring Manager and an Interviewer get 403 and no URL", async () => {
+  // Since task 34 these roles can view files of applications in their scope
+  // (V4, V5); outside it a file is a single record they can't see: 404 (V9).
+  it("V11, V9: a Hiring Manager and an Interviewer outside the file's application get 404 and no URL", async () => {
     const file = await committedFile();
     for (const role of ["HIRING_MANAGER", "INTERVIEWER"] as const) {
       const response = await call(file.id, (await signedIn(role)).cookie);
-      expect(response.status, role).toBe(403);
+      expect(response.status, role).toBe(404);
       const text = await response.text();
       expect(text).not.toContain("http");
       expect(text).not.toContain("sig=");

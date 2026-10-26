@@ -8,6 +8,7 @@ import { insertApplication } from "./support/applications";
 import { query } from "./support/db";
 import { expect, test } from "./support/fixtures";
 import { insertRequisition } from "./support/requisitions";
+import { ROLES } from "./support/users";
 
 const BLOB_ORIGIN = "http://localhost:10000";
 const live = { state: "APPROVED", approved: true, isPublished: true } as const;
@@ -116,14 +117,21 @@ test("the Outbox link to an application opens its page", async ({ asRole }) => {
   await expect(page.getByTestId("timeline-email")).toContainText("Thanks for applying");
 });
 
-test("V9: a Hiring Manager and an Interviewer get the 403 page; an unknown application is 404", async ({ asRole }) => {
+// Since task 34: Hiring Managers read V3a applications (V4) and Interviewers
+// only those they interview for (V5); out of scope is 404, requisition pages
+// stay 403 for Interviewers (V9).
+test("V9: a Hiring Manager outside V3a and an Interviewer who isn't on a panel get 404; requisition pages are 403 for Interviewers", async ({ asRole }) => {
   const job = await insertRequisition(live);
   const application = await insertApplication(job.id, { withCv: false });
-  for (const role of ["hiring-manager", "interviewer"] as const) {
-    const page = await asRole(role);
-    expect((await page.goto(`/applications/${application.id}`))?.status(), role).toBe(403);
-    expect((await page.goto(`/requisitions/${job.id}/applications`))?.status(), role).toBe(403);
-  }
+  const [admin] = await query<{ id: string }>("SELECT id FROM users WHERE email = $1", [ROLES.admin.email]);
+  // Another hiring manager, so the demo Hiring Manager is outside V3a.
+  await query("UPDATE requisitions SET hiring_manager_id = $1, created_by_user_id = $1 WHERE id = $2", [admin.id, job.id]);
+  const hm = await asRole("hiring-manager");
+  expect((await hm.goto(`/applications/${application.id}`))?.status()).toBe(404);
+  expect((await hm.goto(`/requisitions/${job.id}/applications`))?.status()).toBe(404);
+  const interviewer = await asRole("interviewer");
+  expect((await interviewer.goto(`/applications/${application.id}`))?.status()).toBe(404);
+  expect((await interviewer.goto(`/requisitions/${job.id}/applications`))?.status()).toBe(403);
   const recruiter = await asRole("recruiter");
   expect((await recruiter.goto(`/applications/${randomUUID()}`))?.status()).toBe(404);
 });

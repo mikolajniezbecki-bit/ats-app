@@ -65,7 +65,9 @@ test("F5: app pages log no CSP violation", async ({ asRole, browser, baseURL }) 
   expect([...violations, ...signInViolations]).toEqual([]);
 });
 
-test("V11: the file-link API gives a Recruiter a URL and Hiring Managers and Interviewers 403", async ({ asRole }) => {
+// Since task 34 Hiring Managers and Interviewers view files of applications in
+// their scope (V4, V5); this file belongs to none of theirs, so it is 404 (V9).
+test("V11: the file-link API gives a Recruiter a URL and Hiring Managers and Interviewers outside its application 404", async ({ asRole }) => {
   const fileId = storeTestPdf();
 
   const recruiter = await asRole("recruiter");
@@ -77,7 +79,7 @@ test("V11: the file-link API gives a Recruiter a URL and Hiring Managers and Int
 
   for (const role of ["hiring-manager", "interviewer"] as const) {
     const denied = await (await asRole(role)).request.get(`/api/files/${fileId}/url`);
-    expect(denied.status(), role).toBe(403);
+    expect(denied.status(), role).toBe(404);
     expect(await denied.text()).not.toContain("http");
   }
 });

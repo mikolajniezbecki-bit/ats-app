@@ -2,7 +2,9 @@
 // workbench, E5, TO-01): 50 per page, newest first, with a status filter.
 // Applications from the same email address sit together under a group row
 // and link to the candidate's applications elsewhere; they stay separate
-// records. Admin and Recruiter only until task 34.
+// records. Admins, Recruiters and Hiring Managers in V3a (read-only, no bulk
+// actions); Interviewers never see requisition pages (403); 404 outside the
+// caller's scope (V9).
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -18,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 export default async function RequisitionApplicationsPage({ params, searchParams }: PageProps<"/requisitions/[id]/applications">) {
   const { id } = await params;
-  const user = await requirePermission("application.read", undefined, `/requisitions/${encodeURIComponent(id)}/applications`);
+  const user = await requirePermission("requisition.read", undefined, `/requisitions/${encodeURIComponent(id)}/applications`);
   const query = await searchParams;
   const status = APPLICATION_STATUSES.find((value) => value === query.status);
   const page = Number.parseInt(String(query.page ?? "1"), 10) || 1;

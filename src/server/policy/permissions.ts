@@ -61,13 +61,14 @@ export const PERMISSIONS = {
   // A9: the submitter, any Recruiter or any Admin (resource rule below).
   "approval.withdraw": CREATORS,
 
-  // V1, V2; Hiring Managers within V3a (resource rule below). Hiring Manager
-  // application reads (V4) and Interviewer reads (V5/V6) are added with their
-  // resource rules (tasks 34, 36).
+  // V1, V2; Hiring Managers within V3a, Interviewers within V5 (resource
+  // rules below; the row filters in ./filters apply the same conditions).
+  // Interviewers never read requisitions or offers (V6). Offer approvers
+  // (V3b) come with task 36.
   "requisition.read": CREATORS,
-  "application.read": ADMIN_RECRUITER,
-  "scorecard.read": ADMIN_RECRUITER,
-  "offer.read": ADMIN_RECRUITER,
+  "application.read": EVERY_ROLE,
+  "scorecard.read": EVERY_ROLE,
+  "offer.read": CREATORS,
   // Admin and Recruiter see every application and offer file; scorecard
   // notes only when they may read the scorecard, for every role (V7, V11,
   // I9; resource rule below; task 34 adds V4/V6 files).
@@ -87,10 +88,25 @@ export function inRequisitionScope(user: PolicyUser, requisition: RequisitionRes
 }
 
 /**
- * A file as the `file.view` rule sees it. `scorecardVisible` is set by the
- * caller for SCORECARD files, after the scopeScorecardsFor() query (V7).
+ * An application as the read rules see it (V4, V5): its requisition, whether
+ * it is open and not anonymized, and whether the user is a current
+ * participant of a non-cancelled interview on it.
  */
-export type FileResource = { ownerType: string; scorecardVisible?: boolean };
+export type ApplicationResource = { requisition: RequisitionResource; open: boolean; participant: boolean };
+
+/** V3a, V4, V5: may `user` read this application at all? */
+function readsApplication(user: PolicyUser, application: ApplicationResource): boolean {
+  if (user.role === "ADMIN" || user.role === "RECRUITER") return true;
+  if (user.role === "HIRING_MANAGER") return inRequisitionScope(user, application.requisition);
+  return user.role === "INTERVIEWER" && application.open && application.participant;
+}
+
+/**
+ * A file as the `file.view` rule sees it. The caller sets `scorecardVisible`
+ * for SCORECARD files (after the scopeScorecardsFor() query, V7) and
+ * `application` for APPLICATION and OFFER files.
+ */
+export type FileResource = { ownerType: string; scorecardVisible?: boolean; application?: ApplicationResource };
 
 /** A pending or decided approval: a requisition or an offer (A1–A9). */
 export type ApprovalResource = { pending: boolean; approverId: string | null; submittedByUserId: string | null };
@@ -111,12 +127,21 @@ const RESOURCE_RULES: Partial<Record<Action, ResourceRule>> = {
     const approval = resource as ApprovalResource;
     return approval.pending && approval.approverId === user.id && approval.submittedByUserId !== user.id;
   },
+  "application.read": (user, resource) => readsApplication(user, resource as ApplicationResource),
+  // V7 narrows Interviewers further in scopeScorecardsFor().
+  "scorecard.read": (user, resource) => readsApplication(user, resource as ApplicationResource),
+  // V6: never Interviewers (not in the matrix); V4: Hiring Managers within V3a.
+  "offer.read": (user, resource) => user.role !== "HIRING_MANAGER" || inRequisitionScope(user, (resource as ApplicationResource).requisition),
   "file.view": (user, resource) => {
     const file = resource as FileResource;
     // Scorecard notes follow the scorecard for every role: drafts stay
     // private to their author (I9), also from Admins and Recruiters.
     if (file.ownerType === "SCORECARD") return file.scorecardVisible === true;
-    return user.role === "ADMIN" || user.role === "RECRUITER";
+    if (user.role === "ADMIN" || user.role === "RECRUITER") return true;
+    if (!file.application) return false;
+    // V4, V5: CV and cover letter; offer letters for Hiring Managers only (V6).
+    if (file.ownerType === "APPLICATION") return readsApplication(user, file.application);
+    return file.ownerType === "OFFER" && user.role === "HIRING_MANAGER" && inRequisitionScope(user, file.application.requisition);
   },
   "approval.withdraw": (user, resource) => {
     const approval = resource as ApprovalResource;

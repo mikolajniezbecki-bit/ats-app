@@ -5,12 +5,12 @@
 //
 //   db.select().from(requisitions).where(and(scopeRequisitionsFor(user), ...))
 //
-// Admin (V1) and Recruiter (V2) see everything. Hiring Managers see the
-// requisitions of V3a; their application reads (V3b: task 36) and the
-// Interviewer's (V5, V6: task 34) get their conditions from those tasks.
-// Scorecards follow V5 and V7 for every participant without broader access
-// (task 33).
-import { type SQL, eq, or, sql } from "drizzle-orm";
+// Admin (V1) and Recruiter (V2) see everything. Hiring Managers see what
+// belongs to their V3a requisitions (V3a, V4); the one V3a condition below is
+// shared by all four filters. Interviewers see open applications they
+// interview for (V5) and scorecards under V7; never offers (V6).
+// Offer-approver access (V3b) comes with task 36.
+import { type SQL, sql } from "drizzle-orm";
 import { requisitions } from "../db/schema";
 import { OPEN_STATUSES } from "../domain/pipeline";
 import type { PolicyUser } from "./permissions";
@@ -18,26 +18,43 @@ import type { PolicyUser } from "./permissions";
 const ALL_ROWS: SQL = sql`true`;
 const NO_ROWS: SQL = sql`false`;
 
-/** V1/V2: unrestricted for active Admins and Recruiters; nothing for anyone else yet. */
-function adminOrRecruiterOnly(user: PolicyUser | null | undefined): SQL {
-  if (!user || user.isActive === false) return NO_ROWS;
-  return user.role === "ADMIN" || user.role === "RECRUITER" ? ALL_ROWS : NO_ROWS;
+const active = (user: PolicyUser | null | undefined): user is PolicyUser => !!user && user.isActive !== false;
+const broad = (user: PolicyUser) => user.role === "ADMIN" || user.role === "RECRUITER";
+
+/**
+ * V3a: the requisition `requisitionId` (an SQL expression) has `user` as its
+ * hiring manager, approver or creator. Approvers keep access after their
+ * decision, because `approver_id` stays (§7).
+ */
+export function inV3a(user: PolicyUser, requisitionId: SQL): SQL {
+  return sql`exists (
+    select 1 from requisitions v3a
+    where v3a.id = ${requisitionId}
+      and (v3a.hiring_manager_id = ${user.id} or v3a.approver_id = ${user.id} or v3a.created_by_user_id = ${user.id})
+  )`;
 }
 
 /** V1, V2; V3a: a Hiring Manager's requisitions as hiring manager, approver or creator. */
 export function scopeRequisitionsFor(user: PolicyUser | null | undefined): SQL {
-  if (user && user.isActive !== false && user.role === "HIRING_MANAGER") {
-    return or(
-      eq(requisitions.hiringManagerId, user.id),
-      eq(requisitions.approverId, user.id),
-      eq(requisitions.createdByUserId, user.id),
-    )!;
-  }
-  return adminOrRecruiterOnly(user);
+  if (!active(user)) return NO_ROWS;
+  if (broad(user)) return ALL_ROWS;
+  return user.role === "HIRING_MANAGER" ? inV3a(user, sql`${requisitions.id}`) : NO_ROWS;
 }
 
+/** V1, V2; V4: applications on a Hiring Manager's V3a requisitions; V5: an Interviewer's open applications they interview for. */
 export function scopeApplicationsFor(user: PolicyUser | null | undefined): SQL {
-  return adminOrRecruiterOnly(user);
+  if (!active(user)) return NO_ROWS;
+  if (broad(user)) return ALL_ROWS;
+  if (user.role === "HIRING_MANAGER") return inV3a(user, sql`"applications"."requisition_id"`);
+  return user.role === "INTERVIEWER" ? participatesIn(user, sql`"applications"."id"`) : NO_ROWS;
+}
+
+/** V1, V2; V4: offers on a Hiring Manager's V3a applications. V6: Interviewers never see offers. */
+export function scopeOffersFor(user: PolicyUser | null | undefined): SQL {
+  if (!active(user)) return NO_ROWS;
+  if (broad(user)) return ALL_ROWS;
+  if (user.role === "HIRING_MANAGER") return inV3a(user, sql`(select oa.requisition_id from applications oa where oa.id = "offers"."application_id")`);
+  return NO_ROWS;
 }
 
 const OPEN_LIST = sql.join(
@@ -64,14 +81,24 @@ export function participatesIn(user: PolicyUser, applicationId: SQL): SQL {
 }
 
 /**
- * V1, V2: every scorecard (callers leave out other people's drafts). V5, V7
- * for anyone else: their own scorecards on an application they participate
- * in; other participants' submitted ones only once one of their own there is
- * submitted and none is reopened-but-not-resubmitted. Enforced in SQL, so a
- * hidden scorecard is absent from every response, not only from the UI.
+ * V1, V2: every scorecard (callers leave out other people's drafts). V4:
+ * a Hiring Manager sees the submitted scorecards on V3a applications and
+ * their own; V7 hides nothing from them (Q2), and outside V3a they have no
+ * access, also as a participant (Q5). V5, V7 for Interviewers: their own
+ * scorecards on an application they participate in; other participants'
+ * submitted ones only once one of their own there is submitted and none is
+ * reopened-but-not-resubmitted. Enforced in SQL, so a hidden scorecard is
+ * absent from every response, not only from the UI.
  */
 export function scopeScorecardsFor(user: PolicyUser | null | undefined): SQL {
-  if (!user || user.isActive === false || user.role === "ADMIN" || user.role === "RECRUITER") return adminOrRecruiterOnly(user);
+  if (!active(user)) return NO_ROWS;
+  if (broad(user)) return ALL_ROWS;
+  const ownOrSubmitted = sql`(interview_scorecards.interviewer_id = ${user.id} or interview_scorecards.submitted_at is not null)`;
+  if (user.role === "HIRING_MANAGER") {
+    const requisition = sql`(select sa.requisition_id from interviews si join applications sa on sa.id = si.application_id where si.id = interview_scorecards.interview_id)`;
+    return sql`(${inV3a(user, requisition)} and ${ownOrSubmitted})`;
+  }
+  if (user.role !== "INTERVIEWER") return NO_ROWS;
   const application = sql`(select si.application_id from interviews si where si.id = interview_scorecards.interview_id)`;
   const own = (extra: SQL) => sql`exists (
     select 1 from interview_scorecards o join interviews oi on oi.id = o.interview_id
@@ -83,8 +110,4 @@ export function scopeScorecardsFor(user: PolicyUser | null | undefined): SQL {
       and ${own(sql`o.submitted_at is not null`)}
       and not ${own(sql`o.reopened_at is not null and o.submitted_at is null`)})
   ))`;
-}
-
-export function scopeOffersFor(user: PolicyUser | null | undefined): SQL {
-  return adminOrRecruiterOnly(user);
 }

@@ -122,12 +122,15 @@ describe("listRequisitionApplications", () => {
     expect(Object.fromEntries(list.rows.map((row) => [row.id, row.hasFailedEmail]))).toEqual({ [failed.id]: true, [fine.id]: false });
   });
 
-  it("returns nothing to a Hiring Manager or Interviewer, and nothing for an unknown requisition", async () => {
+  // Since task 34 a Hiring Manager reads the applications of V3a requisitions (V4).
+  it("V4: a Hiring Manager gets their requisition's applications, not another's; nothing for an Interviewer or an unknown requisition", async () => {
     const hm = await insertUser(db(), "HIRING_MANAGER");
     const job = await requisition({ hiringManagerId: hm.id });
-    await applicationFor(job.id, `hm-${randomUUID()}@example.com`);
+    const app = await applicationFor(job.id, `hm-${randomUUID()}@example.com`);
     const hmList = await listRequisitionApplications({ id: hm.id, role: "HIRING_MANAGER" }, job.id);
-    expect(hmList?.rows ?? []).toEqual([]);
+    expect(hmList?.rows.map((row) => row.id)).toEqual([app.id]);
+    const other = await requisition();
+    expect(await listRequisitionApplications({ id: hm.id, role: "HIRING_MANAGER" }, other.id)).toBeUndefined();
     expect(await listRequisitionApplications({ id: randomUUID(), role: "INTERVIEWER" }, job.id)).toBeUndefined();
     expect(await listRequisitionApplications(recruiter, randomUUID())).toBeUndefined();
   });

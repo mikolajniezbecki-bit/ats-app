@@ -544,7 +544,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `V8:` tests: an Admin reopen sets `reopened_at` and clears `submitted_at`; an unsubmitted scorecard can't be submitted after the application is rejected.
 - `I10:` test: the summary shows the correct average rating and thumbs counts.
 
-## 34. Hiring Manager and Interviewer visibility
+## 34. Hiring Manager and Interviewer visibility ✅
 
 **Issue:** [#40](https://github.com/mikolajniezbecki-bit/ats-app/issues/40)
 

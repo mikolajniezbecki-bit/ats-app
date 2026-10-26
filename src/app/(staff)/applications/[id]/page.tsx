@@ -1,12 +1,14 @@
 // One application (ats-project-scope.md §5.4 Recruiter workbench, E5, F5,
 // R9, RT4, V11): the candidate, the documents in the inline PDF viewer, the
-// pre-screening answers, the status control, the interviews (I1–I7) and the
-// timeline. Admin and
-// Recruiter only until task 34; 404 for an unknown application (V9).
+// pre-screening answers, the status control, the interviews (I1–I7), the
+// feedback, the offers and the timeline. Admins and Recruiters manage it;
+// Hiring Managers in V3a read it all (V4); an Interviewer in V5 gets only the
+// V6 allowlist. 404 outside the caller's scope (V9).
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ApplicationTimeline } from "@/components/applications/application-timeline";
+import { InterviewerApplication } from "@/components/applications/interviewer-application";
 import { InterviewsPanel } from "@/components/applications/interviews-panel";
 import { ReopenScorecardButton } from "@/components/applications/reopen-scorecard-button";
 import { StatusControl } from "@/components/applications/status-control";
@@ -14,6 +16,7 @@ import { LocalTime } from "@/components/local-time";
 import { PdfViewer } from "@/components/pdf-viewer";
 import { getApplicationDetail } from "@/server/applications";
 import { getApplicationFeedback } from "@/server/applications/feedback";
+import { getInterviewerApplication, listApplicationOffers } from "@/server/applications/views";
 import { APPLICATION_STATUSES } from "@/server/db/schema";
 import { awaitingOutcome } from "@/server/domain/interviews";
 import { isOpenStatus } from "@/server/domain/pipeline";
@@ -26,6 +29,11 @@ export const dynamic = "force-dynamic";
 export default async function ApplicationPage({ params }: PageProps<"/applications/[id]">) {
   const { id } = await params;
   const user = await requirePermission("application.read", undefined, `/applications/${encodeURIComponent(id)}`);
+  if (user.role === "INTERVIEWER") {
+    const view = await getInterviewerApplication(user, id);
+    if (!view) notFound();
+    return <InterviewerApplication view={view} user={user} />;
+  }
   const detail = await getApplicationDetail(user, id);
   if (!detail) notFound();
   const { application, requisition, anonymized } = detail;
@@ -54,6 +62,8 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
   const participantOptions = canManageInterviews ? await listParticipantOptions(application.id) : [];
   const feedback = await getApplicationFeedback(user, application.id);
   const f = await getTranslations("Feedback");
+  const o = await getTranslations("Offers");
+  const offerRows = can(user, "offer.read") ? await listApplicationOffers(user, application.id) : null;
   const sc = await getTranslations("Scorecards");
 
   const fields: [string, React.ReactNode][] = [
@@ -236,6 +246,27 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
                 ))}
               </ul>
             </>
+          )}
+        </section>
+      )}
+
+      {offerRows && (
+        <section aria-labelledby="offers-heading" className="space-y-2" data-testid="offers">
+          <h2 id="offers-heading" className="text-xl font-semibold">
+            {o("title")}
+          </h2>
+          {offerRows.length === 0 ? (
+            <p className="text-sm">{o("empty")}</p>
+          ) : (
+            <ul className="max-w-4xl space-y-2 text-sm">
+              {offerRows.map((offer) => (
+                <li key={offer.id} className="rounded border p-3">
+                  <p className="font-medium">{o("entry", { jobTitle: offer.jobTitle, salary: offer.salary, currency: offer.currency, startDate: offer.startDate })}</p>
+                  <p>{o("approval", { status: offer.approvalStatus })}</p>
+                  <p>{o("response", { response: offer.candidateResponse })}</p>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       )}

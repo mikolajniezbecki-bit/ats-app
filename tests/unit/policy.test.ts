@@ -36,10 +36,10 @@ const CREATORS: Action[] = ["requisition.create", "requisition.edit", "approval.
 const ALLOWED: Record<Role, Action[]> = {
   ADMIN: [...ACTIONS],
   RECRUITER: ["staff.area", ...ADMIN_RECRUITER, ...CREATORS],
-  // requisition.read: within V3a only (resource rule, task 20). file.view:
-  // scorecard notes they may read only (resource rule, task 33).
-  HIRING_MANAGER: ["staff.area", ...CREATORS, "approval.decide", "requisition.read", "file.view"],
-  INTERVIEWER: ["staff.area", "file.view"],
+  // The reads are narrowed by resource rules (V3a, V4: tasks 20, 34; file
+  // notes: task 33) and the row filters; offers never for Interviewers (V6).
+  HIRING_MANAGER: ["staff.area", ...CREATORS, "approval.decide", ...READS],
+  INTERVIEWER: ["staff.area", "application.read", "scorecard.read", "file.view"],
 };
 
 describe("can()", () => {
@@ -60,14 +60,45 @@ describe("can()", () => {
     expect(allowed.sort()).toEqual([...new Set(ALLOWED[role])].sort());
   });
 
-  it("AU9: Hiring Manager and Interviewer are signed in but denied reads until their rules exist", () => {
-    for (const role of ["HIRING_MANAGER", "INTERVIEWER"] as const) {
-      // A Hiring Manager's requisition reads have their rule since task 20 (V3a,
-      // below); file.view has its resource rule since task 33 (tested below).
-      const pending = READS.filter((action) => action !== "file.view" && (role !== "HIRING_MANAGER" || action !== "requisition.read"));
-      for (const action of pending) expect(can(user(role), action), `${role} ${action}`).toBe(false);
-    }
+  it("V6: an Interviewer never reads requisitions or offers", () => {
     expect(can(user("INTERVIEWER"), "requisition.read")).toBe(false);
+    expect(can(user("INTERVIEWER"), "offer.read")).toBe(false);
+  });
+
+  describe("application resource rules", () => {
+    const hm = user("HIRING_MANAGER");
+    const other = "00000000-0000-4000-8000-0000000000ff";
+    const app = (overrides: Partial<{ hiringManagerId: string; approverId: string | null; createdByUserId: string; open: boolean; participant: boolean }> = {}) => ({
+      requisition: { hiringManagerId: overrides.hiringManagerId ?? other, approverId: overrides.approverId ?? null, createdByUserId: overrides.createdByUserId ?? other },
+      open: overrides.open ?? true,
+      participant: overrides.participant ?? false,
+    });
+
+    it("V4: a Hiring Manager reads applications, scorecards and offers of V3a requisitions only", () => {
+      for (const action of ["application.read", "scorecard.read", "offer.read"] as const) {
+        expect(can(hm, action, app({ hiringManagerId: hm.id })), action).toBe(true);
+        expect(can(hm, action, app({ approverId: hm.id })), action).toBe(true);
+        expect(can(hm, action, app({ createdByUserId: hm.id })), action).toBe(true);
+        expect(can(hm, action, app({ participant: true })), action).toBe(false);
+      }
+    });
+
+    it("V5: an Interviewer reads an open application they currently interview for, and no other", () => {
+      const interviewer = user("INTERVIEWER");
+      expect(can(interviewer, "application.read", app({ participant: true }))).toBe(true);
+      expect(can(interviewer, "application.read", app({ participant: true, open: false }))).toBe(false);
+      expect(can(interviewer, "application.read", app({ participant: false }))).toBe(false);
+    });
+
+    it("V4, V6: application files follow the application; offer letters only for Hiring Managers in scope, never Interviewers", () => {
+      const interviewer = user("INTERVIEWER");
+      expect(can(hm, "file.view", { ownerType: "APPLICATION", application: app({ hiringManagerId: hm.id }) })).toBe(true);
+      expect(can(hm, "file.view", { ownerType: "APPLICATION", application: app() })).toBe(false);
+      expect(can(hm, "file.view", { ownerType: "OFFER", application: app({ hiringManagerId: hm.id }) })).toBe(true);
+      expect(can(interviewer, "file.view", { ownerType: "APPLICATION", application: app({ participant: true }) })).toBe(true);
+      expect(can(interviewer, "file.view", { ownerType: "OFFER", application: app({ participant: true }) })).toBe(false);
+      expect(can(interviewer, "file.view", { ownerType: "APPLICATION" })).toBe(false);
+    });
   });
 
   describe("requisition resource rules", () => {

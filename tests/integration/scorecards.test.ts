@@ -264,8 +264,9 @@ describe("visibility", () => {
     expect((await json(submit as Handler, "POST", interview.id, GOOD, b)).status).toBe(200);
 
     expect((await get(fileUrl as Handler, fileId, b)).status).toBe(200);
-    expect((await get(fileUrl as Handler, fileId, a)).status).toBe(403);
-    expect((await get(fileUrl as Handler, fileId, await signedIn("INTERVIEWER"))).status).toBe(403);
+    // A single record out of scope is 404 (V9, task 34).
+    expect((await get(fileUrl as Handler, fileId, a)).status).toBe(404);
+    expect((await get(fileUrl as Handler, fileId, await signedIn("INTERVIEWER"))).status).toBe(404);
     expect((await get(fileUrl as Handler, fileId, await signedIn("RECRUITER"))).status).toBe(200);
     expect((await json(submit as Handler, "POST", interview.id, GOOD, a)).status).toBe(200);
     expect((await get(fileUrl as Handler, fileId, a)).status).toBe(200);

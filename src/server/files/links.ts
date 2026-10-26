@@ -8,6 +8,7 @@ import { getStorage, type SignedUrl } from "../adapters/storage";
 import { getDb } from "../db";
 import { files, interviewScorecards } from "../db/schema";
 import { logger } from "../logger";
+import { applicationResource, offerApplicationId } from "../applications/access";
 import { scopeScorecardsFor } from "../policy/filters";
 import { type PolicyUser, can } from "../policy/permissions";
 
@@ -45,7 +46,12 @@ export async function issueFileLink(user: PolicyUser, id: string): Promise<FileL
   if (!file) return { status: "not-found" };
   // The resource-level check; later tasks add owner rules for other roles (V4, V6, V3b).
   const scorecardVisible = file.ownerType === "SCORECARD" ? await scorecardVisibleTo(user, file.ownerId) : undefined;
-  if (!can(user, "file.view", { ownerType: file.ownerType, scorecardVisible })) return { status: "forbidden" };
+  // V4, V5: other roles need the owning application's facts.
+  const broad = user.role === "ADMIN" || user.role === "RECRUITER";
+  const applicationId = broad || file.ownerType === "SCORECARD" ? undefined : file.ownerType === "OFFER" ? await offerApplicationId(file.ownerId) : file.ownerId;
+  const application = applicationId ? await applicationResource(user, applicationId) : undefined;
+  // V9: outside the caller's scope a file is "not found", like any single record.
+  if (!can(user, "file.view", { ownerType: file.ownerType, scorecardVisible, application })) return broad ? { status: "forbidden" } : { status: "not-found" };
 
   const link = await getStorage().getSignedUrl(file.storageKey);
   logger.info({ file_id: file.id, user_id: user.id }, "file link issued");
