@@ -14,8 +14,8 @@ import { isOpenStatus } from "../domain/pipeline";
 import { storePdf } from "../files/store-pdf";
 import { getStorage } from "../adapters/storage";
 import { logger } from "../logger";
-import { scopeApplicationsFor, scopeScorecardsFor, participatesIn } from "../policy/filters";
-import type { PolicyUser } from "../policy/permissions";
+import { scopeApplicationsFor, scopeScorecardsFor } from "../policy/filters";
+import { type PolicyUser, inRequisitionScope } from "../policy/permissions";
 
 export type ScorecardRow = typeof interviewScorecards.$inferSelect;
 export type ScorecardError = "invalid" | "notFound" | "forbidden" | "stale" | "notSubmitted" | "applicationFinal" | WriteRefusal;
@@ -43,7 +43,7 @@ function zodFields(error: z.ZodError): Record<string, string> {
 
 type Locked = {
   interview: typeof interviews.$inferSelect;
-  application: { id: string; status: string; anonymizedAt: Date | null };
+  application: { id: string; status: string; anonymizedAt: Date | null; requisitionId: string };
   participant: { active: boolean; removed: boolean } | undefined;
   scorecard: ScorecardRow | undefined;
 };
@@ -58,10 +58,11 @@ async function lockForWrite(tx: Tx, user: PolicyUser, interviewId: string): Prom
   const [found] = await tx.select({ applicationId: interviews.applicationId }).from(interviews).where(eq(interviews.id, interviewId));
   if (!found) return undefined;
   const [application] = await tx
-    .select({ id: applications.id, status: applications.status, anonymizedAt: applications.anonymizedAt })
+    .select({ id: applications.id, status: applications.status, anonymizedAt: applications.anonymizedAt, requisitionId: applications.requisitionId })
     .from(applications)
     .where(eq(applications.id, found.applicationId))
     .for("share");
+  if (!(await hiringManagerInScope(tx, user, application.requisitionId))) return undefined;
   const [interview] = await tx.select().from(interviews).where(eq(interviews.id, interviewId)).for("share");
   const [participant] = await tx
     .select({ removedAt: interviewParticipants.removedAt, isActive: users.isActive })
@@ -79,6 +80,20 @@ async function lockForWrite(tx: Tx, user: PolicyUser, interviewId: string): Prom
     participant: participant ? { active: participant.isActive && user.isActive !== false, removed: participant.removedAt !== null } : undefined,
     scorecard,
   };
+}
+
+/**
+ * Q5 (task 34): participant access uses the current role. A Hiring Manager
+ * participant outside the requisition's V3a scope loses access like a
+ * removed participant (404); other roles are unaffected.
+ */
+async function hiringManagerInScope(db: Db | Tx, user: PolicyUser, requisitionId: string): Promise<boolean> {
+  if (user.role !== "HIRING_MANAGER") return true;
+  const [requisition] = await db
+    .select({ hiringManagerId: requisitions.hiringManagerId, approverId: requisitions.approverId, createdByUserId: requisitions.createdByUserId })
+    .from(requisitions)
+    .where(eq(requisitions.id, requisitionId));
+  return requisition !== undefined && inRequisitionScope(user, requisition);
 }
 
 function refusal(locked: Locked, now: Date): ScorecardError | undefined {
@@ -245,18 +260,13 @@ export type ScorecardView = {
 };
 
 /**
- * Who may read an application's scorecards at all: Admins and Recruiters
- * (V1, V2) for any application; anyone else only as a current participant
- * of a non-cancelled interview on it while it is open (V5). Otherwise the
- * caller gets 404 (V9).
+ * Who may read an application's scorecards at all: whoever may read the
+ * application (V2, V4 within V3a, V5 as a current participant of a
+ * non-cancelled interview on an open application). Otherwise 404 (V9).
  */
 export async function canReadScorecardsOf(user: PolicyUser, applicationId: string, db: Db | Tx = getDb()): Promise<boolean> {
   if (!z.uuid().safeParse(applicationId).success) return false;
-  const broad = user.role === "ADMIN" || user.role === "RECRUITER";
-  const [row] = await db
-    .select({ id: applications.id })
-    .from(applications)
-    .where(and(eq(applications.id, applicationId), broad ? scopeApplicationsFor(user) : participatesIn(user, sql`${applications.id}`)));
+  const [row] = await db.select({ id: applications.id }).from(applications).where(and(eq(applications.id, applicationId), scopeApplicationsFor(user)));
   return row !== undefined;
 }
 
@@ -315,6 +325,7 @@ export async function getScorecardPage(user: PolicyUser, interviewId: string, db
       lastName: applications.lastName,
       anonymizedAt: applications.anonymizedAt,
       applicationStatus: applications.status,
+      requisitionId: applications.requisitionId,
       removedAt: interviewParticipants.removedAt,
     })
     .from(interviews)
@@ -323,6 +334,7 @@ export async function getScorecardPage(user: PolicyUser, interviewId: string, db
     .innerJoin(interviewParticipants, and(eq(interviewParticipants.interviewId, interviews.id), eq(interviewParticipants.userId, user.id)))
     .where(and(eq(interviews.id, interviewId), isNull(interviewParticipants.removedAt)));
   if (!row || row.interview.status === "CANCELLED" || !isOpenStatus(row.applicationStatus) || row.anonymizedAt) return undefined;
+  if (!(await hiringManagerInScope(db, user, row.requisitionId))) return undefined;
   const [scorecard] = await db
     .select()
     .from(interviewScorecards)

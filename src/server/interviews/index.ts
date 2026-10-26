@@ -6,12 +6,12 @@
 // a save (Q6). Nothing here touches the application's status (I8); R12 is
 // called by the status service. Logs carry IDs only (M2).
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { buildInvite } from "../adapters/calendar";
 import { getConfig } from "../config";
 import { type Db, type Tx, getDb } from "../db";
-import { applications, interviewParticipants, interviews, requisitions, users } from "../db/schema";
+import { applications, interviewParticipants, interviewScorecards, interviews, requisitions, users } from "../db/schema";
 import {
   MAX_DURATION_MINUTES,
   MAX_LOCATION_LENGTH,
@@ -431,6 +431,56 @@ export async function listParticipantOptions(applicationId: string, db: Db | Tx 
   return active
     .filter((user) => (PARTICIPANT_ROLES as readonly string[]).includes(user.role) || (user.role === "HIRING_MANAGER" && inRequisitionScope({ id: user.id, role: user.role }, row)))
     .map(({ id, name }) => ({ id, name }));
+}
+
+export type MyInterview = {
+  id: string;
+  startsAtUtc: Date;
+  durationMinutes: number;
+  status: InterviewRow["status"];
+  candidate: string | null;
+  jobTitle: string;
+  scorecard: "NOT_STARTED" | "DRAFT" | "SUBMITTED" | "REOPENED";
+};
+
+/**
+ * "My interviews" (task 34, Q6): the non-cancelled interviews where `user`
+ * is a current participant and may still read the application (V5 for
+ * Interviewers, V3a for Hiring Managers, always for Admins and Recruiters),
+ * upcoming first (soonest first), then past (latest first), with the
+ * state of the user's own scorecard.
+ */
+export async function listMyInterviews(user: PolicyUser, now = new Date(), db: Db | Tx = getDb()): Promise<MyInterview[]> {
+  const rows = await db
+    .select({
+      id: interviews.id,
+      startsAtUtc: interviews.startsAtUtc,
+      durationMinutes: interviews.durationMinutes,
+      status: interviews.status,
+      firstName: applications.firstName,
+      lastName: applications.lastName,
+      jobTitle: requisitions.title,
+      submittedAt: interviewScorecards.submittedAt,
+      reopenedAt: interviewScorecards.reopenedAt,
+      scorecardId: interviewScorecards.id,
+    })
+    .from(interviewParticipants)
+    .innerJoin(interviews, eq(interviews.id, interviewParticipants.interviewId))
+    .innerJoin(applications, eq(applications.id, interviews.applicationId))
+    .innerJoin(requisitions, eq(requisitions.id, applications.requisitionId))
+    .leftJoin(interviewScorecards, and(eq(interviewScorecards.interviewId, interviews.id), eq(interviewScorecards.interviewerId, user.id)))
+    .where(and(eq(interviewParticipants.userId, user.id), isNull(interviewParticipants.removedAt), ne(interviews.status, "CANCELLED"), scopeApplicationsFor(user)));
+  const upcoming = rows.filter((row) => row.startsAtUtc > now).sort((a, b) => a.startsAtUtc.getTime() - b.startsAtUtc.getTime());
+  const past = rows.filter((row) => row.startsAtUtc <= now).sort((a, b) => b.startsAtUtc.getTime() - a.startsAtUtc.getTime());
+  return [...upcoming, ...past].map((row) => ({
+    id: row.id,
+    startsAtUtc: row.startsAtUtc,
+    durationMinutes: row.durationMinutes,
+    status: row.status,
+    candidate: row.firstName && row.lastName ? `${row.firstName} ${row.lastName}` : null,
+    jobTitle: row.jobTitle,
+    scorecard: !row.scorecardId ? "NOT_STARTED" : row.submittedAt ? "SUBMITTED" : row.reopenedAt ? "REOPENED" : "DRAFT",
+  }));
 }
 
 /** The edit form's start in the interview's own zone. */

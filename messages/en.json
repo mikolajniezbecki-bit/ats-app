@@ -41,7 +41,8 @@
       "jobs": "Jobs",
       "requisitions": "Requisitions",
       "approvals": "My approvals",
-      "allApprovals": "All pending approvals"
+      "allApprovals": "All pending approvals",
+      "myInterviews": "My interviews"
     },
     "signOut": "Sign out"
   },
@@ -1150,6 +1151,34 @@
     "entry": "{interviewer}: {rating} of 5, {thumbs}",
     "notes": "Notes",
     "reopen": "Reopen",
-    "reopenFailed": "The scorecard could not be reopened."
+    "reopenFailed": "The scorecard could not be reopened.",
+    "draft": "draft"
+  },
+  "Offers": {
+    "title": "Offers",
+    "empty": "No offers yet.",
+    "entry": "{jobTitle}: {salary} {currency}, start {startDate}",
+    "approval": "Approval: {status}",
+    "response": "Candidate response: {response}"
+  },
+  "MyInterviews": {
+    "title": "My interviews",
+    "description": "Interviews you take part in, upcoming first.",
+    "empty": "You have no interviews.",
+    "columns": {
+      "when": "When",
+      "candidate": "Candidate",
+      "job": "Job",
+      "status": "Status",
+      "scorecard": "Your scorecard"
+    },
+    "scorecardStates": {
+      "NOT_STARTED": "Not started",
+      "DRAFT": "Draft",
+      "SUBMITTED": "Submitted",
+      "REOPENED": "Reopened"
+    },
+    "open": "Scorecard",
+    "anonymized": "Anonymized candidate"
   }
 }
