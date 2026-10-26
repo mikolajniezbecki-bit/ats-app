@@ -8,6 +8,7 @@ import { z } from "zod";
 import { type Db, type Tx, getDb } from "../db";
 import { USER_ROLES, auditLog, session, users } from "../db/schema";
 import { logger } from "../logger";
+import { APPROVER_ROLES, pendingApprovalsOf } from "../approvals/pending";
 
 export type Role = (typeof USER_ROLES)[number];
 export type UserRow = typeof users.$inferSelect;
@@ -35,11 +36,23 @@ export type UserError =
   | "notFound"
   | "ownRole"
   | "ownDeactivation"
-  | "lastAdmin";
+  | "lastAdmin"
+  | "pendingApprovals";
 
 export type UserResult =
   | { ok: true; user: UserRow; changed: boolean }
-  | { ok: false; reason: UserError; fields?: Record<string, string> };
+  | { ok: false; reason: UserError; fields?: Record<string, string>; pending?: string[] };
+
+/**
+ * A5: refuses while the user is the approver of a pending requisition or
+ * offer. Runs under the user's FOR UPDATE lock; submit, re-approval and
+ * reassignment hold the chosen approver's row FOR SHARE, so a concurrent
+ * one either commits first (and is counted here) or sees the change.
+ */
+async function pendingApprovalsBlock(tx: Tx, userId: string): Promise<UserResult | undefined> {
+  const pending = await pendingApprovalsOf(tx, userId);
+  return pending.length > 0 ? { ok: false, reason: "pendingApprovals", pending } : undefined;
+}
 
 function fieldErrors(error: z.ZodError): Record<string, string> {
   const fields: Record<string, string> = {};
@@ -114,8 +127,10 @@ async function lockUser(tx: Tx, id: string): Promise<UserRow | undefined> {
 
 /**
  * Changes the role and/or name. An Admin can't change their own role; the
- * last active Admin can't be demoted. The same role is a no-op; a name
- * change writes no audit row (names are personal data, M2).
+ * last active Admin can't be demoted; the approver of pending items can't
+ * become a Recruiter or Interviewer (A5), but Hiring Manager ↔ Admin is
+ * fine. The same role is a no-op; a name change writes no audit row (names
+ * are personal data, M2).
  */
 export async function updateUser(tx: Tx, actorUserId: string, id: string, input: unknown): Promise<UserResult> {
   const parsed = updateUserSchema.safeParse(input);
@@ -128,6 +143,10 @@ export async function updateUser(tx: Tx, actorUserId: string, id: string, input:
   const roleChanges = parsed.data.role !== undefined && parsed.data.role !== user.role;
   if (roleChanges && user.id === actorUserId) return { ok: false, reason: "ownRole" };
   if (roleChanges && (await isLastActiveAdmin(tx, user))) return { ok: false, reason: "lastAdmin" };
+  if (roleChanges && !(APPROVER_ROLES as readonly Role[]).includes(parsed.data.role!)) {
+    const blocked = await pendingApprovalsBlock(tx, id);
+    if (blocked) return blocked;
+  }
   const nameChanges = parsed.data.name !== undefined && parsed.data.name !== user.name;
   if (!roleChanges && !nameChanges) return { ok: true, user, changed: false };
 
@@ -146,7 +165,8 @@ export async function updateUser(tx: Tx, actorUserId: string, id: string, input:
 /**
  * Deactivates the user and deletes all their sessions in one transaction,
  * so they are signed out on their next request (AU5). Other references stay
- * (§5.1). An already inactive user is left as is.
+ * (§5.1), except that the approver of pending items is refused until they
+ * are reassigned (A5). An already inactive user is left as is.
  */
 export async function deactivateUser(tx: Tx, actorUserId: string, id: string): Promise<UserResult> {
   await lockActiveAdmins(tx);
@@ -155,6 +175,8 @@ export async function deactivateUser(tx: Tx, actorUserId: string, id: string): P
   if (!user.isActive) return { ok: true, user, changed: false };
   if (user.id === actorUserId) return { ok: false, reason: "ownDeactivation" };
   if (await isLastActiveAdmin(tx, user)) return { ok: false, reason: "lastAdmin" };
+  const blocked = await pendingApprovalsBlock(tx, id);
+  if (blocked) return blocked;
 
   const [updated] = await tx.update(users).set({ isActive: false }).where(eq(users.id, id)).returning();
   const deleted = await tx.delete(session).where(eq(session.userId, id)).returning({ id: session.id });

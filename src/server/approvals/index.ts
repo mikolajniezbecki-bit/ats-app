@@ -15,7 +15,10 @@ import { listActiveUsers } from "../users";
 import { type ApprovalResource, type PolicyUser, can } from "../policy/permissions";
 import { type FieldErrors, L2_FIELDS, type RequisitionRow, findVisibleRequisition, isFirstApprovalPending, submissionErrors } from "../requisitions";
 
-export const APPROVER_ROLES = ["HIRING_MANAGER", "ADMIN"] as const;
+import { APPROVER_ROLES } from "./pending";
+
+export { APPROVER_ROLES, pendingApprovalsOf } from "./pending";
+
 export const MAX_COMMENT_LENGTH = 2_000;
 
 type SubjectType = "REQUISITION" | "OFFER";
@@ -28,6 +31,7 @@ export type ApprovalResult =
 
 const comment = z.string().trim().max(MAX_COMMENT_LENGTH);
 const submitSchema = z.object({ approverId: z.string(), version: z.number().int().min(1) }).strict();
+const reassignSchema = z.object({ approverId: z.string(), reason: z.string(), version: z.number().int().min(1) }).strict();
 const decisionSchema = z.object({ version: z.number().int().min(1), comment: comment.optional() }).strict();
 
 function zodFields(error: z.ZodError): FieldErrors {
@@ -42,11 +46,14 @@ function zodFields(error: z.ZodError): FieldErrors {
 /**
  * A1, A2: the approver is an active Hiring Manager or Admin and isn't the
  * submitter, whatever the submitter's role. Returns an error code or undefined.
+ * A5: the approver's row stays locked FOR SHARE until the transaction ends,
+ * so a concurrent deactivation or role change (which locks it FOR UPDATE)
+ * waits and then sees the new pending item.
  */
 export async function approverError(tx: Tx, approverId: string, submitterId: string): Promise<string | undefined> {
   if (!z.uuid().safeParse(approverId).success) return "approverInvalid";
   if (approverId === submitterId) return "approverSelf";
-  const [approver] = await tx.select({ role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, approverId));
+  const [approver] = await tx.select({ role: users.role, isActive: users.isActive }).from(users).where(eq(users.id, approverId)).for("share");
   if (!approver || !approver.isActive || !(APPROVER_ROLES as readonly string[]).includes(approver.role)) return "approverInvalid";
   return undefined;
 }
@@ -54,9 +61,20 @@ export async function approverError(tx: Tx, approverId: string, submitterId: str
 /** A7: one approval event per action, in the action's transaction. */
 export async function recordApprovalEvent(
   tx: Tx,
-  event: { subjectType: SubjectType; subjectId: string; event: ApprovalEvent; actorUserId: string | null; fromApproverId?: string | null; toApproverId?: string | null; comment?: string | null },
+  event: {
+    subjectType: SubjectType;
+    subjectId: string;
+    event: ApprovalEvent;
+    actorUserId: string | null;
+    fromApproverId?: string | null;
+    toApproverId?: string | null;
+    comment?: string | null;
+    /** The event time; the database clock unless a task runs on the tick's `now` (T3). */
+    createdAt?: Date;
+  },
 ): Promise<void> {
   await tx.insert(approvalEvents).values({
+    ...(event.createdAt ? { createdAt: event.createdAt } : {}),
     subjectType: event.subjectType,
     subjectId: event.subjectId,
     event: event.event,
@@ -193,6 +211,89 @@ export async function withdrawRequisition(tx: Tx, user: PolicyUser, id: string, 
   await stateHistory(tx, id, "PENDING_APPROVAL", requisition.state, user.id, note);
   logger.info({ requisition_id: id, user_id: user.id, re_approval: current.approvedAt !== null }, "requisition withdrawn");
   return { ok: true, requisition };
+}
+
+/**
+ * A4: a Recruiter or an Admin hands a pending requisition (first approval or
+ * re-approval) to another active Hiring Manager or Admin, with a reason.
+ * Only `approver_id` changes: the submitter and submission time stay, so A2
+ * still compares with the original submitter. The new approver gets the
+ * approval request (E7); the previous one gets nothing.
+ */
+export async function reassignRequisition(tx: Tx, user: PolicyUser, id: string, input: unknown): Promise<ApprovalResult> {
+  const current = await findVisibleRequisition(user, id, tx);
+  if (!current) return { ok: false, reason: "notFound" };
+  if (!can(user, "approval.reassign")) return { ok: false, reason: "forbidden" };
+  if (current.state !== "PENDING_APPROVAL" || !current.submittedByUserId || !current.approverId) return { ok: false, reason: "notPending" };
+  const parsed = reassignSchema.safeParse(input);
+  if (!parsed.success) {
+    const fields = zodFields(parsed.error);
+    if (fields.reason) fields.reason = "reasonRequired";
+    return { ok: false, reason: "invalid", fields };
+  }
+  const { approverId, version } = parsed.data;
+  const reason = parsed.data.reason.trim();
+  const fields: FieldErrors = {};
+  if (reason.length === 0 || reason.length > MAX_COMMENT_LENGTH) fields.reason = "reasonRequired";
+  if (approverId === current.approverId) fields.approverId = "approverCurrent";
+  else {
+    const approver = await approverError(tx, approverId, current.submittedByUserId);
+    if (approver) fields.approverId = approver === "approverSelf" ? "approverSubmitter" : approver;
+  }
+  if (Object.keys(fields).length > 0) return { ok: false, reason: "invalid", fields };
+  if (current.version !== version) return { ok: false, reason: "stale" };
+
+  const requisition = await transition(tx, id, version, "PENDING_APPROVAL", { approverId });
+  if (!requisition) return { ok: false, reason: "stale" };
+  await recordApprovalEvent(tx, {
+    subjectType: "REQUISITION",
+    subjectId: id,
+    event: "REASSIGNED",
+    actorUserId: user.id,
+    fromApproverId: current.approverId,
+    toApproverId: approverId,
+    comment: reason,
+  });
+  await queueRequisitionApprovalRequest(tx, id);
+  logger.info({ requisition_id: id, user_id: user.id, from_approver_id: current.approverId, to_approver_id: approverId }, "requisition reassigned");
+  return { ok: true, requisition };
+}
+
+/**
+ * The reassignment picker (A4): active Hiring Managers and Admins other than
+ * the submitter (A2) and the current approver.
+ */
+export async function listReassignOptions(requisition: RequisitionRow, db: Db | Tx = getDb()): Promise<{ id: string; name: string }[]> {
+  const approvers = await listActiveUsers({ roles: APPROVER_ROLES }, db);
+  return approvers
+    .filter((approver) => approver.id !== requisition.submittedByUserId && approver.id !== requisition.approverId)
+    .map(({ id, name }) => ({ id, name }));
+}
+
+/**
+ * "All pending approvals" (A4, A5): every requisition awaiting a decision,
+ * with its approver and submitter, oldest submission first, so the items
+ * blocking a deactivation can be found and reassigned.
+ */
+export async function listAllPendingRequisitionApprovals(db: Db | Tx = getDb()) {
+  const approver = alias(users, "approver");
+  const submitter = alias(users, "submitter");
+  return db
+    .select({
+      id: requisitions.id,
+      reqNumber: requisitions.reqNumber,
+      title: requisitions.title,
+      approver: approver.name,
+      approverActive: approver.isActive,
+      submitter: submitter.name,
+      submittedAt: requisitions.submittedAt,
+      reApproval: sql<boolean>`${requisitions.approvedAt} is not null`,
+    })
+    .from(requisitions)
+    .leftJoin(approver, eq(approver.id, requisitions.approverId))
+    .leftJoin(submitter, eq(submitter.id, requisitions.submittedByUserId))
+    .where(eq(requisitions.state, "PENDING_APPROVAL"))
+    .orderBy(asc(requisitions.submittedAt), asc(requisitions.reqNumber));
 }
 
 /** The four L2 fields as saved in `previous_l2_values_json` (snake_case, §7). */

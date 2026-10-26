@@ -40,7 +40,8 @@
       "outbox": "Outbox",
       "jobs": "Jobs",
       "requisitions": "Requisitions",
-      "approvals": "My approvals"
+      "approvals": "My approvals",
+      "allApprovals": "All pending approvals"
     },
     "signOut": "Sign out"
   },
@@ -198,7 +199,9 @@
       "ownRole": "You can't change your own role.",
       "ownDeactivation": "You can't deactivate yourself.",
       "lastAdmin": "There must be at least one active Admin.",
-      "failed": "The change could not be saved. Please try again."
+      "failed": "The change could not be saved. Please try again.",
+      "pendingApprovalsOne": "This user is the approver of 1 pending item. Reassign it first: {items}",
+      "pendingApprovals": "This user is the approver of {count} pending items. Reassign them first: {items}"
     }
   },
   "Statuses": {
@@ -310,6 +313,10 @@
     "approvalRequest": {
       "subject": "Approval needed: [[REQ_NUMBER]] [[JOB_TITLE]]",
       "body": "Hello,\n\n{submitter} has submitted a requisition for your approval.\n\n- Requisition: **[[REQ_NUMBER]]** [[JOB_TITLE]]\n- Hiring manager: [[HIRING_MGR_FULL_NAME]]\n- Submitted by: {submitter}\n\nReview it here:\n{link}\n\nThis is an automatic message from the ATS."
+    },
+    "approvalReminder": {
+      "subject": "Reminder: approval needed: [[REQ_NUMBER]] [[JOB_TITLE]]",
+      "body": "Hello,\n\nA requisition is still waiting for your approval.\n\n- Requisition: **[[REQ_NUMBER]]** [[JOB_TITLE]]\n- Hiring manager: [[HIRING_MGR_FULL_NAME]]\n- Submitted by: {submitter}\n- Days waiting: {days}\n\nReview it here:\n{link}\n\nThis is an automatic message from the ATS."
     }
   },
   "EmailStatuses": {
@@ -538,7 +545,10 @@
       "closeCommentRequired": "Add a comment to close.",
       "reopenCommentRequired": "Add a comment to reopen.",
       "openingsBelowHired": "Openings can't be lower than the {hired} already hired.",
-      "reapprovalApproverRequired": "This change needs re-approval. Choose an approver."
+      "reapprovalApproverRequired": "This change needs re-approval. Choose an approver.",
+      "reasonRequired": "Add a reason for the reassignment.",
+      "approverSubmitter": "The submitter can't approve their own submission.",
+      "approverCurrent": "This user is already the approver."
     },
     "lifecycle": {
       "title": "Lifecycle",
@@ -692,7 +702,11 @@
       "comment": "Comment",
       "commentOptional": "Comment (optional)",
       "cancel": "Cancel",
-      "failed": "The action could not be completed. Try again."
+      "failed": "The action could not be completed. Try again.",
+      "reassign": "Reassign",
+      "newApprover": "New approver",
+      "reason": "Reason",
+      "confirmReassign": "Reassign"
     },
     "reApproval": "Re-approval",
     "changes": "Changes to approve",
@@ -702,6 +716,18 @@
       "departmentId": "Department",
       "hiringManagerId": "Hiring manager",
       "legalEntityId": "Legal entity"
+    },
+    "all": {
+      "title": "All pending approvals",
+      "description": "Every requisition waiting for a decision, oldest submission first. Reassign an item from its page.",
+      "empty": "Nothing is waiting for approval.",
+      "approver": "Approver",
+      "daysWaiting": "Days waiting",
+      "inactive": "{name} (inactive)"
+    },
+    "tabs": {
+      "mine": "My approvals",
+      "all": "All pending approvals"
     }
   },
   "Careers": {
