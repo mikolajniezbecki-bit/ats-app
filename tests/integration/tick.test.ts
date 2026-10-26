@@ -103,7 +103,13 @@ describe("tick authentication", () => {
 
 describe("tick", () => {
   it("W4: queues the due daily tasks and responds only after both runs are COMPLETED", async () => {
-    await startWorker(handlers, { pollingIntervalSeconds: 0.5 });
+    // The production daily-task wrapper with an empty approvals.remind run:
+    // since task 31 the real run queues a reminder (and an email.send job the
+    // tick waits for) for every pending requisition other files left in this
+    // worker's database, so the wait depended on that leftover data. The
+    // reminders themselves are tested through the tick in
+    // approval-reassignment.test.ts.
+    await startWorker({ ...handlers, ...emailHandler, "approvals.remind": dailyTaskHandler(async () => undefined) }, { pollingIntervalSeconds: 0.5 });
     const testNow = "2031-01-06T09:00:00Z"; // 10:00 in Warsaw
 
     const { status, body } = await tick({ "x-test-now": testNow });

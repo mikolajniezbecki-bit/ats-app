@@ -1092,6 +1092,64 @@
         "participantInvalid": "Choose active Interviewers, Recruiters or Admins, or a Hiring Manager of this requisition.",
         "invalid": "Check this value."
       }
-    }
+    },
+    "scorecard": "Scorecard"
+  },
+  "Scorecards": {
+    "title": "Scorecard",
+    "interview": "Interview",
+    "job": "Job",
+    "candidate": "Candidate",
+    "anonymized": "Anonymized candidate",
+    "thumbs": "Recommendation",
+    "thumbsUp": "Thumbs up",
+    "thumbsDown": "Thumbs down",
+    "rating": "Overall rating",
+    "ratingOption": "{rating} of 5",
+    "comments": "Comments (optional)",
+    "notes": "Notes (PDF, optional)",
+    "notesHelp": "One PDF of at most {max} MB. Attach it after saving the draft.",
+    "currentNotes": "Attached notes",
+    "removeNotes": "Remove notes",
+    "uploadNotes": "Attach notes",
+    "saveDraft": "Save draft",
+    "submit": "Submit",
+    "saved": "Draft saved.",
+    "submittedAt": "Submitted",
+    "readOnly": "This scorecard has been submitted and can't be changed.",
+    "reopened": "An Admin reopened this scorecard. Change it and submit it again.",
+    "failed": "The action could not be completed. Try again.",
+    "errors": {
+      "invalid": "Check the highlighted fields.",
+      "notFound": "This interview or scorecard no longer exists.",
+      "forbidden": "Only the interview's participants can give feedback on it.",
+      "notParticipant": "Only the interview's participants can give feedback on it.",
+      "stale": "This record was changed by someone else. Reload and try again.",
+      "notStarted": "Feedback can be given once the interview has started.",
+      "interviewClosed": "Feedback can't be given for a cancelled or no-show interview.",
+      "applicationClosed": "This application is closed, so feedback can no longer be submitted.",
+      "submitted": "This scorecard has been submitted and can't be changed.",
+      "notSubmitted": "Only a submitted scorecard can be reopened.",
+      "applicationFinal": "Feedback on a closed application can't be reopened, because it couldn't be submitted again.",
+      "noDraft": "Save the draft before attaching notes.",
+      "fields": {
+        "thumbsRequired": "Choose thumbs up or thumbs down.",
+        "ratingRequired": "Choose a rating from 1 to 5.",
+        "commentsTooLong": "Comments are at most 5,000 characters.",
+        "invalid": "Check this value."
+      }
+    },
+    "fileEmpty": "The file is empty.",
+    "fileTooLarge": "The file is larger than {max} MB."
+  },
+  "Feedback": {
+    "title": "Feedback",
+    "empty": "No feedback yet.",
+    "average": "Average rating: {average}",
+    "thumbs": "{up} thumbs up, {down} thumbs down",
+    "entry": "{interviewer}: {rating} of 5, {thumbs}",
+    "notes": "Notes",
+    "reopen": "Reopen",
+    "reopenFailed": "The scorecard could not be reopened."
   }
 }

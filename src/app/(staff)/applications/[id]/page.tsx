@@ -8,10 +8,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ApplicationTimeline } from "@/components/applications/application-timeline";
 import { InterviewsPanel } from "@/components/applications/interviews-panel";
+import { ReopenScorecardButton } from "@/components/applications/reopen-scorecard-button";
 import { StatusControl } from "@/components/applications/status-control";
 import { LocalTime } from "@/components/local-time";
 import { PdfViewer } from "@/components/pdf-viewer";
 import { getApplicationDetail } from "@/server/applications";
+import { getApplicationFeedback } from "@/server/applications/feedback";
 import { APPLICATION_STATUSES } from "@/server/db/schema";
 import { awaitingOutcome } from "@/server/domain/interviews";
 import { isOpenStatus } from "@/server/domain/pipeline";
@@ -50,6 +52,9 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
     participants: interview.participants,
   }));
   const participantOptions = canManageInterviews ? await listParticipantOptions(application.id) : [];
+  const feedback = await getApplicationFeedback(user, application.id);
+  const f = await getTranslations("Feedback");
+  const sc = await getTranslations("Scorecards");
 
   const fields: [string, React.ReactNode][] = [
     ...(anonymized
@@ -198,8 +203,42 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
           participantOptions={participantOptions}
           canManage={canManageInterviews}
           canSchedule={isOpenStatus(application.status) && !anonymized}
+          currentUserId={user.id}
         />
       </section>
+
+      {feedback && (
+        <section aria-labelledby="feedback-heading" className="space-y-2" data-testid="feedback">
+          <h2 id="feedback-heading" className="text-xl font-semibold">
+            {f("title")}
+          </h2>
+          {feedback.summary.count === 0 ? (
+            <p className="text-sm">{f("empty")}</p>
+          ) : (
+            <>
+              <p className="text-sm" data-testid="feedback-summary">
+                {f("average", { average: feedback.summary.average ?? "" })} · {f("thumbs", { up: feedback.summary.thumbsUp, down: feedback.summary.thumbsDown })}
+              </p>
+              <ul className="max-w-4xl space-y-2 text-sm">
+                {feedback.scorecards.map((scorecard) => (
+                  <li key={scorecard.id} className="rounded border p-3" data-testid={`scorecard-${scorecard.id}`}>
+                    <p className="font-medium">
+                      {f("entry", { interviewer: scorecard.interviewer, rating: scorecard.overallRating, thumbs: sc(scorecard.thumbsUp ? "thumbsUp" : "thumbsDown") })}
+                      {can(user, "scorecard.reopen") && <ReopenScorecardButton scorecardId={scorecard.id} />}
+                    </p>
+                    {scorecard.comments && <p className="whitespace-pre-wrap">{scorecard.comments}</p>}
+                    {scorecard.notesFileId && (
+                      <Link href={`/files/${scorecard.notesFileId}`} className="underline">
+                        {f("notes")}
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
 
       <section aria-labelledby="timeline-heading" className="space-y-2">
         <h2 id="timeline-heading" className="text-xl font-semibold">
