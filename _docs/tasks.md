@@ -579,7 +579,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - A second offer is refused while the first is active; after it is declined, a new offer can be created and the old one is read-only.
 - Discarding from `DRAFT` sets `WITHDRAWN` and writes the audit entry; discarding an `APPROVED` offer is refused.
 
-## 36. Offer approval
+## 36. Offer approval ✅
 
 **Issue:** [#42](https://github.com/mikolajniezbecki-bit/ats-app/issues/42)
 

@@ -20,6 +20,7 @@ import { getApplicationFeedback } from "@/server/applications/feedback";
 import { getInterviewerApplication } from "@/server/applications/views";
 import { CURRENCIES } from "@/server/domain/offers/currencies";
 import { listOffersForPage, offerCreateBlock } from "@/server/offers";
+import { listOfferApproverOptions } from "@/server/approvals/offers";
 import { listActiveTemplates } from "@/server/templates";
 import { APPLICATION_STATUSES } from "@/server/db/schema";
 import { awaitingOutcome } from "@/server/domain/interviews";
@@ -71,6 +72,8 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
   const canManageOffers = can(user, "offer.manage");
   const offerTemplates = canManageOffers ? await listActiveTemplates({ type: "OFFER" }) : [];
   const createBlock = canManageOffers ? await offerCreateBlock(application.id) : undefined;
+  // A1, A4: the approver pickers (the panel leaves out who can't approve).
+  const offerApprovers = canManageOffers || can(user, "approval.reassign") ? await listOfferApproverOptions([]) : [];
   const sc = await getTranslations("Scorecards");
 
   const fields: [string, React.ReactNode][] = [
@@ -82,10 +85,18 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
         ] as [string, React.ReactNode][])),
     [
       d("fields.requisition"),
-      <Link key="requisition" href={`/requisitions/${requisition.id}`} className="underline">
-        {requisition.reqNumber} · {requisition.title}
-      </Link>,
+      // V3b: an offer approver outside V3a sees the header but no requisition pages.
+      requisition.visible ? (
+        <Link key="requisition" href={`/requisitions/${requisition.id}`} className="underline">
+          {requisition.reqNumber} · {requisition.title}
+        </Link>
+      ) : (
+        `${requisition.reqNumber} · ${requisition.title}`
+      ),
     ],
+    [d("fields.department"), requisition.department],
+    [d("fields.location"), requisition.location],
+    [d("fields.openings"), String(requisition.openingsCount)],
     [d("fields.status"), statuses(application.status)],
     [
       d("fields.score"),
@@ -107,9 +118,11 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
           {d("failedBanner")}
         </p>
       )}
-      <Link href={`/requisitions/${requisition.id}/applications`} className="text-sm underline">
-        {t("listTitle", { reqNumber: requisition.reqNumber, title: requisition.title })}
-      </Link>
+      {requisition.visible && (
+        <Link href={`/requisitions/${requisition.id}/applications`} className="text-sm underline">
+          {t("listTitle", { reqNumber: requisition.reqNumber, title: requisition.title })}
+        </Link>
+      )}
       <h1 className="text-2xl font-semibold">{name}</h1>
       {anonymized && <p className="text-sm">{d("anonymizedNotice")}</p>}
       <dl className="grid max-w-3xl grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
@@ -279,8 +292,21 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
               createdAt: offer.createdAt.toISOString(),
               frozen: offer.frozen,
               editable: offer.editable,
+              needsReapproval: offer.needsReapproval,
               discardable: offer.discardable,
+              submittable: offer.submittable,
+              decidable: offer.decidable,
+              withdrawable: offer.withdrawable,
+              reassignable: offer.reassignable,
+              approverId: offer.approverId,
+              submittedByUserId: offer.submittedByUserId,
+              approver: offer.approver,
+              submitter: offer.submitter,
+              submittedAt: offer.submittedAt?.toISOString() ?? null,
+              latestEvent: offer.latestEvent ? { ...offer.latestEvent, createdAt: offer.latestEvent.createdAt.toISOString() } : null,
             }))}
+            approvers={offerApprovers}
+            currentUserId={user.id}
             createBlock={canManageOffers ? (createBlock ? o(`errors.${createBlock}`) : "") : null}
             templates={offerTemplates}
             currencies={CURRENCIES}

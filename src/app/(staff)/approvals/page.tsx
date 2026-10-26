@@ -2,11 +2,14 @@
 // requisitions in PENDING_APPROVAL whose approver is the current user.
 // "All pending approvals" (`?view=all`, `approval.reassign`): every pending
 // requisition with its approver, so Recruiters and Admins can find what to
-// reassign, also before a deactivation. Offers are added in task 36.
+// reassign, also before a deactivation. Pending offers are listed below the
+// requisitions in both views (task 36) and link to the application page,
+// where the approver decides.
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { forbidden } from "next/navigation";
 import { listAllPendingRequisitionApprovals, listMyRequisitionApprovals } from "@/server/approvals";
+import { listAllPendingOfferApprovals, listMyOfferApprovals } from "@/server/approvals/offers";
 import { warsawRunDate } from "@/server/domain/daily-tasks";
 import { requireUser } from "@/server/policy/guards";
 import { can } from "@/server/policy/permissions";
@@ -19,6 +22,56 @@ const utc = (date: Date | null) => (date ? `${date.toISOString().slice(0, 16).re
 function daysWaiting(since: Date | null, today: string): number | null {
   if (!since) return null;
   return Math.round((Date.parse(today) - Date.parse(warsawRunDate(since))) / 86_400_000);
+}
+
+type OfferRow = Awaited<ReturnType<typeof listAllPendingOfferApprovals>>[number];
+
+/** The pending offers table (task 36): number, job title, candidate, people, time and days waiting. */
+async function OfferTable({ rows, showApprover, today }: { rows: OfferRow[]; showApprover: boolean; today: string }) {
+  const t = await getTranslations("Approvals");
+  return (
+    <section aria-labelledby="offer-approvals-heading" className="space-y-2">
+      <h2 id="offer-approvals-heading" className="text-xl font-semibold">
+        {t("offers.title")}
+      </h2>
+      {rows.length === 0 ? (
+        <p className="text-sm">{t("offers.empty")}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="py-1 pr-4">{t("columns.reqNumber")}</th>
+                <th className="py-1 pr-4">{t("offers.jobTitle")}</th>
+                <th className="py-1 pr-4">{t("offers.candidate")}</th>
+                {showApprover && <th className="py-1 pr-4">{t("all.approver")}</th>}
+                <th className="py-1 pr-4">{t("columns.submitter")}</th>
+                <th className="py-1 pr-4">{t("columns.submittedAt")}</th>
+                <th className="py-1 pr-4">{t("all.daysWaiting")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-b" data-testid={`offer-approval-${row.id}`}>
+                  <td className="py-2 pr-4">
+                    <Link href={`/applications/${row.applicationId}`} className="underline">
+                      {row.reqNumber}
+                    </Link>
+                  </td>
+                  <td className="py-2 pr-4">{row.jobTitle}</td>
+                  <td className="py-2 pr-4">{row.candidate}</td>
+                  {showApprover && <td className="py-2 pr-4">{row.approver && (row.approverActive ? row.approver : t("all.inactive", { name: row.approver }))}</td>}
+                  <td className="py-2 pr-4">{row.submitter}</td>
+                  <td className="py-2 pr-4">{utc(row.submittedAt)}</td>
+                  <td className="py-2 pr-4">{daysWaiting(row.submittedAt, today)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export default async function ApprovalsPage({ searchParams }: PageProps<"/approvals">) {
@@ -47,6 +100,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps<"/approv
 
   if (all) {
     const rows = await listAllPendingRequisitionApprovals();
+    const offerRows = await listAllPendingOfferApprovals();
     const today = warsawRunDate(new Date());
     return (
       <main className="flex flex-1 flex-col gap-6 p-8">
@@ -90,11 +144,13 @@ export default async function ApprovalsPage({ searchParams }: PageProps<"/approv
             </table>
           </div>
         )}
+        <OfferTable rows={offerRows} showApprover today={today} />
       </main>
     );
   }
 
   const rows = await listMyRequisitionApprovals(user);
+  const myOffers = await listMyOfferApprovals(user);
   return (
     <main className="flex flex-1 flex-col gap-6 p-8">
       {tabs}
@@ -144,6 +200,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps<"/approv
           </table>
         </div>
       )}
+      <OfferTable rows={myOffers} showApprover={false} today={warsawRunDate(new Date())} />
     </main>
   );
 }
