@@ -299,7 +299,12 @@ export async function listApplicationScorecards(user: PolicyUser, applicationId:
   return rows.map((row) => ({ ...row, notesFileId: notes.find((file) => file.ownerId === row.id)?.id ?? null, own: row.interviewerId === user.id }));
 }
 
-/** The scorecard page (I9): the interview, the job, the candidate and the caller's own scorecard; undefined unless the caller is on the panel. */
+/**
+ * The scorecard page (I9): the interview, the job, the candidate and the
+ * caller's own scorecard. Undefined (404, V9) unless the caller still has
+ * participant access (V5, V8): a current participant of a non-cancelled
+ * interview on an open, not anonymized application.
+ */
 export async function getScorecardPage(user: PolicyUser, interviewId: string, db: Db = getDb()) {
   if (!z.uuid().safeParse(interviewId).success) return undefined;
   const [row] = await db
@@ -316,15 +321,15 @@ export async function getScorecardPage(user: PolicyUser, interviewId: string, db
     .innerJoin(applications, eq(applications.id, interviews.applicationId))
     .innerJoin(requisitions, eq(requisitions.id, applications.requisitionId))
     .innerJoin(interviewParticipants, and(eq(interviewParticipants.interviewId, interviews.id), eq(interviewParticipants.userId, user.id)))
-    .where(eq(interviews.id, interviewId));
-  if (!row) return undefined;
+    .where(and(eq(interviews.id, interviewId), isNull(interviewParticipants.removedAt)));
+  if (!row || row.interview.status === "CANCELLED" || !isOpenStatus(row.applicationStatus) || row.anonymizedAt) return undefined;
   const [scorecard] = await db
     .select()
     .from(interviewScorecards)
     .where(and(eq(interviewScorecards.interviewId, interviewId), eq(interviewScorecards.interviewerId, user.id)));
   const [notes] = scorecard ? await currentNotes(db, scorecard.id) : [];
   const refused = writeRefusal({
-    participant: { active: user.isActive !== false, removed: row.removedAt !== null },
+    participant: { active: user.isActive !== false, removed: false },
     interview: row.interview,
     applicationOpen: isOpenStatus(row.applicationStatus) && row.anonymizedAt === null,
     scorecard,
@@ -333,7 +338,7 @@ export async function getScorecardPage(user: PolicyUser, interviewId: string, db
   return {
     interview: row.interview,
     jobTitle: row.jobTitle,
-    candidate: row.anonymizedAt ? null : `${row.firstName} ${row.lastName}`,
+    candidate: `${row.firstName} ${row.lastName}`,
     scorecard: scorecard ?? null,
     notesFileId: notes?.id ?? null,
     refusal: refused,

@@ -68,8 +68,9 @@ export const PERMISSIONS = {
   "application.read": ADMIN_RECRUITER,
   "scorecard.read": ADMIN_RECRUITER,
   "offer.read": ADMIN_RECRUITER,
-  // Admin and Recruiter see every file; other roles only scorecard notes
-  // they may read (V7, V11; resource rule below; task 34 adds V4/V6 files).
+  // Admin and Recruiter see every application and offer file; scorecard
+  // notes only when they may read the scorecard, for every role (V7, V11,
+  // I9; resource rule below; task 34 adds V4/V6 files).
   "file.view": EVERY_ROLE,
 } as const satisfies Record<string, readonly Role[]>;
 
@@ -111,9 +112,11 @@ const RESOURCE_RULES: Partial<Record<Action, ResourceRule>> = {
     return approval.pending && approval.approverId === user.id && approval.submittedByUserId !== user.id;
   },
   "file.view": (user, resource) => {
-    if (user.role === "ADMIN" || user.role === "RECRUITER") return true;
     const file = resource as FileResource;
-    return file.ownerType === "SCORECARD" && file.scorecardVisible === true;
+    // Scorecard notes follow the scorecard for every role: drafts stay
+    // private to their author (I9), also from Admins and Recruiters.
+    if (file.ownerType === "SCORECARD") return file.scorecardVisible === true;
+    return user.role === "ADMIN" || user.role === "RECRUITER";
   },
   "approval.withdraw": (user, resource) => {
     const approval = resource as ApprovalResource;

@@ -100,8 +100,8 @@ describe("can()", () => {
   });
 
   describe("file resource rule", () => {
-    it("V11: Admins and Recruiters view every file; Hiring Managers and Interviewers no application or offer file", () => {
-      for (const ownerType of ["APPLICATION", "OFFER", "SCORECARD"]) {
+    it("V11: Admins and Recruiters view every application and offer file; Hiring Managers and Interviewers none", () => {
+      for (const ownerType of ["APPLICATION", "OFFER"]) {
         expect(can(user("ADMIN"), "file.view", { ownerType })).toBe(true);
         expect(can(user("RECRUITER"), "file.view", { ownerType })).toBe(true);
       }
@@ -111,7 +111,11 @@ describe("can()", () => {
       }
     });
 
-    it("V7: other roles view scorecard notes only when the scorecard is visible to them", () => {
+    it("V7, I9: every role views scorecard notes only when the scorecard is visible to them (drafts stay private)", () => {
+      for (const role of ["ADMIN", "RECRUITER"] as const) {
+        expect(can(user(role), "file.view", { ownerType: "SCORECARD", scorecardVisible: true })).toBe(true);
+        expect(can(user(role), "file.view", { ownerType: "SCORECARD", scorecardVisible: false })).toBe(false);
+      }
       expect(can(user("INTERVIEWER"), "file.view", { ownerType: "SCORECARD", scorecardVisible: true })).toBe(true);
       expect(can(user("INTERVIEWER"), "file.view", { ownerType: "SCORECARD", scorecardVisible: false })).toBe(false);
       expect(can(user("INTERVIEWER"), "file.view", { ownerType: "SCORECARD" })).toBe(false);

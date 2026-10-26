@@ -15,7 +15,7 @@ export type FileLinkResult = { status: "ok"; link: SignedUrl } | { status: "forb
 
 const fileId = z.uuid();
 
-/** V7: the scorecard is in the user's scope and is submitted or their own (drafts stay private). */
+/** V7, I9: the scorecard is in the user's scope and is submitted or their own; drafts stay private, also from Admins and Recruiters. */
 async function scorecardVisibleTo(user: PolicyUser, scorecardId: string): Promise<boolean> {
   const [row] = await getDb()
     .select({ id: interviewScorecards.id })

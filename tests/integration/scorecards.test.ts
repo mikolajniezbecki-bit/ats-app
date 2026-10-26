@@ -11,10 +11,12 @@ import { PUT as saveDraft } from "@/app/api/interviews/[id]/scorecard/route";
 import { DELETE as deleteNotes, PUT as putNotes } from "@/app/api/interviews/[id]/scorecard/notes/route";
 import { POST as submit } from "@/app/api/interviews/[id]/scorecard/submit/route";
 import { POST as reopen } from "@/app/api/scorecards/[id]/reopen/route";
+import { getStorage } from "@/server/adapters/storage";
 import { getApplicationFeedback } from "@/server/applications/feedback";
 import { type Tx, getDb, withTransaction } from "@/server/db";
-import { auditLog, files, interviewParticipants, interviewScorecards, interviews } from "@/server/db/schema";
+import { applications, auditLog, files, interviewParticipants, interviewScorecards, interviews } from "@/server/db/schema";
 import { changeApplicationStatus } from "@/server/pipeline";
+import { getScorecardPage } from "@/server/scorecards";
 import { getSetting } from "@/server/settings";
 import { insertApplication, insertRequisition, insertUser } from "./fixtures";
 import { ORIGIN, signedIn } from "./sessions";
@@ -186,7 +188,12 @@ describe("writing", () => {
     const second = await upload(interview.id, VALID_PDF, a);
     const { fileId: secondId } = await second.json();
     const stored = await getDb().select().from(files).where(and(eq(files.ownerType, "SCORECARD"), eq(files.ownerId, scorecard.id)));
-    expect(stored.find((file) => file.id === firstId)?.deletedAt).toBeInstanceOf(Date);
+    const replaced = stored.find((file) => file.id === firstId)!;
+    expect(replaced.deletedAt).toBeInstanceOf(Date);
+    // Q6: the replaced blob itself is gone from storage, not only marked.
+    await expect(getStorage().download(replaced.storageKey)).rejects.toThrow();
+    const current = stored.find((file) => file.id === secondId)!;
+    expect((await getStorage().download(current.storageKey)).length).toBe(VALID_PDF.length);
     expect(stored.find((file) => file.id === secondId)).toMatchObject({ kind: "INTERVIEW_NOTES", deletedAt: null });
 
     expect((await deleteNotes(new Request(`${ORIGIN}/api/x`, { method: "DELETE", headers: { cookie: a.cookie } }), ctx(interview.id))).status).toBe(200);
@@ -262,6 +269,54 @@ describe("visibility", () => {
     expect((await get(fileUrl as Handler, fileId, await signedIn("RECRUITER"))).status).toBe(200);
     expect((await json(submit as Handler, "POST", interview.id, GOOD, a)).status).toBe(200);
     expect((await get(fileUrl as Handler, fileId, a)).status).toBe(200);
+  });
+
+  it("I9, V11: a draft's notes are private to their author, also from Recruiters and Admins, until it is submitted", async () => {
+    const a = await signedIn("INTERVIEWER");
+    const recruiter = await signedIn("RECRUITER");
+    const admin = await signedIn("ADMIN");
+    const { interview } = await panel([a.userId]);
+    expect((await json(saveDraft as Handler, "PUT", interview.id, GOOD, a)).status).toBe(200);
+    const { fileId } = await (await upload(interview.id, VALID_PDF, a)).json();
+    expect((await get(fileUrl as Handler, fileId, a)).status).toBe(200);
+    for (const session of [recruiter, admin]) expect((await get(fileUrl as Handler, fileId, session)).status).toBe(403);
+
+    expect((await json(submit as Handler, "POST", interview.id, GOOD, a)).status).toBe(200);
+    expect((await get(fileUrl as Handler, fileId, recruiter)).status).toBe(200);
+    // Reopened and not resubmitted: private again.
+    const [card] = await scorecardOf(interview.id, a.userId);
+    expect((await json(reopen as Handler, "POST", card.id, undefined, admin)).status).toBe(200);
+    expect((await get(fileUrl as Handler, fileId, recruiter)).status).toBe(403);
+  });
+
+  it("V8, V9: the scorecard page is 404 once access has ended: removed participant, cancelled interview, final application", async () => {
+    const page = (session: Session, interviewId: string) => getScorecardPage({ id: session.userId, role: "INTERVIEWER" }, interviewId);
+    const removed = await signedIn("INTERVIEWER");
+    const stays = await signedIn("INTERVIEWER");
+    const first = await panel([removed.userId, stays.userId]);
+    expect(await page(removed, first.interview.id)).toBeDefined();
+    await getDb().update(interviewParticipants).set({ removedAt: new Date() }).where(and(eq(interviewParticipants.interviewId, first.interview.id), eq(interviewParticipants.userId, removed.userId)));
+    expect(await page(removed, first.interview.id)).toBeUndefined();
+    expect((await page(stays, first.interview.id))?.candidate).toBeTruthy();
+
+    const cancelled = await panel([stays.userId]);
+    await getDb().update(interviews).set({ status: "CANCELLED" }).where(eq(interviews.id, cancelled.interview.id));
+    expect(await page(stays, cancelled.interview.id)).toBeUndefined();
+
+    const admin = await signedIn("ADMIN");
+    for (const toStatus of ["REJECTED", "WITHDRAWN"] as const) {
+      const final = await panel([stays.userId]);
+      expect((await json(submit as Handler, "POST", final.interview.id, GOOD, stays)).status).toBe(200);
+      const result = await withTransaction((tx) =>
+        changeApplicationStatus(tx, { applicationId: final.application.id, toStatus, version: final.application.version, actor: { id: admin.userId } }),
+      );
+      expect(result.ok).toBe(true);
+      expect(await page(stays, final.interview.id)).toBeUndefined();
+    }
+    const hired = await panel([stays.userId]);
+    await getDb().update(applications).set({ status: "HIRED" }).where(eq(applications.id, hired.application.id));
+    expect(await page(stays, hired.interview.id)).toBeUndefined();
+    expect(await page(await signedIn("INTERVIEWER"), first.interview.id)).toBeUndefined();
   });
 });
 
