@@ -126,7 +126,8 @@ describe("db:seed", () => {
 
   it("re-inserts a seeded record an Admin deleted", async () => {
     await onScratch("seed_reinsert", async (db) => {
-      await runSeed(db, seedConfig());
+      // Base seed only: a synthetic requisition (task 42) would reference the deleted location.
+      await runSeed(db, seedConfig(), { synthetic: false });
       await db.delete(masterData).where(and(eq(masterData.type, "LOCATION"), eq(masterData.code, "REMOTE")));
       expect((await runSeed(db, seedConfig())).masterData).toEqual({ inserted: 1, skipped: 14 });
     });
@@ -188,10 +189,12 @@ describe("db:seed dev passwords (AU7)", () => {
     // Seeds the worker database, which the auth handler uses; the shared
     // records it adds are removed again so other tests in this worker (e.g.
     // the one-active-stage-email index tests) see the database as before.
+    // Base seed only: synthetic requisitions would reference the templates
+    // removed afterwards (task 42).
     const domain = `seed-${Date.now()}.test`;
     const config = seedConfig({ devLogin: true, password: PASSWORD, domain });
     try {
-      await runSeed(getDb(), config);
+      await runSeed(getDb(), config, { synthetic: false });
       const signIn = (email: string, password: string) =>
         createAuth(config).handler(
           new Request(`${ORIGIN}/api/auth/sign-in/email`, {
@@ -205,7 +208,7 @@ describe("db:seed dev passwords (AU7)", () => {
         expect(response.status, local).toBe(200);
         expect(response.headers.getSetCookie().some((c) => c.startsWith("__Secure-better-auth.session_token="))).toBe(true);
       }
-      await runSeed(getDb(), { ...config, demoUser: { ...config.demoUser, password: "another-test-only-password" } });
+      await runSeed(getDb(), { ...config, demoUser: { ...config.demoUser, password: "another-test-only-password" } }, { synthetic: false });
       expect((await signIn(`recruiter@${domain}`, PASSWORD)).status).toBe(401);
       expect((await signIn(`recruiter@${domain}`, "another-test-only-password")).status).toBe(200);
     } finally {

@@ -2,15 +2,21 @@
 // the four demo users, in one transaction. Idempotent and non-destructive:
 // records are inserted only when missing by natural key and never updated,
 // so an Admin's changes survive a rerun. Demo users get a dev password only
-// when AUTH_DEV_LOGIN=true (AU7); a rerun updates it. Output is counts only
-// (M2): in Azure the db-seed job's stdout goes to Log Analytics.
+// when AUTH_DEV_LOGIN=true (AU7); a rerun updates it. Then, only while no
+// requisition exists, the synthetic demo data (task 42) in the same
+// transaction and under the same advisory lock; its uploaded files are
+// deleted again when the transaction fails. Output is counts only (M2): in
+// Azure the db-seed job's stdout goes to Log Analytics.
 import { and, eq, sql } from "drizzle-orm";
+import { type StorageService, getStorage } from "../../adapters/storage";
 import { setDevPassword } from "../../auth/dev-passwords";
+import { logger } from "../../logger";
 import type { AppConfig } from "../../config";
 import { SETTING_DEFINITIONS, SETTING_KEYS } from "../../settings";
 import type { Db, Tx } from "../index";
 import { auditLog, masterData, settings, templates, users } from "../schema";
 import { SEED_DEMO_USERS, SEED_MASTER_DATA, SEED_TEMPLATES } from "./data";
+import { type SyntheticCounts, seedSynthetic } from "./synthetic";
 
 export class SeedError extends Error {
   override name = "SeedError";
@@ -18,7 +24,12 @@ export class SeedError extends Error {
 
 export type SeedCounts = Record<"settings" | "masterData" | "templates" | "users", { inserted: number; skipped: number }> & {
   passwordsSet: number;
+  /** Absent when the synthetic step was turned off (`synthetic: false`). */
+  synthetic?: SyntheticCounts;
 };
+
+/** `synthetic: false` runs the base seed only; `storage` and `now` are for tests. */
+export type SeedOptions = { synthetic?: boolean; storage?: StorageService; now?: Date };
 
 const DOMAIN = /^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/;
 
@@ -39,23 +50,36 @@ export function seedPreconditions(config: AppConfig): { domain: string; password
 }
 
 /** Runs the seed on `db` in one transaction and returns the counts. */
-export async function runSeed(db: Db, config: AppConfig): Promise<SeedCounts & { warnings: string[] }> {
+export async function runSeed(db: Db, config: AppConfig, options: SeedOptions = {}): Promise<SeedCounts & { warnings: string[] }> {
   const { domain, password, warnings } = seedPreconditions(config);
 
   const migrated = await db.execute<{ table: string | null }>(sql`SELECT to_regclass('public.templates')::text AS "table"`);
   if (!migrated.rows[0]?.table) throw new SeedError("Run db:migrate first.");
 
-  const counts = await db.transaction(async (tx) => {
-    // Concurrent runs wait for each other, so each sees the other's rows.
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('db:seed'))`);
-    return {
-      settings: await seedSettings(tx),
-      masterData: await seedMasterData(tx),
-      templates: await seedTemplates(tx),
-      ...(await seedUsers(tx, domain, password)),
-    };
-  });
-  return { ...counts, warnings };
+  const uploadedKeys: string[] = [];
+  const storage = options.synthetic === false ? undefined : (options.storage ?? getStorage());
+  try {
+    const counts = await db.transaction(async (tx) => {
+      // Concurrent runs wait for each other, so each sees the other's rows.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('db:seed'))`);
+      const base = {
+        settings: await seedSettings(tx),
+        masterData: await seedMasterData(tx),
+        templates: await seedTemplates(tx),
+        ...(await seedUsers(tx, domain, password)),
+      };
+      if (!storage) return base;
+      const synthetic = await seedSynthetic(tx, { storage, emailHashKey: config.emailHashKey, domain, now: options.now ?? new Date(), uploadedKeys });
+      return { ...base, synthetic };
+    });
+    return { ...counts, warnings };
+  } catch (err) {
+    // Q3: blobs can't join the transaction; remove what this run uploaded (best effort, keys only in the log).
+    for (const key of uploadedKeys) {
+      await storage!.delete(key).catch((deleteError: unknown) => logger.warn({ storage_key: key, err: { message: (deleteError as Error).message } }, "seed blob not deleted"));
+    }
+    throw err;
+  }
 }
 
 function tally(results: boolean[]) {
@@ -167,5 +191,12 @@ export function formatCounts(counts: SeedCounts): string[] {
     line("templates", counts.templates),
     line("users", counts.users),
     `dev passwords: ${counts.passwordsSet} set`,
+    ...(counts.synthetic === undefined
+      ? []
+      : [
+          counts.synthetic.skipped
+            ? "synthetic: skipped (requisitions exist)"
+            : `synthetic: ${counts.synthetic.requisitions} requisitions, ${counts.synthetic.applications} applications, ${counts.synthetic.files} files`,
+        ]),
   ];
 }
