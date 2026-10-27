@@ -18,6 +18,9 @@ function randomTickDate(): string {
 }
 
 test("RT3: after a tick past the retention period a rejected application shows 'Anonymized applicant', no CV and no status control", async ({ asRole, request }) => {
+  // The tick waits for the purge, which anonymizes every expired application in the shared
+  // database (with its blobs); on a long-lived local stack that can take well over the default 30 s.
+  test.setTimeout(240_000);
   const job = await insertRequisition({ state: "APPROVED", approved: true, isPublished: true });
   const application = await insertApplication(job.id, { status: "SCREENING" });
   const recruiter = await asRole("recruiter");
