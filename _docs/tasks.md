@@ -665,7 +665,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `RT3:` / `RT4:` / `F8:` tests: personal fields, answers, comments, email content and files are removed while status, score and offer terms remain.
 - `RT5:` test: running the purge twice is safe; old `rate_limits` rows are deleted.
 
-## 41. Reporting dashboard and CSV exports
+## 41. Reporting dashboard and CSV exports ✅
 
 **Issue:** [#47](https://github.com/mikolajniezbecki-bit/ats-app/issues/47)
 
