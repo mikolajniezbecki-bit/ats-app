@@ -1,8 +1,8 @@
 // Offer drafting against the database (ats-project-scope.md §5.6, R10, L6,
 // L8, A8; tech-stack.md D7, T5): through the API with real session cookies.
 // Holds, re-approval, approval and closes go through their real APIs;
-// approval states and candidate responses are set directly until tasks 36
-// and 38 add them.
+// approval states and candidate responses are set directly (the response
+// API is tested in hiring.test.ts).
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
@@ -287,6 +287,18 @@ describe("final status (Q1)", () => {
     const draft = await created(recruiter, application.id, template.id);
     const discarded = await created(recruiter, second.id, template.id);
     expect((await call(discard as Handler, "POST", discarded.id, { version: 1 }, recruiter)).status).toBe(200);
+    // Task 38: answered offers keep their record through the close.
+    const approver = await insertUser(db(), "HIRING_MANAGER");
+    const answered = await Promise.all(
+      (["ACCEPTED", "DECLINED"] as const).map(async (candidateResponse) => {
+        const owner = await insertApplication(db(), { requisitionId: requisition.id, status: "OFFER" });
+        const [row] = await getDb()
+          .insert(offers)
+          .values({ ...body(template.id), applicationId: owner.id, createdByUserId: recruiter.userId, approverId: approver.id, approvalStatus: "APPROVED", candidateResponse, sentAt: new Date(), respondedAt: new Date() })
+          .returning();
+        return row;
+      }),
+    );
 
     const response = await call(close as Handler, "POST", requisition.id, { version: await requisitionVersion(requisition.id), comment: "Budget cut" }, recruiter);
     expect(response.status, JSON.stringify(await response.clone().json())).toBe(200);
@@ -294,6 +306,9 @@ describe("final status (Q1)", () => {
     expect(await offerRow(discarded.id)).toMatchObject({ approvalStatus: "WITHDRAWN", version: 2 });
     const audits = await getDb().select().from(auditLog).where(and(eq(auditLog.action, "OFFER_DISCARDED"), or(eq(auditLog.subjectId, draft.id), eq(auditLog.subjectId, discarded.id))));
     expect(audits.map((row) => row.subjectId)).toEqual([discarded.id]);
+    for (const offer of answered) {
+      expect(await offerRow(offer.id), offer.candidateResponse).toMatchObject({ approvalStatus: "APPROVED", candidateResponse: offer.candidateResponse, version: offer.version });
+    }
     const apps = await getDb().select({ status: applications.status }).from(applications).where(eq(applications.requisitionId, requisition.id));
     expect(apps.every((row) => row.status === "REJECTED")).toBe(true);
   });

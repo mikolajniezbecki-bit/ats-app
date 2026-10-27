@@ -1,4 +1,4 @@
-// The pipeline transition table (ats-project-scope.md §5.4 R1–R3, L4, TO-10).
+// The pipeline transition table (ats-project-scope.md §5.4 R1–R5, L4, L8, TO-10).
 import { describe, expect, it } from "vitest";
 import {
   FINAL_STATUSES,
@@ -10,7 +10,14 @@ import {
 } from "@/server/domain/pipeline";
 import { message } from "@/server/messages";
 
-const approved: TransitionContext = { requisitionState: "APPROVED", requisitionApprovedAt: new Date("2026-01-01"), hasAcceptedOffer: false };
+// One opening, none filled: the R5 counts don't refuse anything unless a test sets them.
+const approved: TransitionContext = {
+  requisitionState: "APPROVED",
+  requisitionApprovedAt: new Date("2026-01-01"),
+  hasAcceptedOffer: false,
+  hiredCount: 0,
+  openingsCount: 1,
+};
 const reApproval: TransitionContext = { ...approved, requisitionState: "PENDING_APPROVAL" };
 
 function refusal(from: PipelineStatus, to: PipelineStatus, ctx: TransitionContext): TransitionRefusal | "ok" {
@@ -54,8 +61,10 @@ describe("checkTransition", () => {
   });
 
   it("R2: a hired application can't be changed, and final → final moves are refused", () => {
-    for (const to of [...OPEN_STATUSES, "REJECTED", "WITHDRAWN"] as const) {
+    // R4's targets (OFFER, REJECTED, WITHDRAWN) are refused without the Admin permission, see the R4 tests.
+    for (const to of ["APPLIED", "SCREENING", "INTERVIEW"] as const) {
       expect(refusal("HIRED", to, { ...approved, hasAcceptedOffer: true, comment: "Fix" }), to).toBe("hiredFinal");
+      expect(refusal("HIRED", to, { ...approved, hasAcceptedOffer: true, comment: "Fix", canCorrectHired: true }), `${to} (Admin)`).toBe("hiredFinal");
     }
     for (const [from, to] of [
       ["REJECTED", "WITHDRAWN"],
@@ -100,6 +109,38 @@ describe("checkTransition", () => {
     expect(checkTransition("REJECTED", "INTERVIEW", { ...reApproval, comment })).toEqual({ ok: true, isReopen: true });
   });
 
+  it("R5, L8: a hire needs an opening left and an APPROVED requisition", () => {
+    const accepted = { ...approved, hasAcceptedOffer: true, openingsCount: 2 };
+    expect(checkTransition("OFFER", "HIRED", { ...accepted, hiredCount: 1 })).toEqual({ ok: true, isReopen: false });
+    expect(refusal("OFFER", "HIRED", { ...accepted, hiredCount: 2 })).toBe("noOpeningsLeft");
+    expect(refusal("OFFER", "HIRED", { ...accepted, hiredCount: 3 })).toBe("noOpeningsLeft");
+    expect(refusal("OFFER", "HIRED", { ...accepted, requisitionState: "ON_HOLD" })).toBe("hireBlocked");
+    expect(refusal("OFFER", "HIRED", { ...accepted, requisitionState: "PENDING_APPROVAL" })).toBe("hireBlocked");
+    expect(refusal("OFFER", "HIRED", { ...accepted, requisitionState: "CLOSED" })).toBe("requisitionClosed");
+    // R2 is checked first: without an accepted offer the answer is always R2's.
+    expect(refusal("OFFER", "HIRED", { ...approved, requisitionState: "ON_HOLD", hiredCount: 1 })).toBe("hireNeedsAcceptedOffer");
+  });
+
+  it("R4: an Admin corrects HIRED to OFFER, REJECTED or WITHDRAWN with a comment", () => {
+    const admin = { ...approved, hasAcceptedOffer: true, canCorrectHired: true, comment: "Hired by mistake" };
+    for (const to of ["OFFER", "REJECTED", "WITHDRAWN"] as const) {
+      expect(checkTransition("HIRED", to, admin), to).toEqual({ ok: true, isReopen: false, isCorrection: true });
+      expect(refusal("HIRED", to, { ...admin, canCorrectHired: false }), `${to} (Recruiter)`).toBe("correctHiredForbidden");
+      expect(refusal("HIRED", to, { ...admin, canCorrectHired: undefined }), `${to} (no permission given)`).toBe("correctHiredForbidden");
+      expect(refusal("HIRED", to, { ...admin, comment: "  " }), `${to} without a comment`).toBe("correctionNeedsComment");
+    }
+  });
+
+  it("R4, task 38 Q1: corrections to REJECTED and WITHDRAWN work in any requisition state; to OFFER not while CLOSED", () => {
+    const admin = { ...approved, canCorrectHired: true, comment: "Fix" };
+    for (const requisitionState of ["APPROVED", "ON_HOLD", "PENDING_APPROVAL", "CLOSED"] as const) {
+      expect(refusal("HIRED", "REJECTED", { ...admin, requisitionState }), requisitionState).toBe("ok");
+      expect(refusal("HIRED", "WITHDRAWN", { ...admin, requisitionState }), requisitionState).toBe("ok");
+    }
+    expect(refusal("HIRED", "OFFER", { ...admin, requisitionState: "CLOSED" })).toBe("correctionRequisitionClosed");
+    expect(refusal("HIRED", "OFFER", { ...admin, requisitionState: "ON_HOLD" })).toBe("ok");
+  });
+
   it("returns each refusal with its text from messages/en.json", () => {
     const result = checkTransition("REJECTED", "SCREENING", approved);
     expect(result).toEqual({ ok: false, reason: "reopenNeedsComment", message: "Reopening needs a comment." });
@@ -111,10 +152,20 @@ describe("checkTransition", () => {
       "hireOnlyFromOffer",
       "reopenRequisitionNotApproved",
       "notAllowed",
+      "noOpeningsLeft",
+      "hireBlocked",
+      "correctHiredForbidden",
+      "correctionNeedsComment",
+      "correctionRequisitionClosed",
     ] as const) {
       expect(message(`Pipeline.errors.${reason}`)).toBeTruthy();
     }
     expect(checkTransition("OFFER", "HIRED", approved)).toMatchObject({ message: "Hiring needs an accepted offer." });
-    expect(checkTransition("HIRED", "OFFER", approved)).toMatchObject({ message: "A hired application can't be changed." });
+    expect(checkTransition("HIRED", "SCREENING", approved)).toMatchObject({ message: "A hired application can't be changed." });
+    expect(checkTransition("HIRED", "OFFER", approved)).toMatchObject({ message: "Only an Admin can correct a hired status." });
+    expect(checkTransition("OFFER", "HIRED", { ...approved, hasAcceptedOffer: true, hiredCount: 1 })).toMatchObject({ message: "No openings left on this requisition." });
+    expect(checkTransition("OFFER", "HIRED", { ...approved, hasAcceptedOffer: true, requisitionState: "ON_HOLD" })).toMatchObject({
+      message: "Hiring isn't possible while the requisition is on hold or awaiting approval.",
+    });
   });
 });

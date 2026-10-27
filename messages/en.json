@@ -883,7 +883,12 @@
       "notFound": "Application not found.",
       "stale": "This record was changed by someone else. Reload and try again.",
       "invalid": "Check the status change.",
-      "commentTooLong": "Enter a comment of at most 2,000 characters."
+      "commentTooLong": "Enter a comment of at most 2,000 characters.",
+      "noOpeningsLeft": "No openings left on this requisition.",
+      "hireBlocked": "Hiring isn't possible while the requisition is on hold or awaiting approval.",
+      "correctHiredForbidden": "Only an Admin can correct a hired status.",
+      "correctionNeedsComment": "Correcting a hired status needs a comment.",
+      "correctionRequisitionClosed": "The requisition is closed. An Admin can reopen it."
     }
   },
   "Applications": {
@@ -968,7 +973,10 @@
       "submitting": "Changing…",
       "done": "Status changed to {status}.",
       "failed": "The status could not be changed. Try again.",
-      "none": "No status change is possible now."
+      "none": "No status change is possible now.",
+      "correctTitle": "Correct hired status",
+      "correctionCommentRequired": "Comment (required to correct a hire)",
+      "correctSubmit": "Correct status"
     },
     "timeline": {
       "applied": "Applied",

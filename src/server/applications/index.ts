@@ -25,7 +25,8 @@ import {
   users,
 } from "../db/schema";
 import { type PipelineStatus, checkTransition } from "../domain/pipeline";
-import type { PolicyUser } from "../policy/permissions";
+import { hiredCount } from "../pipeline";
+import { type PolicyUser, can } from "../policy/permissions";
 import { scopeApplicationsFor, scopeRequisitionsFor } from "../policy/filters";
 import { findVisibleRequisition } from "../requisitions";
 import { type TimelineEntry, buildTimeline } from "./timeline";
@@ -319,10 +320,16 @@ async function loadTimeline(applicationId: string, anonymized: boolean, db: Db):
 
 /**
  * The status control's targets (Q4): every status checkTransition allows
- * now. A reopen is offered with its comment marked required; the API checks
- * everything again.
+ * now, for `user` (R4 corrections are Admin only). A reopen or a correction
+ * is offered with its comment marked required; the API checks everything
+ * again.
  */
-async function statusTargets(application: typeof applications.$inferSelect, requisition: { state: string; approvedAt: Date | null }, db: Db): Promise<StatusTarget[]> {
+async function statusTargets(
+  user: PolicyUser,
+  application: typeof applications.$inferSelect,
+  requisition: { id: string; state: string; approvedAt: Date | null; openingsCount: number },
+  db: Db,
+): Promise<StatusTarget[]> {
   if (application.anonymizedAt) return [];
   const [accepted] = await db
     .select({ id: offers.id })
@@ -333,12 +340,15 @@ async function statusTargets(application: typeof applications.$inferSelect, requ
     requisitionState: requisition.state as Parameters<typeof checkTransition>[2]["requisitionState"],
     requisitionApprovedAt: requisition.approvedAt,
     hasAcceptedOffer: accepted !== undefined,
+    hiredCount: await hiredCount(db, requisition.id),
+    openingsCount: requisition.openingsCount,
+    canCorrectHired: can(user, "application.correctHired"),
     // Any comment: whether one is needed is the control's business (needsComment).
     comment: "-",
   };
   return APPLICATION_STATUSES.flatMap((status) => {
     const check = checkTransition(application.status, status, ctx);
-    return check.ok ? [{ status, needsComment: check.isReopen }] : [];
+    return check.ok ? [{ status, needsComment: check.isReopen || check.isCorrection === true }] : [];
   });
 }
 
@@ -387,7 +397,7 @@ export async function getApplicationDetail(user: PolicyUser, id: string, db: Db 
     anonymized ? Promise.resolve([]) : loadAnswers(id, application.requisitionId, db),
     application.emailHash ? relatedByHash(user, [application.emailHash], db, { id }) : Promise.resolve([]),
     loadTimeline(id, anonymized, db),
-    statusTargets(application, row.requisition, db),
+    statusTargets(user, application, row.requisition, db),
   ]);
 
   return {

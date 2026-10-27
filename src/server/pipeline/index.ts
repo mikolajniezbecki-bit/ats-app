@@ -1,14 +1,14 @@
-// Application status changes (ats-project-scope.md §5.4 R1–R3, R7–R9, R11,
-// E8, E9; tech-stack.md D3, D7, J1, J2). The only code that changes
+// Application status changes (ats-project-scope.md §5.4 R1–R9, R11, E8,
+// E9; tech-stack.md D3, D7, J1, J2). The only code that changes
 // `applications.status` after apply: bulk moves, requisition close,
 // interviews and hiring (tasks 28, 29, 32, 38) extend it instead of writing
 // their own updates. Everything runs in the caller's transaction, and every
 // check comes before the first write, so a refusal changes nothing. Logs
 // carry IDs only, never comments or candidate data (M2).
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { jobQueue } from "../adapters/job-queue";
-import type { Tx } from "../db";
+import type { Db, Tx } from "../db";
 import { updateWithVersion } from "../db/optimistic-lock";
 import { applicationHistory, applications, emailLog, offers, requisitions } from "../db/schema";
 import { type PipelineStatus, type TransitionRefusal, checkTransition, isOpenStatus } from "../domain/pipeline";
@@ -17,6 +17,7 @@ import { cancelFutureInterviews } from "../interviews";
 import { withdrawPendingOffers } from "../offers";
 import { logger } from "../logger";
 import { message } from "../messages";
+import { closeRequisition } from "../requisitions/lifecycle";
 import { getSetting } from "../settings";
 import { getStageTemplate } from "../templates";
 
@@ -74,15 +75,27 @@ async function queueStageEmail(tx: Tx, applicationId: string, status: PipelineSt
   });
 }
 
+/** R5: the requisition's applications that are HIRED now. */
+export async function hiredCount(db: Db | Tx, requisitionId: string): Promise<number> {
+  const [row] = await db
+    .select({ value: count() })
+    .from(applications)
+    .where(and(eq(applications.requisitionId, requisitionId), eq(applications.status, "HIRED")));
+  return row.value;
+}
+
 /**
  * Moves one application to `toStatus` at `version` (D7, R9), in `tx` (D3):
  * checks the transition, cancels queued emails (R7), updates the
- * application, writes history (R8) and queues the stage email (E8).
- * Permission checks are the caller's (`application.changeStatus`).
+ * application, writes history (R8) and queues the stage email (E8). The
+ * hire that fills the last opening closes the requisition as FILLED in the
+ * same transaction (R6). Permission checks are the caller's
+ * (`application.changeStatus`); `canCorrectHired` says whether the actor
+ * may correct HIRED (R4).
  */
 export async function changeApplicationStatus(
   tx: Tx,
-  input: { applicationId: string; toStatus: PipelineStatus; version: number; comment?: string; actor: { id: string } },
+  input: { applicationId: string; toStatus: PipelineStatus; version: number; comment?: string; actor: { id: string }; canCorrectHired?: boolean },
 ): Promise<StatusChangeResult> {
   const { applicationId, toStatus, version, actor } = input;
   const comment = input.comment?.trim() || null;
@@ -92,12 +105,13 @@ export async function changeApplicationStatus(
   // The requisition first (FOR SHARE), then the application (FOR UPDATE): the
   // same order as a requisition close (task 29), so the two can't deadlock,
   // and a concurrent change of this application waits here and then sees the
-  // new version.
+  // new version. A hire takes the requisition FOR UPDATE (task 38 Q2), so two
+  // hires for the last opening count one after the other.
   const [requisition] = await tx
-    .select({ state: requisitions.state, approvedAt: requisitions.approvedAt })
+    .select()
     .from(requisitions)
     .where(eq(requisitions.id, found.requisitionId))
-    .for("share");
+    .for(toStatus === "HIRED" ? "update" : "share");
   const [application] = await tx.select().from(applications).where(eq(applications.id, applicationId)).for("update");
   if (application.anonymizedAt) return refused("anonymized");
   if (application.version !== version) return refused("stale");
@@ -107,10 +121,14 @@ export async function changeApplicationStatus(
     .from(offers)
     .where(and(eq(offers.applicationId, applicationId), eq(offers.candidateResponse, "ACCEPTED")))
     .limit(1);
+  const hired = toStatus === "HIRED" ? await hiredCount(tx, requisition.id) : 0;
   const check = checkTransition(application.status, toStatus, {
     requisitionState: requisition.state,
     requisitionApprovedAt: requisition.approvedAt,
     hasAcceptedOffer: accepted !== undefined,
+    hiredCount: hired,
+    openingsCount: requisition.openingsCount,
+    canCorrectHired: input.canCorrectHired ?? false,
     comment,
   });
   if (!check.ok) return { ok: false, reason: check.reason, message: check.message };
@@ -121,6 +139,10 @@ export async function changeApplicationStatus(
     reasonCode: toStatus === "REJECTED" ? "OTHER" : null,
     isReopen: check.isReopen,
   });
+  // R6 (task 38 Q6): the hiring user closes it, without a comment; the hire is in the application history.
+  if (toStatus === "HIRED" && hired + 1 >= requisition.openingsCount) {
+    await closeRequisition(tx, { requisition, reason: "FILLED", actor, comment: null });
+  }
   return { ok: true, status: updated.status, version: updated.version };
 }
 
@@ -150,6 +172,8 @@ export async function applyStatusChange(
     reasonCode: change.reasonCode,
     dispositionedAt: final ? now : null,
     ...(toStatus === "HIRED" ? { hiredAt: now } : {}),
+    // R4 (task 38 Q4): a corrected hire is exported again if it is hired again.
+    ...(application.status === "HIRED" ? { hiredAt: null, exportedAt: null } : {}),
   });
 
   await tx.insert(applicationHistory).values({
