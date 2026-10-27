@@ -41,6 +41,20 @@ async function tick(headers: Record<string, string>, options: Parameters<typeof 
   return { status: response.status, body: (await response.json()) as TickSummary };
 }
 
+/**
+ * The production handlers, with the production daily-task wrapper around
+ * empty runs for the two daily tasks whose real work acts on the whole
+ * worker database: approvals.remind (since task 31) queues a reminder and
+ * an email.send job the tick waits for, for every pending requisition other
+ * files left here; retention.purge (since task 40) would anonymize their
+ * final applications on a tick years ahead. Both are tested on their own
+ * (approval-reassignment.test.ts, retention.test.ts).
+ */
+function quietHandlers() {
+  const empty = dailyTaskHandler(async () => undefined);
+  return { ...handlers, ...emailHandler, "approvals.remind": empty, "retention.purge": empty };
+}
+
 function runsOn(runDate: string) {
   return getDb().select().from(jobRuns).where(eq(jobRuns.runDate, runDate)).orderBy(jobRuns.jobName);
 }
@@ -103,13 +117,7 @@ describe("tick authentication", () => {
 
 describe("tick", () => {
   it("W4: queues the due daily tasks and responds only after both runs are COMPLETED", async () => {
-    // The production daily-task wrapper with an empty approvals.remind run:
-    // since task 31 the real run queues a reminder (and an email.send job the
-    // tick waits for) for every pending requisition other files left in this
-    // worker's database, so the wait depended on that leftover data. The
-    // reminders themselves are tested through the tick in
-    // approval-reassignment.test.ts.
-    await startWorker({ ...handlers, ...emailHandler, "approvals.remind": dailyTaskHandler(async () => undefined) }, { pollingIntervalSeconds: 0.5 });
+    await startWorker(quietHandlers(), { pollingIntervalSeconds: 0.5 });
     const testNow = "2031-01-06T09:00:00Z"; // 10:00 in Warsaw
 
     const { status, body } = await tick({ "x-test-now": testNow });
@@ -230,7 +238,7 @@ describe("run once", () => {
 
 describe("test clock", () => {
   it("T3: a job delayed by 24 h waits on a real-time tick and runs on a tick 25 h ahead; 48 h does not", async () => {
-    await startWorker({ ...handlers, ...emailHandler }, { pollingIntervalSeconds: 0.5 });
+    await startWorker(quietHandlers(), { pollingIntervalSeconds: 0.5 });
     const day = await delayedEmail(24 * HOUR);
     const twoDays = await delayedEmail(48 * HOUR);
 
@@ -244,7 +252,7 @@ describe("test clock", () => {
   });
 
   it("T3: without dev login x-test-now is ignored: the delayed job waits and run_date is the real Warsaw date", async () => {
-    await startWorker({ ...handlers, ...emailHandler }, { pollingIntervalSeconds: 0.5 });
+    await startWorker(quietHandlers(), { pollingIntervalSeconds: 0.5 });
     const day = await delayedEmail(24 * HOUR);
     // Far enough ahead that honouring it would also have run the 24 h job.
     const ahead = new Date(Date.now() + 30 * 24 * HOUR);
