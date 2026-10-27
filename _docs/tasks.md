@@ -699,7 +699,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Rerunning the seed adds no synthetic data when requisitions already exist.
 - No seeded name, email or phone resembles a real person (uses reserved domains such as `example.com`).
 
-## 43. Main-branch pipeline with end-to-end tests
+## 43. Main-branch pipeline with end-to-end tests ✅
 
 **Issue:** [#49](https://github.com/mikolajniezbecki-bit/ats-app/issues/49)
 
