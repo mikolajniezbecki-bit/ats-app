@@ -615,7 +615,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `P5:` / `P6:` tests: the logo is embedded in the letter and in `[[LOGO]]` emails; preview stores no file.
 - `P8:` test: a text snapshot of the sample letter matches and every token in the default template resolves.
 
-## 38. Candidate response and hiring
+## 38. Candidate response and hiring ✅
 
 **Issue:** [#44](https://github.com/mikolajniezbecki-bit/ats-app/issues/44)
 
