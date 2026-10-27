@@ -42,7 +42,8 @@
       "requisitions": "Requisitions",
       "approvals": "My approvals",
       "allApprovals": "All pending approvals",
-      "myInterviews": "My interviews"
+      "myInterviews": "My interviews",
+      "exports": "Exports"
     },
     "signOut": "Sign out"
   },
@@ -1311,5 +1312,15 @@
     },
     "open": "Scorecard",
     "anonymized": "Anonymized candidate"
+  },
+  "Exports": {
+    "title": "Exports",
+    "hires": {
+      "title": "Hire export",
+      "newCount": "{count, plural, =0 {No hires waiting to be exported.} one {# hire not exported yet.} other {# hires not exported yet.}}",
+      "includeExported": "Include already exported",
+      "submit": "Export hires",
+      "note": "Exported hires are marked as exported. If the download fails, export again with Include already exported."
+    }
   }
 }
