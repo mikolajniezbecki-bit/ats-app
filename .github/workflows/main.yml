@@ -7,6 +7,7 @@
 # push (task 43 Q2). Pushes that change only _docs/** or Markdown don't start
 # it (Q3). The only credential is GITHUB_TOKEN; the Compose stack uses the
 # fake, local-only values from docker-compose.yml. Deployment comes in task 45.
+# A full green run takes about 25 minutes (the first one: 24 minutes).
 name: main
 
 on:
