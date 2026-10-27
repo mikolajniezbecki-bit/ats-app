@@ -633,7 +633,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `R6:` test: the last hire closes the requisition as `FILLED` and rejects other open applications with `REQ_FILLED` in one transaction.
 - `R4:` test: only an Admin can correct `HIRED`, a comment is required and `hired_at` is cleared.
 
-## 39. Hire export
+## 39. Hire export ✅
 
 **Issue:** [#45](https://github.com/mikolajniezbecki-bit/ats-app/issues/45)
 
