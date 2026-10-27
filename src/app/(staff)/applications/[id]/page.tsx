@@ -295,6 +295,7 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
               needsReapproval: offer.needsReapproval,
               letterPending: offer.letterPending,
               sentAt: offer.sentAt?.toISOString() ?? null,
+              respondable: offer.respondable,
               discardable: offer.discardable,
               submittable: offer.submittable,
               decidable: offer.decidable,

@@ -131,3 +131,22 @@ export function changedTerms(before: OfferTerms, after: Partial<OfferTerms>): (t
     return value !== before[field];
   });
 }
+
+export type ResponseRefusal = "frozen" | "alreadyResponded" | "notInOffer" | "notSent";
+
+/**
+ * Recording the candidate's response (§5.6 Response, task 38 Q3): once, on
+ * the latest offer, approved and with its letter sent, while the
+ * application is in OFFER. L8 doesn't block it (it blocks the hire).
+ */
+export function responseRefusal(
+  offer: OfferState & { sentAt: Date | null },
+  offers: readonly OfferState[],
+  applicationStatus: string,
+): ResponseRefusal | undefined {
+  if (isFrozen(offer, offers)) return "frozen";
+  if (offer.candidateResponse !== "PENDING") return "alreadyResponded";
+  if (applicationStatus !== "OFFER") return "notInOffer";
+  if (offer.approvalStatus !== "APPROVED" || offer.sentAt === null) return "notSent";
+  return undefined;
+}

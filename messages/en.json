@@ -1216,7 +1216,8 @@
       "chooseApprover": "Choose an approver…",
       "comment": "Comment",
       "commentOptional": "Comment (optional)",
-      "reason": "Reason"
+      "reason": "Reason",
+      "response": "Candidate's response"
     },
     "errors": {
       "invalid": "Check the highlighted fields.",
@@ -1247,13 +1248,16 @@
         "reapprovalApproverRequired": "Changing an approved offer needs re-approval. Choose an approver.",
         "reasonRequired": "Add a reason for the reassignment.",
         "commentRequired": "Add a comment to reject.",
-        "commentTooLong": "Comments are at most 2,000 characters."
+        "commentTooLong": "Comments are at most 2,000 characters.",
+        "response": "Choose the candidate's response."
       },
       "forbidden": "You can't take this action on this offer.",
       "notPending": "This offer is not awaiting approval.",
       "notSubmittable": "Only draft or rejected offers can be submitted.",
       "submitBlocked": "Offers can't be submitted while the requisition is on hold or awaiting approval.",
-      "approveBlocked": "Offers can't be approved while the requisition is on hold or awaiting approval, or while the application isn't in Offer."
+      "approveBlocked": "Offers can't be approved while the requisition is on hold or awaiting approval, or while the application isn't in Offer.",
+      "alreadyResponded": "A response has already been recorded.",
+      "notSent": "The offer hasn't been sent yet."
     },
     "submit": "Submit for approval",
     "approve": "Approve",
@@ -1275,7 +1279,10 @@
     },
     "preview": "Preview PDF",
     "letterPending": "Letter not issued yet",
-    "letterSent": "Letter sent"
+    "letterSent": "Letter sent",
+    "respond": "Record response",
+    "confirmRespond": "This can't be undone.",
+    "saveResponse": "Save response"
   },
   "MyInterviews": {
     "title": "My interviews",

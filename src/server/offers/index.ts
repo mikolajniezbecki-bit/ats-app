@@ -16,6 +16,7 @@ import { approverError, recordApprovalEvent } from "../approvals";
 import {
   type CreateRefusal,
   type EditRefusal,
+  type ResponseRefusal,
   canDiscard,
   changedTerms,
   createRefusal,
@@ -23,6 +24,7 @@ import {
   isFrozen,
   isReapprovable,
   offerFieldErrors,
+  responseRefusal,
   submitRefusal,
 } from "../domain/offers";
 import { queueOfferApprovalRequest } from "../email/approval-request";
@@ -32,7 +34,7 @@ import { scopeApplicationsFor, scopeOffersFor } from "../policy/filters";
 import { type ApprovalResource, type PolicyUser, can } from "../policy/permissions";
 
 export type OfferRow = typeof offers.$inferSelect;
-export type OfferError = "invalid" | "notFound" | "stale" | "notDiscardable" | "submitBlocked" | CreateRefusal | EditRefusal;
+export type OfferError = "invalid" | "notFound" | "stale" | "notDiscardable" | "submitBlocked" | CreateRefusal | EditRefusal | ResponseRefusal;
 export type OfferResult = { ok: true; offer: OfferRow } | { ok: false; reason: OfferError; fields?: Record<string, string> };
 
 const salary = z.union([z.string().trim(), z.number().transform(String)]);
@@ -47,6 +49,7 @@ const createSchema = z.object(fields).strict();
 // approverId: only for changing an APPROVED offer, which needs re-approval (A8).
 const updateSchema = z.object(fields).partial().extend({ version: z.number().int().min(1), approverId: z.string().optional() }).strict();
 const versionSchema = z.object({ version: z.number().int().min(1) }).strict();
+const responseSchema = z.object({ response: z.enum(["ACCEPTED", "DECLINED"]), version: z.number().int().min(1) }).strict();
 
 function zodFields(error: z.ZodError): Record<string, string> {
   const result: Record<string, string> = {};
@@ -258,6 +261,31 @@ export async function discardOffer(tx: Tx, user: PolicyUser, offerId: string, in
 }
 
 /**
+ * §5.6 Response (task 38 Q3): records ACCEPTED or DECLINED once on the
+ * latest sent offer (D7). The application status doesn't change: a declined
+ * offer leaves it in OFFER, and an accepted one allows the hire (R2). The
+ * answer locks the offer (A8).
+ */
+export async function recordOfferResponse(tx: Tx, user: PolicyUser, offerId: string, input: unknown, now = new Date()): Promise<OfferResult> {
+  const locked = await lockOffer(tx, user, offerId);
+  if (!locked) return { ok: false, reason: "notFound" };
+  const parsed = responseSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, reason: "invalid", fields: zodFields(parsed.error) };
+  if (locked.application.anonymizedAt) return { ok: false, reason: "anonymized" };
+  const refused = responseRefusal(locked.offer, locked.offers, locked.application.status);
+  if (refused) return { ok: false, reason: refused };
+  if (locked.offer.version !== parsed.data.version) return { ok: false, reason: "stale" };
+  const [offer] = await tx
+    .update(offers)
+    .set({ candidateResponse: parsed.data.response, respondedAt: now, version: sql`${offers.version} + 1`, updatedAt: now })
+    .where(and(eq(offers.id, offerId), eq(offers.version, parsed.data.version)))
+    .returning();
+  if (!offer) return { ok: false, reason: "stale" };
+  logger.info({ offer_id: offerId, application_id: locked.application.id, user_id: user.id, response: parsed.data.response }, "offer response recorded");
+  return { ok: true, offer };
+}
+
+/**
  * Task 35 Q1 (owner decision): when an application becomes REJECTED or
  * WITHDRAWN, its offers still waiting for the candidate's answer are
  * withdrawn, like L6 on a close. Called by the status service in its
@@ -289,6 +317,8 @@ export type OfferListItem = OfferRow & {
   needsReapproval: boolean;
   /** Q11 (task 37): approved, but the letter hasn't been issued (yet, or its render failed). */
   letterPending: boolean;
+  /** Task 38: the candidate's answer can be recorded now. */
+  respondable: boolean;
   discardable: boolean;
   submittable: boolean;
   decidable: boolean;
@@ -309,6 +339,7 @@ export async function listOffersForPage(user: PolicyUser, applicationId: string,
       approver: approver.name,
       submitter: submitter.name,
       applicationStatus: applications.status,
+      applicationAnonymizedAt: applications.anonymizedAt,
       requisitionState: requisitions.state,
     })
     .from(offers)
@@ -347,6 +378,7 @@ export async function listOffersForPage(user: PolicyUser, applicationId: string,
         editable: manage && (reapproval || editRefusal(row.offer, all, row.applicationStatus) === undefined),
         needsReapproval: reapproval,
         letterPending: letterPending(row.offer),
+        respondable: manage && row.applicationAnonymizedAt === null && responseRefusal(row.offer, all, row.applicationStatus) === undefined,
         discardable: manage && canDiscard(row.offer, all),
         submittable: manage && submitRefusal(row.offer, all, row.applicationStatus, row.requisitionState) === undefined,
         decidable: can(user, "approval.decide", approval),

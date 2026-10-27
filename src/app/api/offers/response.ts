@@ -23,6 +23,8 @@ const STATUS: Record<OfferError | OfferApprovalError, number> = {
   pending: 409,
   approved: 409,
   withdrawn: 409,
+  alreadyResponded: 409,
+  notSent: 409,
 };
 
 function fieldText(code: string): string {

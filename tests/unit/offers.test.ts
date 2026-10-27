@@ -2,7 +2,7 @@
 // committed currency list, field limits and the state checks, without a
 // database.
 import { describe, expect, it } from "vitest";
-import { canDiscard, createRefusal, editRefusal, isFrozen, latestOffer, offerFieldErrors, salaryValid, type OfferState } from "@/server/domain/offers";
+import { canDiscard, createRefusal, editRefusal, isFrozen, latestOffer, offerFieldErrors, responseRefusal, salaryValid, type OfferState } from "@/server/domain/offers";
 import { CURRENCIES, isCurrency } from "@/server/domain/offers/currencies";
 
 const offer = (id: string, minute: number, overrides: Partial<OfferState> = {}): OfferState => ({
@@ -85,5 +85,20 @@ describe("state", () => {
       const one = [offer("x", 1, { approvalStatus })];
       expect(canDiscard(one[0], one), approvalStatus).toBe(false);
     }
+  });
+
+  it("§5.6 Response (task 38 Q3): once, on the latest approved offer with its letter sent, while the application is in OFFER", () => {
+    const sentAt = new Date("2027-01-15T11:00:00Z");
+    const sent = { ...offer("b", 2, { approvalStatus: "APPROVED" }), sentAt };
+    const older = offer("a", 1, { approvalStatus: "REJECTED" });
+    expect(responseRefusal(sent, [older, sent], "OFFER")).toBeUndefined();
+    expect(responseRefusal({ ...older, sentAt }, [older, sent], "OFFER")).toBe("frozen");
+    expect(responseRefusal({ ...sent, sentAt: null }, [sent], "OFFER")).toBe("notSent");
+    expect(responseRefusal({ ...sent, approvalStatus: "PENDING", sentAt: null }, [sent], "OFFER")).toBe("notSent");
+    expect(responseRefusal({ ...sent, approvalStatus: "WITHDRAWN" }, [sent], "OFFER")).toBe("notSent");
+    for (const candidateResponse of ["ACCEPTED", "DECLINED"] as const) {
+      expect(responseRefusal({ ...sent, candidateResponse }, [sent], "OFFER"), candidateResponse).toBe("alreadyResponded");
+    }
+    expect(responseRefusal(sent, [sent], "INTERVIEW")).toBe("notInOffer");
   });
 });
