@@ -1,7 +1,8 @@
 "use client";
 
 // The status control on the application page (ats-project-scope.md §5.4,
-// R3, R9): the server lists the targets the transition table allows now;
+// R3, R4, R9): the server lists the targets the transition table allows now
+// (on a HIRED application, an Admin's R4 corrections);
 // the API checks everything again. A refusal or a stale version shows the
 // API's message and keeps the typed comment.
 import { useTranslations } from "next-intl";
@@ -9,9 +10,9 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 type Target = { status: string; needsComment: boolean };
-type Props = { applicationId: string; version: number; targets: Target[]; statusLabels: Record<string, string> };
+type Props = { applicationId: string; version: number; targets: Target[]; statusLabels: Record<string, string>; correction?: boolean };
 
-export function StatusControl({ applicationId, version, targets, statusLabels }: Props) {
+export function StatusControl({ applicationId, version, targets, statusLabels, correction = false }: Props) {
   const t = useTranslations("Applications.status");
   const router = useRouter();
   const [target, setTarget] = useState("");
@@ -46,7 +47,7 @@ export function StatusControl({ applicationId, version, targets, statusLabels }:
 
   if (targets.length === 0) return <p className="text-sm">{t("none")}</p>;
   return (
-    <form onSubmit={onSubmit} aria-label={t("title")} className="max-w-xl space-y-3 rounded border p-4" noValidate>
+    <form onSubmit={onSubmit} aria-label={correction ? t("correctTitle") : t("title")} className="max-w-xl space-y-3 rounded border p-4" noValidate>
       <div className="space-y-1">
         <label htmlFor="status-target" className="block text-sm font-medium">
           {t("target")}
@@ -55,14 +56,14 @@ export function StatusControl({ applicationId, version, targets, statusLabels }:
           <option value="">{t("choose")}</option>
           {targets.map((option) => (
             <option key={option.status} value={option.status}>
-              {option.needsComment ? t("reopen", { status: statusLabels[option.status] ?? option.status }) : (statusLabels[option.status] ?? option.status)}
+              {option.needsComment && !correction ? t("reopen", { status: statusLabels[option.status] ?? option.status }) : (statusLabels[option.status] ?? option.status)}
             </option>
           ))}
         </select>
       </div>
       <div className="space-y-1">
         <label htmlFor="status-comment" className="block text-sm font-medium">
-          {needsComment ? t("commentRequired") : t("comment")}
+          {needsComment ? (correction ? t("correctionCommentRequired") : t("commentRequired")) : t("comment")}
         </label>
         <textarea
           id="status-comment"
@@ -87,7 +88,7 @@ export function StatusControl({ applicationId, version, targets, statusLabels }:
         </p>
       )}
       <button type="submit" disabled={pending || !target} className="rounded bg-black px-4 py-2 text-white disabled:opacity-60">
-        {pending ? t("submitting") : t("submit")}
+        {pending ? t("submitting") : correction ? t("correctSubmit") : t("submit")}
       </button>
     </form>
   );

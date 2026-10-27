@@ -2,8 +2,8 @@
 
 // Offers on the application page (ats-project-scope.md §5.6, R10, L8, V4,
 // A1–A9): newest first, older ones marked read-only. Admins and Recruiters
-// create, edit, discard, submit, withdraw and reassign where the server says
-// it is allowed; the current approver approves or rejects; others read. The
+// create, edit, discard, submit, withdraw, reassign and record the
+// candidate's response where the server says it is allowed; the current approver approves or rejects; others read. The
 // API checks everything again.
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -28,6 +28,7 @@ export type PanelOffer = {
   needsReapproval: boolean;
   letterPending: boolean;
   sentAt: string | null;
+  respondable: boolean;
   discardable: boolean;
   submittable: boolean;
   decidable: boolean;
@@ -54,7 +55,7 @@ type Props = {
   currentUserId: string;
 };
 type ApiError = { message?: string; fields?: Record<string, string> };
-type Action = "edit" | "discard" | "submit" | "approve" | "reject" | "withdraw" | "reassign";
+type Action = "edit" | "discard" | "submit" | "approve" | "reject" | "withdraw" | "reassign" | "respond";
 type Mode = { kind: "create" } | { kind: Action; offer: PanelOffer } | null;
 
 const amount = (value: string) => new Intl.NumberFormat("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value));
@@ -93,8 +94,11 @@ export function OffersPanel({ applicationId, offers, createBlock, templates, cur
         reject: { comment: text("comment") },
         withdraw: text("comment").trim() ? { comment: text("comment") } : {},
         reassign: { approverId: text("approverId"), reason: text("reason") },
+        respond: { response: text("response") },
       };
-      void send(`/api/offers/${offer.id}/${mode.kind}`, "POST", { version: offer.version, ...bodies[mode.kind] });
+      // The response endpoint is a noun (the candidate's response), the others are verbs.
+      const path = mode.kind === "respond" ? "response" : mode.kind;
+      void send(`/api/offers/${offer.id}/${path}`, "POST", { version: offer.version, ...bodies[mode.kind] });
       return;
     }
     const fields = Object.fromEntries(["jobTitle", "salary", "currency", "startDate", "templateId"].map((name) => [name, String(form.get(name) ?? "")]));
@@ -149,6 +153,7 @@ export function OffersPanel({ applicationId, offers, createBlock, templates, cur
     reject: t("reject"),
     withdraw: t("withdraw"),
     reassign: t("reassign"),
+    respond: t("respond"),
   };
   const values = editing ?? { jobTitle: defaults.jobTitle, salary: "", currency: defaults.currency, startDate: "", templateId: defaults.templateId };
   // An edit keeps a stored template that was deactivated since (§5.1).
@@ -194,9 +199,11 @@ export function OffersPanel({ applicationId, offers, createBlock, templates, cur
                 <a href={`/api/offers/${offer.id}/preview`} target="_blank" rel="noreferrer" className="rounded border px-3 py-1">
                   {t("preview")}
                 </a>
-                {(["submit", "approve", "reject", "withdraw", "reassign", "edit", "discard"] as const)
+                {(["respond", "submit", "approve", "reject", "withdraw", "reassign", "edit", "discard"] as const)
                   .filter((action) =>
-                    action === "submit"
+                    action === "respond"
+                      ? offer.respondable
+                      : action === "submit"
                       ? offer.submittable
                       : action === "approve" || action === "reject"
                         ? offer.decidable
@@ -257,6 +264,19 @@ export function OffersPanel({ applicationId, offers, createBlock, templates, cur
         >
           {mode.kind === "discard" ? (
             <p>{t("confirmDiscard")}</p>
+          ) : mode.kind === "respond" ? (
+            // The answer locks the offer (A8), so the form says it can't be undone.
+            <fieldset className="space-y-1" {...invalid("response")}>
+              <legend className="text-sm font-medium">{t("fields.response")}</legend>
+              {(["ACCEPTED", "DECLINED"] as const).map((response) => (
+                <label key={response} className="flex items-center gap-2">
+                  <input type="radio" name="response" value={response} required />
+                  {t(`responses.${response}`)}
+                </label>
+              ))}
+              {fieldError("response")}
+              <p className="text-sm">{t("confirmRespond")}</p>
+            </fieldset>
           ) : mode.kind === "submit" ? (
             approverSelect(approverOptions([currentUserId]))
           ) : mode.kind === "approve" || mode.kind === "withdraw" ? (
@@ -333,7 +353,7 @@ export function OffersPanel({ applicationId, offers, createBlock, templates, cur
           )}
           <div className="flex gap-2">
             <button type="submit" disabled={pending} className="rounded bg-black px-4 py-2 text-white disabled:opacity-60">
-              {mode.kind === "create" ? t("create") : mode.kind === "edit" ? t("save") : mode.kind === "discard" ? t("confirm") : labels[mode.kind]}
+              {mode.kind === "create" ? t("create") : mode.kind === "edit" ? t("save") : mode.kind === "discard" ? t("confirm") : mode.kind === "respond" ? t("saveResponse") : labels[mode.kind]}
             </button>
             <button type="button" onClick={() => setMode(null)} className="rounded border px-4 py-2">
               {t("cancel")}

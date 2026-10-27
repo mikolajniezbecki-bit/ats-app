@@ -8,7 +8,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/applications/[id]/status/route";
 import { getBoss, jobQueue } from "@/server/adapters/job-queue";
 import { type Tx, getDb, withTransaction } from "@/server/db";
-import { applicationHistory, applications, emailLog, offers, settings, templates } from "@/server/db/schema";
+import { applicationHistory, applications, emailLog, offers, requisitions, settings, templates } from "@/server/db/schema";
 import type { PipelineStatus } from "@/server/domain/pipeline";
 import { changeApplicationStatus } from "@/server/pipeline";
 import { searchMessages } from "../support/mailpit";
@@ -163,7 +163,13 @@ describe("changeApplicationStatus", () => {
   it("R11: hiring from OFFER with an accepted offer sets dispositioned_at and hired_at; is_disqualified is kept", async () => {
     const values = await offerValues(db());
     createdApplicationIds.push(values.applicationId);
-    await getDb().update(applications).set({ status: "OFFER", isDisqualified: true }).where(eq(applications.id, values.applicationId));
+    const [hiring] = await getDb()
+      .update(applications)
+      .set({ status: "OFFER", isDisqualified: true })
+      .where(eq(applications.id, values.applicationId))
+      .returning({ requisitionId: applications.requisitionId });
+    // Task 38 (R5, L8): hires need an APPROVED requisition with an opening left.
+    await getDb().update(requisitions).set({ state: "APPROVED", approvedAt: new Date(), openingsCount: 2 }).where(eq(requisitions.id, hiring.requisitionId));
     const approver = await insertUser(db(), "HIRING_MANAGER");
     await getDb()
       .insert(offers)

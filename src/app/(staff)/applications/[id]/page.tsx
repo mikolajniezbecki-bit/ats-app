@@ -42,6 +42,8 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
   const detail = await getApplicationDetail(user, id);
   if (!detail) notFound();
   const { application, requisition, anonymized } = detail;
+  // R4: on a HIRED application the control lists only an Admin's corrections.
+  const hiredCorrection = application.status === "HIRED" && can(user, "application.correctHired");
   const t = await getTranslations("Applications");
   const d = await getTranslations("Applications.detail");
   const statuses = await getTranslations("Statuses");
@@ -157,9 +159,15 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
       {can(user, "application.changeStatus") && (
         <section aria-labelledby="status-heading" className="space-y-2">
           <h2 id="status-heading" className="text-xl font-semibold">
-            {t("status.title")}
+            {hiredCorrection ? t("status.correctTitle") : t("status.title")}
           </h2>
-          <StatusControl applicationId={application.id} version={application.version} targets={detail.targets} statusLabels={statusLabels} />
+          <StatusControl
+            applicationId={application.id}
+            version={application.version}
+            targets={detail.targets}
+            statusLabels={statusLabels}
+            correction={hiredCorrection}
+          />
         </section>
       )}
 
@@ -295,6 +303,7 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
               needsReapproval: offer.needsReapproval,
               letterPending: offer.letterPending,
               sentAt: offer.sentAt?.toISOString() ?? null,
+              respondable: offer.respondable,
               discardable: offer.discardable,
               submittable: offer.submittable,
               decidable: offer.decidable,

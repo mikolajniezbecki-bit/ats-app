@@ -2,9 +2,11 @@
 // D3, D5, M2): one changeApplicationStatus call per application, each in
 // its own transaction and with the version the list showed, one after the
 // other. This file only orchestrates: it never writes `applications`, so
-// every rule the service enforces (R1–R3, R7–R9, R11, E8, E9 and later
-// steps) applies to bulk moves too. A refused, stale or failed application
-// is reported and the others still change. Logs carry IDs and counts only.
+// every rule the service enforces (R1–R9, R11, L8, E8, E9) applies to bulk
+// moves too: a hire that fills the requisition closes it (R6), and the
+// later items in the batch are then refused. A refused, stale or failed
+// application is reported and the others still change. Logs carry IDs and
+// counts only.
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { type Tx, getDb, withTransaction } from "../db";
@@ -13,7 +15,7 @@ import type { PipelineStatus } from "../domain/pipeline";
 import { logger } from "../logger";
 import { message } from "../messages";
 import { scopeApplicationsFor } from "../policy/filters";
-import type { PolicyUser } from "../policy/permissions";
+import { type PolicyUser, can } from "../policy/permissions";
 import { MAX_STATUS_COMMENT_LENGTH, type StatusChangeResult, changeApplicationStatus } from ".";
 
 export const MAX_BULK_ITEMS = 100;
@@ -84,7 +86,14 @@ export async function bulkChangeStatus(
         continue;
       }
       const result = await withTransaction((tx) =>
-        change(tx, { applicationId, toStatus: input.toStatus, version, comment: input.comment, actor: { id: user.id } }),
+        change(tx, {
+          applicationId,
+          toStatus: input.toStatus,
+          version,
+          comment: input.comment,
+          actor: { id: user.id },
+          canCorrectHired: can(user, "application.correctHired"),
+        }),
       );
       results.push(result.ok ? { applicationId, ok: true, status: result.status, version: result.version } : bulkFailure(applicationId, result.reason, result.message));
     } catch (err) {
