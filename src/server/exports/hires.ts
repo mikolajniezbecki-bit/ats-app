@@ -8,6 +8,7 @@
 // or logged; the audit row and the log carry counts only.
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { z } from "zod";
 import { type Db, type Tx, getDb } from "../db";
 import { applications, auditLog, masterData, offers, requisitions } from "../db/schema";
 import { warsawRunDate } from "../domain/daily-tasks";
@@ -31,6 +32,16 @@ export const HIRE_COLUMNS: CsvColumn[] = [
   { header: "Currency" },
   { header: "Hired date" },
 ];
+
+/**
+ * The export's query (tech-stack.md §3 rule 2): only `includeExported=true`
+ * or `false`, nothing else. A typo must be a 400, not a default export,
+ * because the default export marks hires as exported.
+ */
+export const hireExportQuerySchema = z
+  .object({ includeExported: z.enum(["true", "false"]).optional() })
+  .strict()
+  .transform((query) => ({ includeExported: query.includeExported === "true" }));
 
 const exportable = (includeExported: boolean) =>
   and(eq(applications.status, "HIRED"), isNull(applications.anonymizedAt), includeExported ? undefined : isNull(applications.exportedAt));

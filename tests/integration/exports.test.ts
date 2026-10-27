@@ -19,9 +19,9 @@ type Session = Awaited<ReturnType<typeof signedIn>>;
 const db = () => getDb() as unknown as Tx;
 const HEADER = "Application ID,Requisition number,First name,Last name,Email,Phone,Job title,Department,Location,Legal entity,Start date,Salary,Currency,Hired date";
 
-const post = (session: Session | undefined, includeExported = false) =>
+const post = (session: Session | undefined, includeExported = false, query = includeExported ? "?includeExported=true" : "") =>
   POST(
-    new Request(`${ORIGIN}/api/exports/hires${includeExported ? "?includeExported=true" : ""}`, {
+    new Request(`${ORIGIN}/api/exports/hires${query}`, {
       method: "POST",
       headers: session ? { cookie: session.cookie } : {},
     }),
@@ -65,8 +65,8 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-async function exported(session: Session, includeExported = false) {
-  const response = await post(session, includeExported);
+async function exported(session: Session, includeExported = false, query?: string) {
+  const response = await post(session, includeExported, query);
   expect(response.status).toBe(200);
   return parseCsv(await bodyText(response));
 }
@@ -217,6 +217,20 @@ describe("POST /api/exports/hires", () => {
     const [first, second] = await Promise.all([exported(a), exported(b)]);
     const ids = [...first.slice(1), ...second.slice(1)].map((row) => row[0]);
     expect(ids.sort()).toEqual(hires.map((row) => row.application.id).sort());
+  });
+
+  it("an invalid query (?includeExported=yes, =TRUE, an unknown parameter) returns 400 and exports nothing", async () => {
+    await drain();
+    const recruiter = await signedIn("RECRUITER");
+    const waiting = await hire();
+    for (const query of ["?includeExported=yes", "?includeExported=TRUE", "?includeExported=1", "?include=true"]) {
+      const response = await post(recruiter, false, query);
+      expect(response.status, query).toBe(400);
+      expect(await response.json(), query).toEqual({ error: "invalid" });
+    }
+    expect((await exportedAt([waiting.application.id]))[waiting.application.id].exportedAt).toBeNull();
+    expect(await latestAudit(recruiter.userId)).toEqual([]);
+    expect((await exported(recruiter, false, "?includeExported=false")).slice(1).map((row) => row[0])).toEqual([waiting.application.id]);
   });
 
   it("V10: Hiring Manager and Interviewer get 403 and nothing changes; no session gets 401; GET isn't exported", async () => {
