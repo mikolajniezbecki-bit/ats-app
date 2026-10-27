@@ -4,13 +4,14 @@
 // the seed alone.
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { extractText } from "unpdf";
 import { describe, expect, inject, it } from "vitest";
 import { type StorageService, getStorage } from "@/server/adapters/storage";
 import { type AppConfig, getConfig } from "@/server/config";
 import { type Db, createPool } from "@/server/db";
 import * as schema from "@/server/db/schema";
 import { runSeed } from "@/server/db/seed";
-import { SYNTHETIC_LAST_NAMES } from "@/server/db/seed/synthetic-identities";
+import { SYNTHETIC_LAST_NAMES, SYNTHETIC_PDF_NOTICE } from "@/server/db/seed/synthetic-identities";
 import { withScratchDatabase } from "./database";
 import { ORIGIN } from "./sessions";
 
@@ -144,7 +145,7 @@ describe("db:seed synthetic demo data", () => {
     });
   });
 
-  it("C3: every seeded candidate is synthetic, and every file says so and exists in Azurite", async () => {
+  it("D8: every seeded candidate is synthetic, and every file exists in Azurite and says so on its first page", async () => {
     await onScratch("seed_synthetic_identities", async (db) => {
       await runSeed(db, seedConfig(), { now });
       const candidates = await rows<{ last_name: string; email: string; phone: string }>(db, sql`SELECT last_name, email, phone FROM applications`);
@@ -155,12 +156,16 @@ describe("db:seed synthetic demo data", () => {
         expect(SYNTHETIC_LAST_NAMES as readonly string[]).toContain(candidate.last_name);
       }
       const files = await rows<{ storage_key: string; kind: string; status: string }>(db, sql`SELECT storage_key, kind, status FROM files`);
+      expect(new Set(files.map((file) => file.kind))).toEqual(new Set(["CV", "COVER_LETTER", "OFFER_LETTER"]));
       for (const file of files) {
         expect(file.status).toBe("CLEAN");
         expect(await blobExists(file.storage_key), file.kind).toBe(true);
+        const bytes = new Uint8Array(await getStorage().download(file.storage_key));
+        expect(Buffer.from(bytes.subarray(0, 5)).toString("latin1"), file.kind).toBe("%PDF-");
+        // C3: the notice is on the first page of every generated PDF, offer letters included.
+        const { text } = await extractText(bytes, { mergePages: false });
+        expect((text as string[])[0], file.kind).toContain(SYNTHETIC_PDF_NOTICE);
       }
-      const cv = files.find((file) => file.kind === "CV")!;
-      expect((await getStorage().download(cv.storage_key)).toString("latin1")).toContain("%PDF-");
     });
   });
 

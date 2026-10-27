@@ -538,7 +538,9 @@ class DemoBuilder {
     // P7 (Q2): a sent offer has its letter, rendered by the task 37 renderer directly (no job, no email).
     if (row.sentAt) {
       const { values, legalEntity } = await offerTokenValues(this.tx, row);
-      const bytes = await renderOfferLetter({ body: await this.offerBody(), values, legalEntityLabel: legalEntity, letterDate: formatDate(warsawRunDate(row.sentAt)) });
+      // C3: the seeded letter says on its first page that it is synthetic, above the template's text.
+      const body = `**${SYNTHETIC_PDF_NOTICE}**\n\n${await this.offerBody()}`;
+      const bytes = await renderOfferLetter({ body, values, legalEntityLabel: legalEntity, letterDate: formatDate(warsawRunDate(row.sentAt)) });
       const [req] = await this.tx.select({ reqNumber: requisitions.reqNumber }).from(requisitions).where(eq(requisitions.id, application.requisitionId));
       await this.storeFile("OFFER", row.id, "OFFER_LETTER", bytes, `offer-letter-${req.reqNumber}.pdf`, row.sentAt);
     }
