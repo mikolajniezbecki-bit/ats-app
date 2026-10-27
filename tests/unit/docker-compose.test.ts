@@ -7,7 +7,7 @@ import { loadConfig } from "@/server/config";
 type ComposeFile = {
   services: Record<
     string,
-    { environment?: Record<string, string | number | boolean>; healthcheck?: { test: string[] } }
+    { image?: string; environment?: Record<string, string | number | boolean>; healthcheck?: { test: string[]; start_period?: string } }
   >;
 };
 
@@ -50,5 +50,13 @@ describe("docker-compose.yml", () => {
       expect(appEnv[key], key).toMatch(/^local-only-not-secret-/);
     }
     expect(appEnv.DATABASE_URL).toContain(":local-only-not-secret-");
+  });
+
+  it("task 43: the app runs the image named by APP_IMAGE and is healthy only once /api/health answers", () => {
+    expect(compose.services.app.image).toBe("${APP_IMAGE:-ats-app:local}");
+    const health = compose.services.app.healthcheck!;
+    expect(health.test.join(" ")).toContain("http://127.0.0.1:3000/api/health");
+    expect(health.test[1]).toBe("node");
+    expect(health.start_period).toBeDefined();
   });
 });

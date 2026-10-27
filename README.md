@@ -262,6 +262,16 @@ docker compose up -d postgres azurite mailpit
 pnpm dev
 ```
 
+## CI/CD
+
+- **`ci.yml`** (pull requests): `pnpm verify`, `db:migrate` and the integration tests against service containers, then `pnpm build` with no configuration (W1). No Playwright.
+- **`main.yml`** (every push to `main`, and by hand from the Actions tab: *main* → *Run workflow*): `pnpm verify`, then the Docker image is built **once** as `ghcr.io/<owner>/ats-app:<full commit SHA>` and tested as is. The Compose stack runs it (`APP_IMAGE=<that tag> docker compose up --no-build --wait`; the `app` service has a `/api/health` healthcheck). The workflow migrates and seeds from the image (`node db/migrate.mjs`, `node db/seed.mjs`, which on the empty stack adds the demo data), runs `pnpm test:integration` against the Compose PostgreSQL, Azurite and Mailpit, and then the whole Playwright suite (`pnpm test:e2e`: parallel projects, then `time-travel`; one retry in CI). Only then is **the same image** pushed to GHCR (private package, SHA tag only, no `latest`); the job summary shows the tag and digest, and older versions are deleted so the 10 most recent remain.
+  - Each step runs only if the earlier ones passed. A newer push cancels the run in progress. Pushes that change only `_docs/**` or Markdown files don't start it. Manual runs from another branch run the tests but never push.
+  - On failure the run uploads `test-results/` (trace, video, screenshot), `playwright-report/` and the Compose logs as an artifact kept 7 days.
+  - The only credential is `GITHUB_TOKEN`. Playwright in CI needs internet access to `challenges.cloudflare.com` (Turnstile test keys, in the browser and the app).
+  - Expect about 20–30 minutes per run. Deployment steps come with the Azure tasks.
+- Locally, `docker compose up --build` still builds the app itself and tags it `ats-app:local`.
+
 ## Configuration
 
 All configuration goes through `getConfig()` in `src/server/config.ts` (tech-stack.md §3 rule 5). It validates every variable with Zod on the first call (never at import time, so `pnpm build` needs no secrets) and caches the result. Errors name the missing or invalid variables, never their values. An empty value (`KEY=`) counts as missing.
