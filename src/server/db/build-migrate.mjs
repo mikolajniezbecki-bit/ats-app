@@ -29,10 +29,15 @@ await build({
   format: "esm",
   // `server-only` resolves to its no-op build under react-server.
   conditions: ["react-server"],
-  // pg loads pg-native only when asked for it.
-  external: ["pg-native"],
-  // Bundled CommonJS dependencies (pg, pino) call require().
-  banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
+  // pg loads pg-native only when asked for it. @react-pdf/renderer (the demo
+  // seed's offer letters, task 42) resolves package-internal `#` imports at
+  // run time, so it loads from node_modules as in the app: in the image from
+  // the traced standalone node_modules next to /app/db.
+  external: ["pg-native", "@react-pdf/renderer"],
+  // Bundled CommonJS dependencies (pg, pino) call require(). The import is
+  // aliased: bundled ESM code (the offer letter renderer the demo seed uses,
+  // task 42) has its own top-level `import { createRequire }`.
+  banner: { js: "import { createRequire as __atsCreateRequire } from 'node:module'; const require = __atsCreateRequire(import.meta.url);" },
   logLevel: "warning",
 });
 
