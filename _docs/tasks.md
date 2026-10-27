@@ -648,7 +648,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `includeExported=true` returns earlier exports without changing their `exported_at`; anonymized hires never appear.
 - `V10:` test: Hiring Managers and Interviewers get 403 from the export endpoint.
 
-## 40. Data retention purge
+## 40. Data retention purge ✅
 
 **Issue:** [#46](https://github.com/mikolajniezbecki-bit/ats-app/issues/46)
 

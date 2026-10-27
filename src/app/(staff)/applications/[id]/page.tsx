@@ -156,7 +156,8 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
         )}
       </section>
 
-      {can(user, "application.changeStatus") && (
+      {/* RT3: an anonymized application can't change status, so no control is offered. */}
+      {can(user, "application.changeStatus") && !anonymized && (
         <section aria-labelledby="status-heading" className="space-y-2">
           <h2 id="status-heading" className="text-xl font-semibold">
             {hiredCorrection ? t("status.correctTitle") : t("status.title")}
@@ -171,20 +172,20 @@ export default async function ApplicationPage({ params }: PageProps<"/applicatio
         </section>
       )}
 
-      {!anonymized && (
-        <section aria-labelledby="documents-heading" className="space-y-3">
-          <h2 id="documents-heading" className="text-xl font-semibold">
-            {d("documents")}
-          </h2>
-          {detail.documents.length === 0 && <p className="text-sm">{d("noDocuments")}</p>}
-          {detail.documents.map((file) => (
-            <div key={file.id} className="space-y-1" data-testid={`document-${file.kind}`}>
-              <h3 className="font-medium">{d(`kinds.${file.kind}`)}</h3>
-              {file.deleted ? <p className="text-sm">{d("fileDeleted")}</p> : <PdfViewer fileId={file.id} user={user} title={d(`kinds.${file.kind}`)} />}
-            </div>
-          ))}
-        </section>
-      )}
+      <section aria-labelledby="documents-heading" className="space-y-3">
+        <h2 id="documents-heading" className="text-xl font-semibold">
+          {d("documents")}
+        </h2>
+        {/* F8, task 40 Q5: the purge deleted the files; nothing is linked. */}
+        {anonymized && <p className="text-sm">{d("filesRemoved")}</p>}
+        {!anonymized && detail.documents.length === 0 && <p className="text-sm">{d("noDocuments")}</p>}
+        {detail.documents.map((file) => (
+          <div key={file.id} className="space-y-1" data-testid={`document-${file.kind}`}>
+            <h3 className="font-medium">{d(`kinds.${file.kind}`)}</h3>
+            {file.deleted ? <p className="text-sm">{d("fileDeleted")}</p> : <PdfViewer fileId={file.id} user={user} title={d(`kinds.${file.kind}`)} />}
+          </div>
+        ))}
+      </section>
 
       {!anonymized && (
         <section aria-labelledby="prescreen-heading" className="space-y-2">

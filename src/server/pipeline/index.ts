@@ -52,7 +52,7 @@ function refused(reason: "notFound" | "anonymized" | "stale"): StatusChangeResul
  * gone or already running returns false and is ignored: its handler sees
  * the row is no longer QUEUED (J3).
  */
-async function cancelQueuedEmails(tx: Tx, applicationId: string): Promise<number> {
+export async function cancelQueuedEmails(tx: Tx, applicationId: string): Promise<number> {
   const cancelled = await tx
     .update(emailLog)
     .set({ status: "CANCELLED", error: "STATUS_CHANGED" })

@@ -350,7 +350,8 @@ export async function getScorecardPage(user: PolicyUser, interviewId: string, db
   return {
     interview: row.interview,
     jobTitle: row.jobTitle,
-    candidate: `${row.firstName} ${row.lastName}`,
+    // Null once anonymized (RT3); the page shows the label.
+    candidate: row.firstName && row.lastName ? `${row.firstName} ${row.lastName}` : null,
     scorecard: scorecard ?? null,
     notesFileId: notes?.id ?? null,
     refusal: refused,

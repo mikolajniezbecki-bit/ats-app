@@ -36,6 +36,3 @@ export function dailyTaskHandler(run: DailyTaskRun): JobHandler {
     log.info("daily task completed");
   };
 }
-
-/** Stub until the real work lands: retention.purge in task 40. */
-export const stubDailyTask: DailyTaskRun = async () => undefined;
