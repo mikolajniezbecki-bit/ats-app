@@ -1,0 +1,149 @@
+# Main-branch pipeline (tech-stack.md §12 main.yml, G2, G4, G7, G9, T2, T6).
+# Every push to main builds the image once, tagged with the commit SHA, runs
+# the integration tests and the whole Playwright suite against exactly that
+# image on the Compose stack, and only then pushes the same image to GHCR.
+# Each step runs only if every earlier one succeeded; the uploads on failure
+# are the only exception. Manual runs from another branch test but never
+# push (task 43 Q2). Pushes that change only _docs/** or Markdown don't start
+# it (Q3). The only credential is GITHUB_TOKEN; the Compose stack uses the
+# fake, local-only values from docker-compose.yml. Deployment comes in task 45.
+name: main
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "_docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+# G4: a newer push to the same ref cancels the run in progress.
+concurrency:
+  group: main-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # Version comes from package.json `packageManager`.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm verify
+
+      # GHCR names are lower case; the full SHA is the only tag (G2: no latest).
+      - name: Image name
+        run: echo "APP_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ats-app:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Built once and loaded into the runner's Docker; the same image is
+      # tested below and pushed at the end, never rebuilt.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.APP_IMAGE }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The backing services first, then migrate: the app's worker needs the
+      # pg-boss schema that db:migrate creates.
+      - name: Start PostgreSQL, Azurite and Mailpit
+        run: docker compose up -d --no-build --wait postgres azurite mailpit
+
+      # From the image, with the compiled entry point (§3 rule 8).
+      - name: Migrate from the image
+        run: docker compose run --rm --no-deps app node db/migrate.mjs
+
+      # The app creates Azurite's private `files` container at startup, which
+      # the seed's sample files need; --wait returns once /api/health is OK.
+      - name: Start the app
+        run: docker compose up -d --no-build --wait app
+
+      # DEMO_USER_* come from docker-compose.yml; on this empty stack the seed
+      # also adds the synthetic demo data (D8).
+      - name: Seed from the image
+        run: docker compose run --rm --no-deps app node db/seed.mjs
+
+      # Per-worker databases on the Compose PostgreSQL (T2), with its Azurite
+      # and Mailpit, as in ci.yml.
+      - run: pnpm test:integration
+        env:
+          DATABASE_URL: postgres://ats:local-only-not-secret-postgres@localhost:5432/ats
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      # Parallel projects, then time-travel (T2). Needs internet access to
+      # challenges.cloudflare.com for the Turnstile test keys (README).
+      - run: pnpm test:e2e
+
+      - name: Collect Compose logs
+        if: failure()
+        run: docker compose logs --no-color > compose-logs.txt 2>&1 || true
+
+      # T6, Q5: trace, video and screenshot of failed tests, the HTML report and
+      # the stack's logs (synthetic data and fake values only), kept 7 days (Q4).
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-evidence-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+            compose-logs.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the tested image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push "$APP_IMAGE"
+          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$APP_IMAGE")"
+          {
+            echo "### Image"
+            echo
+            echo "- Tag: \`$APP_IMAGE\`"
+            echo "- Digest: \`$digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Q4: GHCR keeps the 10 most recent versions; the one just pushed is the newest.
+      - name: Delete old image versions
+        if: github.ref == 'refs/heads/main'
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ats-app
+          package-type: container
+          min-versions-to-keep: 10
