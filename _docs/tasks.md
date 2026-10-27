@@ -682,7 +682,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - The dashboard shows the five KPIs for seeded data.
 - Requisition and pipeline CSV exports download for Recruiters and return 403 for other roles.
 
-## 42. Synthetic demo data
+## 42. Synthetic demo data ✅
 
 **Issue:** [#48](https://github.com/mikolajniezbecki-bit/ats-app/issues/48)
 

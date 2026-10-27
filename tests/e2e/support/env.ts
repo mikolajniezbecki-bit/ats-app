@@ -28,3 +28,8 @@ export function hostAppEnvironment(): Record<string, string> {
     LOG_LEVEL: "silent",
   };
 }
+
+/** A seeded demo user (task 17) and the fake local dev password Compose gives it (D8, task 42). */
+export function demoUser(localPart: "admin" | "recruiter" | "hm" | "interviewer"): { email: string; password: string } {
+  return { email: `${localPart}@${appEnv.DEMO_USER_DOMAIN}`, password: appEnv.DEMO_USER_PASSWORD };
+}
