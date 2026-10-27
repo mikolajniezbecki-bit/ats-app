@@ -96,7 +96,9 @@ export function OffersPanel({ applicationId, offers, createBlock, templates, cur
         reassign: { approverId: text("approverId"), reason: text("reason") },
         respond: { response: text("response") },
       };
-      void send(`/api/offers/${offer.id}/${mode.kind}`, "POST", { version: offer.version, ...bodies[mode.kind] });
+      // The response endpoint is a noun (the candidate's response), the others are verbs.
+      const path = mode.kind === "respond" ? "response" : mode.kind;
+      void send(`/api/offers/${offer.id}/${path}`, "POST", { version: offer.version, ...bodies[mode.kind] });
       return;
     }
     const fields = Object.fromEntries(["jobTitle", "salary", "currency", "startDate", "templateId"].map((name) => [name, String(form.get(name) ?? "")]));
