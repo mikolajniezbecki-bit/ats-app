@@ -8,6 +8,9 @@
 services:
   app:
     build: .
+    # `docker compose up --build` builds and tags it locally; main.yml runs the
+    # image it built once with APP_IMAGE and --no-build (task 43 Q1, G2).
+    image: ${APP_IMAGE:-ats-app:local}
     init: true # forwards SIGTERM so `docker compose stop` is fast
     ports:
       - "127.0.0.1:3000:3000"
@@ -34,6 +37,14 @@ services:
       DEMO_USER_DOMAIN: ats-demo.local
       WORKER_ENABLED: "true"
       LOG_LEVEL: info
+    # `docker compose up --wait` returns once the app answers /api/health
+    # (M5); the image has node but no curl. The start period covers W1 startup.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
