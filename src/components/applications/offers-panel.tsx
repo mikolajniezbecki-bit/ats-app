@@ -26,6 +26,8 @@ export type PanelOffer = {
   frozen: boolean;
   editable: boolean;
   needsReapproval: boolean;
+  letterPending: boolean;
+  sentAt: string | null;
   discardable: boolean;
   submittable: boolean;
   decidable: boolean;
@@ -175,6 +177,12 @@ export function OffersPanel({ applicationId, offers, createBlock, templates, cur
                   {t("awaiting", { approver: offer.approver ?? "—", submitter: offer.submitter ?? "—" })} <LocalTime value={offer.submittedAt} />
                 </p>
               )}
+              {offer.letterPending && <p className="text-amber-900">{t("letterPending")}</p>}
+              {offer.sentAt && (
+                <p>
+                  {t("letterSent")}: <LocalTime value={offer.sentAt} />
+                </p>
+              )}
               {offer.latestEvent && offer.latestEvent.event !== "SUBMITTED" && (
                 <p data-testid={`offer-latest-${offer.id}`}>
                   {t("latest", { event: t(`events.${offer.latestEvent.event}`), actor: offer.latestEvent.actor ?? t("system") })} <LocalTime value={offer.latestEvent.createdAt} />
@@ -182,6 +190,10 @@ export function OffersPanel({ applicationId, offers, createBlock, templates, cur
                 </p>
               )}
               <div className="mt-2 flex flex-wrap gap-2">
+                {/* P6: rendered on request and opened in a new tab, so frame-src doesn't change. */}
+                <a href={`/api/offers/${offer.id}/preview`} target="_blank" rel="noreferrer" className="rounded border px-3 py-1">
+                  {t("preview")}
+                </a>
                 {(["submit", "approve", "reject", "withdraw", "reassign", "edit", "discard"] as const)
                   .filter((action) =>
                     action === "submit"
