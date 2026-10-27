@@ -597,7 +597,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - `A9:` offer test: withdrawing the request returns the offer to `DRAFT` with a `WITHDRAWN` approval event.
 - `V3:` API test: the approver sees only that application on the requisition and loses access after reassignment.
 
-## 37. Offer letter PDF and offer email
+## 37. Offer letter PDF and offer email ✅
 
 **Issue:** [#43](https://github.com/mikolajniezbecki-bit/ats-app/issues/43)
 

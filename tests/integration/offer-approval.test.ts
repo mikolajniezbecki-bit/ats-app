@@ -120,7 +120,9 @@ describe("submit (A1, A2, L8)", () => {
     // Q6: no salary in the email.
     for (const salary of ["85000", "85,000", "85 000"]) expect(logged.bodyRendered).not.toContain(salary);
     await processDueJobs();
-    const message = await waitForMessage({ to: await emailOf(hm.userId), subjectIncludes: requisition.reqNumber });
+    // The request's own subject: a daily-task job another file left queued in
+    // this worker's database may also send this offer a reminder here.
+    const message = await waitForMessage({ to: await emailOf(hm.userId), subjectIncludes: `Offer approval needed: ${requisition.reqNumber}` });
     expect(message.subject).toBe(`Offer approval needed: ${requisition.reqNumber} ${application.firstName} ${application.lastName}`);
     expect(message.text).toContain(`/applications/${application.id}`);
   });

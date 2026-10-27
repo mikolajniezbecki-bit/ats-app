@@ -26,6 +26,7 @@ import {
   submitRefusal,
 } from "../domain/offers";
 import { queueOfferApprovalRequest } from "../email/approval-request";
+import { cancelQueuedLetterEmails, letterPending } from "./letter";
 import { logger } from "../logger";
 import { scopeApplicationsFor, scopeOffersFor } from "../policy/filters";
 import { type ApprovalResource, type PolicyUser, can } from "../policy/permissions";
@@ -225,7 +226,9 @@ async function changeApprovedOffer(
   await recordApprovalEvent(tx, { subjectType: "OFFER", subjectId: offer.id, event: "SUBMITTED", actorUserId: user.id, toApproverId: input.approverId });
   await queueOfferApprovalRequest(tx, offer.id);
   const cancelled = await jobQueue.cancelWaiting(tx, "offer.render-pdf", { offerId: offer.id });
-  logger.info({ offer_id: offer.id, user_id: user.id, approver_id: input.approverId, fields: changed.length, cancelled_renders: cancelled }, "approved offer changed, re-approval started");
+  // Task 37 Q9: the earlier letter's offer email, if still queued, is cancelled too.
+  const cancelledEmails = await cancelQueuedLetterEmails(tx, offer.id);
+  logger.info({ offer_id: offer.id, user_id: user.id, approver_id: input.approverId, fields: changed.length, cancelled_renders: cancelled, cancelled_emails: cancelledEmails }, "approved offer changed, re-approval started");
   return { ok: true, offer: updated };
 }
 
@@ -284,6 +287,8 @@ export type OfferListItem = OfferRow & {
   editable: boolean;
   /** A8: an edit of this approved offer needs a new approver. */
   needsReapproval: boolean;
+  /** Q11 (task 37): approved, but the letter hasn't been issued (yet, or its render failed). */
+  letterPending: boolean;
   discardable: boolean;
   submittable: boolean;
   decidable: boolean;
@@ -341,6 +346,7 @@ export async function listOffersForPage(user: PolicyUser, applicationId: string,
         frozen: isFrozen(row.offer, all),
         editable: manage && (reapproval || editRefusal(row.offer, all, row.applicationStatus) === undefined),
         needsReapproval: reapproval,
+        letterPending: letterPending(row.offer),
         discardable: manage && canDiscard(row.offer, all),
         submittable: manage && submitRefusal(row.offer, all, row.applicationStatus, row.requisitionState) === undefined,
         decidable: can(user, "approval.decide", approval),
