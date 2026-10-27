@@ -12,7 +12,8 @@ export async function InterviewerApplication({ view, user }: { view: Interviewer
   const i = await getTranslations("Interviews");
   const sc = await getTranslations("Scorecards");
   const f = await getTranslations("Feedback");
-  const name = `${view.application.firstName ?? ""} ${view.application.lastName ?? ""}`.trim();
+  // Task 40 Q5: the purge nulls the names.
+  const name = `${view.application.firstName ?? ""} ${view.application.lastName ?? ""}`.trim() || d("anonymizedName");
 
   return (
     <main className="flex flex-1 flex-col gap-6 p-8">

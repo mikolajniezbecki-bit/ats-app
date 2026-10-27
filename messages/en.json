@@ -911,7 +911,7 @@
     },
     "open": "Open",
     "disqualified": "Disqualified",
-    "anonymized": "Anonymized",
+    "anonymized": "Anonymized applicant",
     "failedEmailIcon": "An email to this candidate failed to send",
     "group": "{count} applications from the same email address",
     "alsoAppliedTo": "Also applied to:",
@@ -961,7 +961,8 @@
       "notAnswered": "Not answered",
       "inactiveQuestion": "(question deactivated)",
       "timeline": "Timeline",
-      "noTimeline": "Nothing yet."
+      "noTimeline": "Nothing yet.",
+      "filesRemoved": "Removed under the retention policy"
     },
     "status": {
       "title": "Change status",
@@ -1132,7 +1133,7 @@
     "interview": "Interview",
     "job": "Job",
     "candidate": "Candidate",
-    "anonymized": "Anonymized candidate",
+    "anonymized": "Anonymized applicant",
     "thumbs": "Recommendation",
     "thumbsUp": "Thumbs up",
     "thumbsDown": "Thumbs down",
@@ -1311,7 +1312,7 @@
       "REOPENED": "Reopened"
     },
     "open": "Scorecard",
-    "anonymized": "Anonymized candidate"
+    "anonymized": "Anonymized applicant"
   },
   "Exports": {
     "title": "Exports",
