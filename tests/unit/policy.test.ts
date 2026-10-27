@@ -27,6 +27,7 @@ const ADMIN_RECRUITER: Action[] = [
   "offer.manage",
   "export.hires",
   "export.reports",
+  "reports.view",
   "approval.reassign",
   ...READS,
 ];

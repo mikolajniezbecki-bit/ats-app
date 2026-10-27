@@ -6,6 +6,7 @@
 import { withTransaction } from "@/server/db";
 import { exportHires, hireExportQuerySchema } from "@/server/exports/hires";
 import { withPermission } from "@/server/policy/guards";
+import { csvResponse } from "../csv-response";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,12 +15,5 @@ export const POST = withPermission("export.hires", async (request, user) => {
   const parsed = hireExportQuerySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success) return Response.json({ error: "invalid" }, { status: 400 });
   const result = await withTransaction((tx) => exportHires(tx, user, parsed.data));
-  return new Response(result.csv, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${result.filename}"`,
-      "Cache-Control": "no-store",
-    },
-  });
+  return csvResponse(result);
 });
