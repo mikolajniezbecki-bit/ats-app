@@ -45,6 +45,7 @@ export const PERMISSIONS = {
   "offer.manage": ADMIN_RECRUITER,
   "export.hires": ADMIN_RECRUITER, // V10
   "export.reports": ADMIN_RECRUITER, // V10
+  "reports.view": ADMIN_RECRUITER, // §5.9 dashboard (task 41 Q1)
   "approval.reassign": ADMIN_RECRUITER, // A4
 
   // Admin, Recruiter and Hiring Manager (§3).

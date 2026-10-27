@@ -43,7 +43,8 @@
       "approvals": "My approvals",
       "allApprovals": "All pending approvals",
       "myInterviews": "My interviews",
-      "exports": "Exports"
+      "exports": "Exports",
+      "reports": "Reports"
     },
     "signOut": "Sign out"
   },
@@ -1322,6 +1323,36 @@
       "includeExported": "Include already exported",
       "submit": "Export hires",
       "note": "Exported hires are marked as exported. If the download fails, export again with Include already exported."
+    },
+    "reports": {
+      "title": "Report exports",
+      "requisitions": "Requisitions (CSV)",
+      "pipeline": "Pipeline (CSV)",
+      "note": "Pipeline data contains no candidate contact details."
+    }
+  },
+  "Reports": {
+    "title": "Reports",
+    "open": {
+      "title": "Open requisitions"
+    },
+    "active": {
+      "title": "Active applications per status"
+    },
+    "timeToFill": {
+      "title": "Average Time to Fill (days)",
+      "basis": "{count, plural, one {based on # requisition} other {based on # requisitions}}"
+    },
+    "timeToHire": {
+      "title": "Average Time to Hire (days)",
+      "basis": "{count, plural, one {based on # hire} other {based on # hires}}"
+    },
+    "age": {
+      "title": "Age of open requisitions (days)",
+      "number": "Number",
+      "requisition": "Requisition",
+      "state": "State",
+      "days": "Age (days)"
     }
   }
 }

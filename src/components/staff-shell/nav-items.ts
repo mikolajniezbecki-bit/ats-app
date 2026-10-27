@@ -17,8 +17,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/approvals", labelKey: "approvals", action: "approval.decide" },
   // A4: Recruiters and Admins find pending items to reassign.
   { href: "/approvals?view=all", labelKey: "allApprovals", action: "approval.reassign" },
-  // V10: the hire export (task 39); task 41 adds its reports to the same page.
+  // V10: the hire export (task 39) and the report exports (task 41).
   { href: "/exports", labelKey: "exports", action: "export.hires" },
+  // §5.9 KPI dashboard (task 41).
+  { href: "/reports", labelKey: "reports", action: "reports.view" },
   // Every role can be an interview participant (I1, task 34 Q6); last, so
   // the other items keep their order.
   { href: "/interviews", labelKey: "myInterviews", action: "staff.area" },
