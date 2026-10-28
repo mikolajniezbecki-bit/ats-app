@@ -111,7 +111,7 @@ jobs:
       # the stack's logs (synthetic data and fake values only), kept 7 days (Q4).
       - name: Upload failure evidence
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failure-evidence-${{ github.run_id }}
           path: |
