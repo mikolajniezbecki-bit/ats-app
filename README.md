@@ -214,7 +214,7 @@ One-time setup in the Entra admin center (Microsoft Entra ID → App registratio
 2. **Authentication → Web** redirect URIs:
    - `http://localhost:3000/api/auth/callback/microsoft` (local)
    - `https://<Azure app address>/api/auth/callback/microsoft` (update it if the host name changes after a rebuild, G6)
-3. **Certificates & secrets → New client secret.** Store the value in Key Vault as the `MICROSOFT_CLIENT_SECRET` secret (wired in by task 44) and set a calendar reminder before it expires; sign-in stops working when it does.
+3. **Certificates & secrets → New client secret.** Store the value in Key Vault as the secret `microsoft-client-secret` (see [Azure setup](#azure-setup); the apps read it as `MICROSOFT_CLIENT_SECRET`) and set a calendar reminder before it expires; sign-in stops working when it does.
 4. **Token configuration → Add optional claim → ID → `email`.** Users without a mailbox have no `email` claim; the app then uses their UPN (`preferred_username`).
 5. **Demo users:** create `admin@`, `recruiter@`, `hm@` and `interviewer@<tenant>.onmicrosoft.com` in Entra, and the same emails as ATS users with the matching roles (demo seed, task 17).
 6. Note the **Application (client) ID** and the **Directory (tenant) ID** from the app's overview page.
@@ -270,7 +270,93 @@ pnpm dev
   - On failure the run uploads `test-results/` (trace, video, screenshot), `playwright-report/` and the Compose logs as an artifact kept 7 days.
   - The only credential is `GITHUB_TOKEN`. Playwright in CI needs internet access to `challenges.cloudflare.com` (Turnstile test keys, in the browser and the app).
   - Expect about 20–30 minutes per run. Deployment steps come with the Azure tasks.
+- **`infra.yml`** (by hand, `main` only): what-if or deploy of the Azure environment; see [Azure setup](#azure-setup).
 - Locally, `docker compose up --build` still builds the app itself and tags it `ats-app:local`.
+
+## Azure setup
+
+The Azure environment is defined in `infra/main.bicep` (modules in `infra/modules/`) and deployed by the **`infra.yml`** workflow into one resource group in the owner's personal subscription and tenant (tech-stack.md §1, G3, G5; ats-project-scope.md C1). Everything is tagged `project=ats`; names are `ats-<kind>-<uniqueString(resource group)>`, and the location is the resource group's.
+
+| Resource | Settings |
+|---|---|
+| Log Analytics | `PerGB2018`, 30-day retention, 0.1 GB/day cap (M7); logging pauses for the rest of the day at the cap |
+| User-assigned identity | Used by the web app and all jobs; **Key Vault Secrets User** on the vault, **Storage Blob Data Contributor** on the storage account |
+| Key Vault | Standard, Azure RBAC, 7-day soft delete, purge protection off, template deployment on |
+| Storage | `Standard_LRS`, `StorageV2`, Hot, HTTPS and TLS 1.2 only, no public blobs, no shared keys, blob soft delete and versioning off, private container `files` |
+| PostgreSQL Flexible Server | 17, `Standard_B1ms`, 32 GB without auto-grow, 7-day backups, no HA or geo backup, password auth, firewall `AllowAllWindowsAzureIps`, `require_secure_transport=on`, database `ats` |
+| Container Apps | Consumption environment; web app (0.5 vCPU / 1 GiB, 0–1 replicas, HTTPS ingress on 3000, readiness and startup probes on `/api/health`); jobs `tick` (hourly, `node db/tick.mjs`), `db-migrate` (`node db/migrate.mjs`) and `db-seed` (`node db/seed.mjs`, or `node db/seed-admin.mjs` when `SEED_ADMIN_EMAIL` is set) |
+| Budget | 10 per month in the subscription's billing currency, emails at 80 % and 100 % of actual cost |
+
+All four containers run the same image with one environment list: `APP_ENV=azure`, `EMAIL_PROVIDER=outbox`, `LOG_LEVEL=info`, `BETTER_AUTH_URL=https://<web app>.<environment domain>`, the Entra, storage, identity and Turnstile settings, and Key Vault references for `DATABASE_URL`, `BETTER_AUTH_SECRET`, `MICROSOFT_CLIENT_SECRET`, `EMAIL_HASH_KEY`, `TURNSTILE_SECRET_KEY` and `TICK_SECRET`. Only the web app has `WORKER_ENABLED=true`; only `db-migrate` gets `DATABASE_ADMIN_URL`. Dev sign-in, demo passwords, Azurite and SMTP settings are never set (`infra/check-arm.mjs` fails the workflow if the compiled template mentions them).
+
+**Database logins.** The server admin (`atsadmin`) owns the schema and is used only by `db-migrate`. With `DATABASE_ADMIN_URL` set, `db:migrate` applies the migrations as the admin, then creates or updates the app login `ats_app` from `DATABASE_URL`. That login gets `CONNECT`, DML on the tables, `USAGE`/`SELECT` on the sequences and ownership of the `pgboss` schema, and no DDL right on `public`. Last, `db:migrate` installs the job queues as `ats_app`. For that one step `ats_app` may create schemas in the database; the right is revoked straight afterwards. Locally and in CI `DATABASE_ADMIN_URL` is unset and nothing changes.
+
+### `infra.yml`
+
+Runs only by hand (**Actions → infra → Run workflow**) and only on `main`: the first step refuses other refs, and the Azure federated credential accepts only `repo:mikolajniezbecki-bit/ats-app:ref:refs/heads/main`. It logs in with OIDC (`azure/login`); **no Azure secret is stored in GitHub** (G3).
+
+| Input | Values |
+|---|---|
+| `mode` | `what-if` (default): shows the planned changes in the job summary and deploys nothing. `deploy`: shows the same what-if, then deploys |
+| `stage` | `foundation`: Log Analytics, identity, Key Vault with the generated secrets, storage, role assignments, budget. `full`: all of that plus PostgreSQL, the Container Apps environment, the web app and the jobs |
+| `image_tag` | Full commit SHA of an image in GHCR. Used only while the web app doesn't exist; afterwards the workflow keeps the image the app runs, so a rerun never rolls it back (`main.yml` deploys new images, task 45) |
+
+**Approval:** read a `what-if` run, then start the matching `deploy` run. Starting it is the approval (Q1, TO-21: GitHub environments with required reviewers aren't available on the Free plan). A deploy run prints its own what-if first, in case `main` changed in between.
+
+After a `full` deployment the workflow runs the `db-migrate` job, waits for it to succeed, and calls `GET {BETTER_AUTH_URL}/api/health` until it returns 200 (up to 5 minutes). On the **first** full deployment the web app is created only after `db-migrate` has created the app login, because the app's start-up fails without it. Its deployment is named `infra-full-bootstrap`.
+
+**Generated secrets.** On the first `foundation` run, when none exists yet, the workflow generates `pg-admin-password`, `pg-app-password`, `better-auth-secret`, `email-hash-key` and `tick-secret` (random, URL-safe), masks them in the log, and Bicep stores them in Key Vault together with `database-url` and `database-admin-url` (`postgres://…@<server>.postgres.database.azure.com:5432/ats?sslmode=require`). Later runs never write them again, so each keeps a single version. If only some of the seven exist, the run stops: restore the missing ones or delete all seven. Don't change them by hand.
+
+### One-time owner setup
+
+Done once in the personal subscription and tenant (C1). `_docs/user-tasks.md` has the same steps click by click.
+
+1. **Resource group** in an EU region where Container Apps and PostgreSQL Flexible Server 17 `Standard_B1ms` are available (this project: `rg-ats-demo` in Poland Central).
+2. **Deploy service principal:** an app registration (`ATS GitHub deploy`, single tenant, no client secret) with a federated credential for GitHub Actions: organization `mikolajniezbecki-bit`, repository `ats-app`, entity *Branch*, branch `main`. On the resource group assign it:
+   - **Contributor**;
+   - **Role Based Access Control Administrator**, with the condition "allow assigning only **Storage Blob Data Contributor** and **Key Vault Secrets User** to **service principals**" (Q2).
+3. **GitHub Actions variables** (Settings → Secrets and variables → Actions → **Variables**, not Secrets): `AZURE_DEPLOY_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `GHCR_USERNAME`, `MICROSOFT_CLIENT_ID`, `TURNSTILE_SITE_KEY`, `DEMO_USER_DOMAIN` (`<tenant>.onmicrosoft.com`), `BUDGET_ALERT_EMAIL`.
+4. Run `infra.yml` with `stage: foundation` (what-if, then deploy). Give yourself **Key Vault Secrets Officer** on the new vault, then add the three secrets only you have:
+   - `microsoft-client-secret`: the Entra sign-in app's client secret ([Microsoft Entra sign-in](#microsoft-entra-sign-in-owner-setup));
+   - `turnstile-secret-key`: the real Turnstile widget's secret key;
+   - `ghcr-pat`: the token from step 5.
+5. **GHCR token (G9):** github.com → Settings → Developer settings → Personal access tokens → **Tokens (classic)**. The note is `ATS Azure image pull`, the expiry **90 days**, and the scope **`read:packages` only**. GitHub Packages accepts only classic tokens, and a classic token covers the whole personal account, so never give it any other scope.
+   - **Reminders:** set a calendar reminder about two weeks before the token expires (Azure can no longer pull images after that) and one before the Entra client secret expires (staff sign-in stops). To renew, create a new token or secret, add it as a new version of the same Key Vault secret, and restart the web app's revision.
+6. Run `infra.yml` with `stage: full` and `image_tag` = the latest SHA in GHCR (the tag in `main.yml`'s job summary). What-if first, then deploy. The database takes 10–15 minutes.
+7. **Host-name settings (Q12):** the run's summary shows `appUrl`. Add `{appUrl}/api/auth/callback/microsoft` to the Entra app registration's redirect URIs (AU1), and add the host name (without `https://`) to the Turnstile widget's hostnames. Repeat this after a rebuild if the host name changes.
+
+### Seeding
+
+Run in Azure Cloud Shell (Bash), with `RG` set to the resource group:
+
+```sh
+RG=rg-ats-demo
+JOB=$(az resource list -g "$RG" --resource-type Microsoft.App/jobs --query "[?starts_with(name, 'ats-db-seed-')].name | [0]" -o tsv)
+JOB_ID=$(az resource show -g "$RG" --resource-type Microsoft.App/jobs -n "$JOB" --query id -o tsv)
+
+# Demo data (db:seed, D8): start the job as defined.
+az rest --method post --url "https://management.azure.com$JOB_ID/start?api-version=2024-03-01" --query name -o tsv
+
+# First Admin (seed:admin, AU8): one execution with SEED_ADMIN_EMAIL added to the job's own settings.
+az resource show --ids "$JOB_ID" --query "properties.template.containers[0]" -o json \
+  | jq --arg email "<your UPN>" '{containers: [{image, name, command, resources, env: (.env + [{name: "SEED_ADMIN_EMAIL", value: $email}])}]}' \
+  > seed-admin.json
+az rest --method post --url "https://management.azure.com$JOB_ID/start?api-version=2024-03-01" --body @seed-admin.json --query name -o tsv
+
+# Status of the executions (Succeeded / Failed); the output is in Log Analytics.
+az rest --method get --url "https://management.azure.com$JOB_ID/executions?api-version=2024-03-01" \
+  --query "value[].{name: name, status: properties.status, start: properties.startTime}" -o table
+```
+
+The second start replaces the execution's container settings, so it passes the job's complete settings plus `SEED_ADMIN_EMAIL`. Secret references stay in place. The job's output carries the user ID only, never the email (M2).
+
+### Costs
+
+The settings above stay within the free offer (tech-stack.md §14): B1MS with 32 GB and 7-day backups (12 months free), about 3 GB of logs a month (5 GB free), Container Apps' monthly free grant, and cents for Key Vault and Blob. Things that would raise the cost are all off: PostgreSQL auto-grow, high availability, geo-redundant backups or a larger SKU, blob soft delete or versioning, diagnostic settings, and a second PostgreSQL server.
+
+- **The budget alert only notifies and never stops spending.** It counts in the subscription's billing currency: 10 means EUR 10 on a EUR subscription. On another currency, change `budgetAmount` in `infra/main.bicepparam` to the equivalent.
+- **Defender for Cloud plans stay on the free tier.** Don't enable paid plans.
+- Check **Cost Management → Cost analysis** for the resource group after the first week. After month 12, B1MS is billed at pay-as-you-go rates and will exceed the budget unless the database is stopped between demos (G10, task 45).
 
 ## Configuration
 
