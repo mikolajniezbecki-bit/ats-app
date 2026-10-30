@@ -1,0 +1,237 @@
+# Azure infrastructure (tech-stack.md §12 infra.yml, G3, G5, G6; task 44).
+# Manual only, and only from main: the federated credential accepts runs on
+# main and nothing else (Q11), and the first step refuses other refs.
+#
+#   mode: what-if  runs `az deployment group what-if` and writes the result to
+#                  the job summary. Deploys nothing.
+#   mode: deploy   runs the same what-if, prints it, then
+#                  `az deployment group create`; after a `full` deployment it
+#                  runs the db-migrate job and waits for GET /api/health = 200.
+#
+# The approval step is the owner reading a what-if run before starting a
+# deploy run (Q1, TO-21). Authentication is OIDC (azure/login); no Azure
+# secret exists in GitHub (G3). Settings come from GitHub Actions variables.
+# The generated secrets (database passwords, auth secret, email hash key,
+# tick secret) are created here once, on the first foundation run, masked,
+# and handed to Bicep, which writes them to Key Vault; later runs never
+# change them. The owner's secrets are never touched here.
+name: infra
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "what-if (dry run) or deploy"
+        type: choice
+        options: [what-if, deploy]
+        default: what-if
+      stage:
+        description: "foundation (vault, storage, logs, identity, budget) or full (+ database, app, jobs)"
+        type: choice
+        options: [foundation, full]
+        default: foundation
+      image_tag:
+        description: "Image SHA in GHCR; used only when the web app doesn't exist yet"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: infra
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  INFRA_STAGE: ${{ inputs.stage }}
+  INFRA_MODE: ${{ inputs.mode }}
+  IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
+  GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+  MICROSOFT_CLIENT_ID: ${{ vars.MICROSOFT_CLIENT_ID }}
+  TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+  DEMO_USER_DOMAIN: ${{ vars.DEMO_USER_DOMAIN }}
+  BUDGET_ALERT_EMAIL: ${{ vars.BUDGET_ALERT_EMAIL }}
+  AZURE_CORE_NO_COLOR: "true"
+  AZURE_CORE_ONLY_SHOW_ERRORS: "true"
+
+jobs:
+  infra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Refuse refs other than main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::infra.yml runs only on main (G3); this run is on ${GITHUB_REF}."
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      - name: Check the settings
+        run: |
+          missing=""
+          for name in RESOURCE_GROUP GHCR_USERNAME MICROSOFT_CLIENT_ID TURNSTILE_SITE_KEY DEMO_USER_DOMAIN BUDGET_ALERT_EMAIL; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing GitHub Actions variables (README \"Azure setup\"):$missing"
+            exit 1
+          fi
+          if [ -n "$IMAGE_TAG_INPUT" ] && ! [[ "$IMAGE_TAG_INPUT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::image_tag must be a full commit SHA (40 lower-case hex characters)."
+            exit 1
+          fi
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build the Bicep (no warnings) and check the compiled template
+        run: |
+          az bicep install
+          az bicep build --file infra/main.bicep --outfile infra/main.json 2> bicep.log || { cat bicep.log; exit 1; }
+          if grep -q "Warning" bicep.log; then
+            cat bicep.log
+            echo "::error::az bicep build reported warnings."
+            exit 1
+          fi
+          node infra/check-arm.mjs infra/main.json
+
+      - name: Read the current state
+        run: |
+          generated="pg-admin-password pg-app-password better-auth-secret email-hash-key tick-secret database-url database-admin-url"
+          owner="microsoft-client-secret turnstile-secret-key ghcr-pat"
+
+          # Control-plane reads only: the deploy principal has no Key Vault data access.
+          vault_id="$(az resource list -g "$RESOURCE_GROUP" --resource-type Microsoft.KeyVault/vaults \
+            --query "[?tags.project=='ats'].id | [0]" -o tsv)"
+          existing=""
+          if [ -n "$vault_id" ]; then
+            existing=" $(az rest --method get --url "https://management.azure.com${vault_id}/secrets?api-version=2023-07-01" \
+              --query "value[].name" -o tsv | tr '\n' ' ') "
+          fi
+          present=0
+          for name in $generated; do [[ "$existing" == *" $name "* ]] && present=$((present + 1)); done
+
+          if [ "$present" -eq 0 ]; then
+            if [ "$INFRA_STAGE" != "foundation" ]; then
+              echo "::error::No generated secrets in Key Vault yet: run stage foundation first."
+              exit 1
+            fi
+            echo "INFRA_CREATE_GENERATED_SECRETS=true" >> "$GITHUB_ENV"
+            for var in INFRA_PG_ADMIN_PASSWORD INFRA_PG_APP_PASSWORD INFRA_BETTER_AUTH_SECRET INFRA_EMAIL_HASH_KEY INFRA_TICK_SECRET; do
+              # 32 random bytes, base64url: 43 URL-safe characters.
+              value="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+              echo "::add-mask::$value"
+              echo "$var=$value" >> "$GITHUB_ENV"
+            done
+          elif [ "$present" -lt 7 ]; then
+            # The connection strings embed the passwords, so the set is created together.
+            echo "::error::Only $present of the 7 generated secrets exist in Key Vault ($generated). Restore the missing ones or delete all 7, then rerun."
+            exit 1
+          else
+            echo "INFRA_CREATE_GENERATED_SECRETS=false" >> "$GITHUB_ENV"
+          fi
+
+          if [ "$INFRA_STAGE" = "full" ]; then
+            for name in $owner; do
+              if [[ "$existing" != *" $name "* ]]; then
+                echo "::error::Key Vault has no secret $name yet. Add the owner's secrets first (README \"Azure setup\" step 4)."
+                exit 1
+              fi
+            done
+            # Never roll the app back: keep the image the web app runs now (Q4).
+            web_id="$(az resource list -g "$RESOURCE_GROUP" --resource-type Microsoft.App/containerApps \
+              --query "[?tags.project=='ats'].id | [0]" -o tsv)"
+            if [ -n "$web_id" ]; then
+              image="$(az resource show --ids "$web_id" --query "properties.template.containers[0].image" -o tsv)"
+              tag="${image##*:}"
+              echo "WEB_APP_EXISTS=true" >> "$GITHUB_ENV"
+              echo "Keeping the deployed image tag $tag."
+              [ -z "$IMAGE_TAG_INPUT" ] || [ "$IMAGE_TAG_INPUT" = "$tag" ] || \
+                echo "::notice::image_tag $IMAGE_TAG_INPUT ignored: the web app already runs $tag (main.yml deploys new images)."
+            else
+              if [ -z "$IMAGE_TAG_INPUT" ]; then
+                echo "::error::The web app doesn't exist yet: set image_tag to the latest SHA in GHCR."
+                exit 1
+              fi
+              tag="$IMAGE_TAG_INPUT"
+              echo "WEB_APP_EXISTS=false" >> "$GITHUB_ENV"
+            fi
+            echo "INFRA_IMAGE_TAG=$tag" >> "$GITHUB_ENV"
+          fi
+
+      - name: What-if
+        run: |
+          az deployment group what-if -g "$RESOURCE_GROUP" --name "infra-${INFRA_STAGE}" \
+            --parameters infra/main.bicepparam > what-if.txt
+          # Defence in depth: the generated values are masked in the log, and
+          # removed from the text before it goes to the job summary.
+          for var in INFRA_PG_ADMIN_PASSWORD INFRA_PG_APP_PASSWORD INFRA_BETTER_AUTH_SECRET INFRA_EMAIL_HASH_KEY INFRA_TICK_SECRET; do
+            value="${!var:-}"
+            [ -z "$value" ] || sed -i "s|${value}|***|g" what-if.txt
+          done
+          cat what-if.txt
+          {
+            echo "## What-if: stage \`${INFRA_STAGE}\`, mode \`${INFRA_MODE}\`"
+            echo
+            echo '```text'
+            cat what-if.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy, first full deployment without the web app
+        if: inputs.mode == 'deploy' && inputs.stage == 'full' && env.WEB_APP_EXISTS == 'false'
+        env:
+          INFRA_DEPLOY_WEB_APP: "false"
+        run: |
+          # The web app exits at start until db-migrate has created the app
+          # login, which would fail its first revision. So the first full
+          # deployment creates everything else, runs db-migrate, and then
+          # deploys the whole template in the next step.
+          az deployment group create -g "$RESOURCE_GROUP" --name "infra-full-bootstrap" \
+            --parameters infra/main.bicepparam --query "properties.provisioningState" -o tsv
+          bash infra/run-job.sh "$(az deployment group show -g "$RESOURCE_GROUP" --name infra-full-bootstrap \
+            --query "properties.outputs.migrateJobName.value" -o tsv)"
+
+      - name: Deploy
+        if: inputs.mode == 'deploy'
+        run: |
+          az deployment group create -g "$RESOURCE_GROUP" --name "infra-${INFRA_STAGE}" \
+            --parameters infra/main.bicepparam --query "properties.outputs" -o json > outputs.json
+          cat outputs.json
+          {
+            echo "## Deployed: stage \`${INFRA_STAGE}\`"
+            echo
+            echo '```json'
+            cat outputs.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Migrate the database
+        if: inputs.mode == 'deploy' && inputs.stage == 'full'
+        run: bash infra/run-job.sh "$(jq -r '.migrateJobName.value' outputs.json)"
+
+      - name: Health check
+        if: inputs.mode == 'deploy' && inputs.stage == 'full'
+        run: |
+          url="$(jq -r '.appUrl.value' outputs.json)/api/health"
+          # Up to 5 minutes: the first request also wakes a scaled-to-zero app.
+          for attempt in $(seq 1 30); do
+            code="$(curl -s -o health.json -w '%{http_code}' --max-time 10 "$url" || true)"
+            if [ "$code" = "200" ]; then
+              echo "GET $url: 200 $(cat health.json)"
+              echo "Health: \`GET $url\` returned 200." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Attempt $attempt: GET $url returned ${code:-no response}"
+            sleep 10
+          done
+          echo "::error::$url did not return 200 within 5 minutes."
+          exit 1
