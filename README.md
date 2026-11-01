@@ -275,7 +275,7 @@ pnpm dev
 
 ## Azure setup
 
-The Azure environment is defined in `infra/main.bicep` (modules in `infra/modules/`) and deployed by the **`infra.yml`** workflow into one resource group in the owner's personal subscription and tenant (tech-stack.md §1, G3, G5; ats-project-scope.md C1). Everything is tagged `project=ats`; names are `ats-<kind>-<uniqueString(resource group)>`, and the location is the resource group's.
+The Azure environment is defined in `infra/main.bicep` (modules in `infra/modules/`) and deployed by the **`infra.yml`** workflow into one resource group in the owner's personal subscription and tenant (tech-stack.md §1, G3, G5; ats-project-scope.md C1). Everything is tagged `project=ats`; names are `ats-<kind>-<uniqueString(resource group)>`, and the location is the resource group's, except PostgreSQL when the optional `POSTGRES_LOCATION` variable is set.
 
 | Resource | Settings |
 |---|---|
@@ -283,7 +283,7 @@ The Azure environment is defined in `infra/main.bicep` (modules in `infra/module
 | User-assigned identity | Used by the web app and all jobs; **Key Vault Secrets User** on the vault, **Storage Blob Data Contributor** on the storage account |
 | Key Vault | Standard, Azure RBAC, 7-day soft delete, purge protection off, template deployment on |
 | Storage | `Standard_LRS`, `StorageV2`, Hot, HTTPS and TLS 1.2 only, no public blobs, no shared keys, blob soft delete and versioning off, private container `files` |
-| PostgreSQL Flexible Server | 17, `Standard_B1ms`, 32 GB without auto-grow, 7-day backups, no HA or geo backup, password auth, firewall `AllowAllWindowsAzureIps`, `require_secure_transport=on`, database `ats` |
+| PostgreSQL Flexible Server | 17, `Standard_B1ms`, in `POSTGRES_LOCATION` if set (otherwise the resource group's region), 32 GB without auto-grow, 7-day backups, no HA or geo backup, password auth, firewall `AllowAllWindowsAzureIps`, `require_secure_transport=on`, database `ats` |
 | Container Apps | Consumption environment; web app (0.5 vCPU / 1 GiB, 0–1 replicas, HTTPS ingress on 3000, readiness and startup probes on `/api/health`); jobs `tick` (hourly, `node db/tick.mjs`), `db-migrate` (`node db/migrate.mjs`) and `db-seed` (`node db/seed.mjs`, or `node db/seed-admin.mjs` when `SEED_ADMIN_EMAIL` is set) |
 | Budget | 10 per month in the subscription's billing currency, emails at 80 % and 100 % of actual cost |
 
@@ -311,12 +311,12 @@ After a `full` deployment the workflow runs the `db-migrate` job, waits for it t
 
 Done once in the personal subscription and tenant (C1). `_docs/user-tasks.md` has the same steps click by click.
 
-1. **Resource group** in an EU region where Container Apps and PostgreSQL Flexible Server 17 `Standard_B1ms` are available (this project: `rg-ats-demo` in Poland Central).
+1. **Resource group** in an EU region where Container Apps is available (this project: `rg-ats-demo` in Poland Central). PostgreSQL Flexible Server 17 `Standard_B1ms` must be offered to the subscription either there or in another EU region set as `POSTGRES_LOCATION` (step 4). Check with `az postgres flexible-server list-skus --location <region> -o table`. New subscriptions are often refused B1ms in some regions (`SkuNotAvailable`); that happened in Poland Central for this project.
 2. **Deploy service principal:** an app registration (`ATS GitHub deploy`, single tenant, no client secret) with a federated credential for GitHub Actions: organization `mikolajniezbecki-bit`, repository `ats-app`, entity *Branch*, branch `main`. On the resource group assign it:
    - **Contributor**;
    - **Role Based Access Control Administrator**, with the condition "allow assigning only **Storage Blob Data Contributor** and **Key Vault Secrets User** to **service principals**" (Q2).
 3. **Resource providers:** register `Microsoft.App`, `Microsoft.DBforPostgreSQL`, `Microsoft.KeyVault`, `Microsoft.ManagedIdentity`, `Microsoft.OperationalInsights`, `Microsoft.Storage` and `Microsoft.Consumption` in the subscription (`az provider register --namespace <ns>`). A new subscription has none of them registered, and the deploy service principal can't register them: that is a subscription-scope action (`MissingSubscriptionRegistration` otherwise).
-4. **GitHub Actions variables** (Settings → Secrets and variables → Actions → **Variables**, not Secrets): `AZURE_DEPLOY_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `GHCR_USERNAME`, `MICROSOFT_CLIENT_ID`, `TURNSTILE_SITE_KEY`, `DEMO_USER_DOMAIN` (`<tenant>.onmicrosoft.com`), `BUDGET_ALERT_EMAIL`.
+4. **GitHub Actions variables** (Settings → Secrets and variables → Actions → **Variables**, not Secrets): `AZURE_DEPLOY_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `GHCR_USERNAME`, `MICROSOFT_CLIENT_ID`, `TURNSTILE_SITE_KEY`, `DEMO_USER_DOMAIN` (`<tenant>.onmicrosoft.com`), `BUDGET_ALERT_EMAIL`, and optionally `POSTGRES_LOCATION` (an EU region name such as `westeurope`, for the database only). The database region can't change once the server exists: `infra.yml` stops if the existing server is in another region.
 5. Run `infra.yml` with `stage: foundation` (what-if, then deploy). Give yourself **Key Vault Secrets Officer** on the new vault, then add the three secrets only you have:
    - `microsoft-client-secret`: the Entra sign-in app's client secret ([Microsoft Entra sign-in](#microsoft-entra-sign-in-owner-setup));
    - `turnstile-secret-key`: the real Turnstile widget's secret key;

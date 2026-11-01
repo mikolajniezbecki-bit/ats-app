@@ -99,6 +99,8 @@ args="$*"
 vault=/subscriptions/s/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/kv
 case "$args" in
   *"resource list"*KeyVault/vaults*) echo "$vault" ;;
+  *"resource list"*flexibleServers*) [ -z "$PG_SERVER" ] || echo "$PG_SERVER" ;;
+  *"group show"*) echo polandcentral ;;
   *"resource list"*) echo "" ;;
   *"rest --method get"*"/secrets?"*) echo "{\\"value\\":[{\\"name\\":\\"\${SECRETS%% *}\\"}],\\"nextLink\\":\\"page-2\\"}" ;;
   *"rest --method get"*"/secrets/"*)
@@ -107,7 +109,7 @@ case "$args" in
   *) echo "unexpected az $args" >&2; exit 2 ;;
 esac
 `;
-  const run = (secrets: string[], stage: "foundation" | "full") => {
+  const run = (secrets: string[], stage: "foundation" | "full", extraEnv: Record<string, string> = {}) => {
     const dir = mkdtempSync(path.join(tmpdir(), "infra-state-"));
     try {
       writeFileSync(path.join(dir, "az"), fakeAz);
@@ -121,7 +123,7 @@ esac
         output = execFileSync("bash", ["-e", "-c", script], {
           encoding: "utf8",
           stdio: "pipe",
-          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GITHUB_ENV: githubEnv, RESOURCE_GROUP: "rg", INFRA_STAGE: stage, IMAGE_TAG_INPUT: "abc", SECRETS: secrets.join(" ") },
+          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GITHUB_ENV: githubEnv, RESOURCE_GROUP: "rg", INFRA_STAGE: stage, IMAGE_TAG_INPUT: "abc", SECRETS: secrets.join(" "), PG_SERVER: "", POSTGRES_LOCATION: "", ...extraEnv },
         });
       } catch (error) {
         const failed = error as { status: number; stdout: string };
@@ -151,6 +153,25 @@ esac
     const result = run(generated.slice(0, 3), "foundation");
     expect(result.status).toBe(1);
     expect(result.output).toContain("Only 3 of the 7 generated secrets");
+  });
+
+  const all = [...generated, ...owner];
+
+  it("puts PostgreSQL in the resource group's region unless POSTGRES_LOCATION is set", () => {
+    expect(run(all, "full").output).toContain("PostgreSQL region: polandcentral");
+    expect(run(all, "full", { POSTGRES_LOCATION: "westeurope" }).output).toContain("PostgreSQL region: westeurope");
+  });
+
+  it("refuses to deploy when the existing server is in another region than the run would use", () => {
+    const result = run(all, "full", { PG_SERVER: "ats-pg-x\tPoland Central", POSTGRES_LOCATION: "westeurope" });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("PostgreSQL server ats-pg-x is in polandcentral, but this run would put it in westeurope");
+  });
+
+  it("accepts an existing server in the region the run would use", () => {
+    const result = run(all, "full", { PG_SERVER: "ats-pg-x\twesteurope", POSTGRES_LOCATION: "westeurope" });
+    expect(result.output).not.toContain("::error::");
+    expect(result.status).toBe(0);
   });
 
   it("refuses the full stage while an owner secret is missing", () => {
@@ -200,6 +221,14 @@ describe("Bicep sources", () => {
     for (const env of envs) expect(env).toMatch(/^(concat\((sharedEnv|jobEnv), |jobEnv$)/);
     // The admin connection only on db-migrate.
     expect(apps.match(/DATABASE_ADMIN_URL/g)).toHaveLength(1);
+  });
+
+  it("puts only PostgreSQL in POSTGRES_LOCATION, falling back to the resource group's region", () => {
+    expect(workflow.env.POSTGRES_LOCATION).toBe("${{ vars.POSTGRES_LOCATION }}");
+    expect(readFileSync("infra/main.bicepparam", "utf8")).toContain("param postgresLocation = readEnvironmentVariable('POSTGRES_LOCATION', '')");
+    const main = withoutComments(bicep["infra/main.bicep"]);
+    expect(main).toMatch(/name: names\.postgres\s+location: empty\(postgresLocation\) \? location : postgresLocation/);
+    expect(main.match(/location: empty\(postgresLocation\)/g)).toHaveLength(1);
   });
 
   it("tags every taggable resource project=ats", () => {

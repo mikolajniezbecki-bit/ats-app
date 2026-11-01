@@ -54,6 +54,8 @@ env:
   TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
   DEMO_USER_DOMAIN: ${{ vars.DEMO_USER_DOMAIN }}
   BUDGET_ALERT_EMAIL: ${{ vars.BUDGET_ALERT_EMAIL }}
+  # Optional; empty puts PostgreSQL in the resource group's region.
+  POSTGRES_LOCATION: ${{ vars.POSTGRES_LOCATION }}
   AZURE_CORE_NO_COLOR: "true"
   AZURE_CORE_ONLY_SHOW_ERRORS: "true"
 
@@ -82,6 +84,10 @@ jobs:
           fi
           if [ -n "$IMAGE_TAG_INPUT" ] && ! [[ "$IMAGE_TAG_INPUT" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::image_tag must be a full commit SHA (40 lower-case hex characters)."
+            exit 1
+          fi
+          if [ -n "$POSTGRES_LOCATION" ] && ! [[ "$POSTGRES_LOCATION" =~ ^[a-z0-9]+$ ]]; then
+            echo "::error::POSTGRES_LOCATION must be an Azure region name such as westeurope (lower case, no spaces)."
             exit 1
           fi
 
@@ -153,6 +159,18 @@ jobs:
           fi
 
           if [ "$INFRA_STAGE" = "full" ]; then
+            # A server can't change region, and Bicep would fail late on a
+            # location mismatch, so stop before the deployment and say why.
+            want="${POSTGRES_LOCATION:-$(az group show -n "$RESOURCE_GROUP" --query location -o tsv)}"
+            read -r pg_name pg_location <<< "$(az resource list -g "$RESOURCE_GROUP" \
+              --resource-type Microsoft.DBforPostgreSQL/flexibleServers \
+              --query "[?tags.project=='ats'] | [0].[name, location]" -o tsv | tr -d ' ' | tr '\t' ' ')"
+            pg_location="${pg_location,,}"
+            if [ -n "${pg_name:-}" ] && [ "$pg_location" != "${want,,}" ]; then
+              echo "::error::PostgreSQL server $pg_name is in $pg_location, but this run would put it in $want. A server can't move: delete it in the portal (its data is lost), or set POSTGRES_LOCATION to $pg_location, then rerun."
+              exit 1
+            fi
+            echo "PostgreSQL region: $want"
             for name in $owner; do
               if [[ "$existing" != *" $name "* ]]; then
                 echo "::error::Key Vault has no secret $name yet. Add the owner's secrets first (README \"Azure setup\" step 4)."
