@@ -153,7 +153,7 @@ You can do all of Part 1 now. When it's done, tell Claude **"Part 1 is done"** a
   3. **Region:** pick an EU region, for example **(Europe) West Europe** or **(Europe) North Europe**.
   4. **Review + create** → **Create**.
   5. Note the name and the region (written in lower case without spaces, e.g. `westeurope`) in your notebook.
-- **Note:** if, during task 44, the cheap database turns out not to be available in your region, Claude will stop and ask you. Don't change it yourself.
+- **Note:** if, during task 44, the cheap database turns out not to be available in your region, Claude will stop and ask you. Don't change it yourself. This happened in Poland Central (`SkuNotAvailable`). The fix keeps the resource group where it is and puts only the database in another EU region: see [step 2.4](#step-24--full-dry-run-then-deploy), "Before you start".
 
 ### Step 1.4 – Create the user accounts for the demo
 
@@ -262,7 +262,7 @@ You can do all of Part 1 now. When it's done, tell Claude **"Part 1 is done"** a
 - **Why:** the workflows read these settings when they run (task 44, owner setup step 3). They are IDs and names, not passwords. Claude's GitHub access can't set them, so you do it.
 - **How:**
   1. On github.com open the `ats-app` repository → **Settings** → **Secrets and variables** → **Actions** → tab **Variables** → **New repository variable**.
-  2. Create these nine variables. Names must match exactly, in capitals:
+  2. Create these variables. Names must match exactly, in capitals. The first nine are required; `POSTGRES_LOCATION` is needed only if your region refuses the cheap database size ([step 2.4](#step-24--full-dry-run-then-deploy)):
 
      | Name | Value |
      |---|---|
@@ -365,9 +365,18 @@ Claude writes the Bicep files and the `infra.yml` workflow. A reviewer checks th
   - **`tick`:** hourly housekeeping, such as reminders and the retention purge;
   - **`db-migrate`:** updates the database structure;
   - **`db-seed`:** fills in starting data.
+- **Before you start: the database region (only if your region refuses the database size).** A run fails with `SkuNotAvailable` ("Specified SKU is not supported in this region") when Azure won't give your subscription the cheap database size (B1MS) in the resource group's region. That happened in Poland Central. The database then goes in another EU region, and everything else stays where it is:
+  1. **Choose the region.** Open Cloud Shell (see [How to run an Azure command](#how-to-run-an-azure-command-cloud-shell)) and run this for a few EU regions, for example `westeurope`, `swedencentral`, `northeurope` and `germanywestcentral`:
+     ```sh
+     az postgres flexible-server list-skus --location westeurope -o table
+     ```
+     Pick a region whose list includes **`Standard_B1ms`**.
+  2. **Set the variable.** On github.com open `ats-app` → **Settings** → **Secrets and variables** → **Actions** → tab **Variables** → **New repository variable**. **Name:** `POSTGRES_LOCATION`. **Value:** the region, in lower case without spaces (e.g. `westeurope`). Use the **Variables** tab, not Secrets.
+  3. **Delete the failed database.** The failed run may have left a database server (`ats-pg-…`) in the resource group, in a **Failed** state. If you see it, open it → **Delete**. It holds no data. If you forget, the next run stops and tells you to.
+  4. Once a database exists, its region can't change. Don't edit `POSTGRES_LOCATION` afterwards: the run stops if the variable and the existing server don't match.
 - **How:**
   1. Claude gives you the **image_tag** to use: the newest tested image, a long letters-and-digits code.
-  2. Run `infra.yml` with **mode `what-if`, stage `full`, image_tag `<that code>`**. Check the summary.
+  2. Run `infra.yml` with **mode `what-if`, stage `full`, image_tag `<that code>`**. Check the summary. In the run's **Read the current state** step, check the line `PostgreSQL region: <region>`: it should show the region you chose (or the resource group's region if you didn't set `POSTGRES_LOCATION`).
   3. Run it again with **mode `deploy`**, same stage and tag. This takes a while (the database alone can take 10–15 minutes). At the end the workflow prepares the database and checks that the app answers.
   4. Tell Claude the result. Claude reads the app's new web address from the run, something like `https://ats-web-xxxx.<region>.azurecontainerapps.io`, and gives it to you.
 
@@ -518,7 +527,7 @@ If a budget alert email arrives (80 % or 100 % of EUR 10), tell Claude. **The al
 - [ ] 1.7 Contributor + restricted RBAC Administrator given to `ATS GitHub deploy` on the resource group
 - [ ] 1.8 Turnstile widget created (placeholder hostname); site key noted, secret key saved
 - [ ] 1.9 GHCR classic token (`read:packages` only, 90 days) saved
-- [ ] 1.10 Nine GitHub Actions **variables** set
+- [ ] 1.10 Nine GitHub Actions **variables** set (plus `POSTGRES_LOCATION` only if needed)
 - [ ] Told Claude "Part 1 is done" with the region and resource group
 
 **Part 2, when Claude says `infra.yml` is ready (task 44):**
@@ -526,7 +535,8 @@ If a budget alert email arrives (80 % or 100 % of EUR 10), tell Claude. **The al
 - [ ] 2.1 Foundation: what-if, then deploy
 - [ ] 2.2 Key Vault Secrets Officer for yourself
 - [ ] 2.3 Three secrets added to Key Vault
-- [ ] 2.4 Full: what-if, then deploy (with the image tag from Claude)
+- [ ] 2.4 Only if `SkuNotAvailable`: database region chosen, `POSTGRES_LOCATION` variable set, failed database server deleted
+- [ ] 2.4 Full: what-if, then deploy (with the image tag from Claude); `PostgreSQL region` line checked
 - [ ] 2.5 Redirect URI added in Entra; real hostname set in Turnstile
 - [ ] 2.6 Calendar reminders for the token and the sign-in secret
 
