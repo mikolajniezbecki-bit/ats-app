@@ -275,6 +275,7 @@ You can do all of Part 1 now. When it's done, tell Claude **"Part 1 is done"** a
      | `TURNSTILE_SITE_KEY` | Turnstile site key (step 1.8) |
      | `DEMO_USER_DOMAIN` | Tenant domain, e.g. `yourname.onmicrosoft.com` (step 1.2) |
      | `BUDGET_ALERT_EMAIL` | The email that should receive cost alerts |
+     | `POSTGRES_LOCATION` | Optional. Only if your region refuses the B1MS database (`SkuNotAvailable`): another EU region that offers it, e.g. `westeurope` |
 
   3. Make sure you used the **Variables** tab, **not Secrets**. The project rule is: no Azure secrets in GitHub.
 

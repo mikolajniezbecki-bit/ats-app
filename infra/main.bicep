@@ -24,6 +24,9 @@ param prefix string = 'ats'
 
 param location string = resourceGroup().location
 
+@description('Region of the PostgreSQL server only; empty means location. Set when Standard_B1ms is not offered to the subscription in the resource group\'s region (infra.yml reads the POSTGRES_LOCATION variable).')
+param postgresLocation string = ''
+
 @description('Image tag in GHCR (a commit SHA pushed by main.yml). Required for stage full.')
 param imageTag string = ''
 param imageRepository string = 'ghcr.io/mikolajniezbecki-bit/ats-app'
@@ -153,7 +156,7 @@ module postgres 'modules/postgres.bicep' = if (stage == 'full') {
   name: 'postgres'
   params: {
     name: names.postgres
-    location: location
+    location: empty(postgresLocation) ? location : postgresLocation
     tags: tags
     adminLogin: postgresAdminLogin
     // Always the stored password, never this run's seed (Q4).

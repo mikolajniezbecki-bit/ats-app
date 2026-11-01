@@ -15,6 +15,8 @@ param microsoftClientId = readEnvironmentVariable('MICROSOFT_CLIENT_ID', '')
 param turnstileSiteKey = readEnvironmentVariable('TURNSTILE_SITE_KEY', '')
 param demoUserDomain = readEnvironmentVariable('DEMO_USER_DOMAIN', '')
 param budgetAlertEmail = readEnvironmentVariable('BUDGET_ALERT_EMAIL', '')
+// Optional: the database's region when it differs from the resource group's.
+param postgresLocation = readEnvironmentVariable('POSTGRES_LOCATION', '')
 
 // EUR 10, or the same amount in the subscription's billing currency (M8).
 param budgetAmount = 10
