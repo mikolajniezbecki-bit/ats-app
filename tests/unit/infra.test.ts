@@ -1,7 +1,9 @@
 // infra.yml and the Bicep sources (tech-stack.md G3, G5, M7; task 44). The
 // compiled template is checked in infra.yml itself (az bicep build, then
 // infra/check-arm.mjs); these tests cover what can be read without Azure.
-import { readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
@@ -83,6 +85,78 @@ describe("infra.yml", () => {
     expect(state).toContain("INFRA_CREATE_GENERATED_SECRETS=false");
     // The owner's secrets are only checked for, never written.
     expect(workflowText).not.toMatch(/az keyvault secret set/);
+  });
+});
+
+// Runs the real "Read the current state" script against a fake az on PATH.
+// The fake serves the secrets list one name per page, like a paged ARM list,
+// so a script that reads only the first page miscounts (infra run #6).
+describe("infra.yml Read the current state", () => {
+  const generated = ["pg-admin-password", "pg-app-password", "better-auth-secret", "email-hash-key", "tick-secret", "database-url", "database-admin-url"];
+  const owner = ["microsoft-client-secret", "turnstile-secret-key", "ghcr-pat"];
+  const fakeAz = `#!/usr/bin/env bash
+args="$*"
+vault=/subscriptions/s/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/kv
+case "$args" in
+  *"resource list"*KeyVault/vaults*) echo "$vault" ;;
+  *"resource list"*) echo "" ;;
+  *"rest --method get"*"/secrets?"*) echo "{\\"value\\":[{\\"name\\":\\"\${SECRETS%% *}\\"}],\\"nextLink\\":\\"page-2\\"}" ;;
+  *"rest --method get"*"/secrets/"*)
+    name="\${args##*/secrets/}"; name="\${name%%[?]*}"
+    if [[ " $SECRETS " == *" $name "* ]]; then echo "{}"; else echo "ERROR: (SecretNotFound) Not Found" >&2; exit 1; fi ;;
+  *) echo "unexpected az $args" >&2; exit 2 ;;
+esac
+`;
+  const run = (secrets: string[], stage: "foundation" | "full") => {
+    const dir = mkdtempSync(path.join(tmpdir(), "infra-state-"));
+    try {
+      writeFileSync(path.join(dir, "az"), fakeAz);
+      chmodSync(path.join(dir, "az"), 0o755);
+      const githubEnv = path.join(dir, "github-env");
+      writeFileSync(githubEnv, "");
+      const script = steps[byName("Read the current state")].run ?? "";
+      let status = 0;
+      let output = "";
+      try {
+        output = execFileSync("bash", ["-e", "-c", script], {
+          encoding: "utf8",
+          stdio: "pipe",
+          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GITHUB_ENV: githubEnv, RESOURCE_GROUP: "rg", INFRA_STAGE: stage, IMAGE_TAG_INPUT: "abc", SECRETS: secrets.join(" ") },
+        });
+      } catch (error) {
+        const failed = error as { status: number; stdout: string };
+        status = failed.status;
+        output = failed.stdout + (error as { stderr: string }).stderr;
+      }
+      return { status, output, env: readFileSync(githubEnv, "utf8") };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it("finds all 10 secrets however the list API pages them", () => {
+    const result = run([...generated, ...owner].sort(), "full");
+    expect(result.output).not.toContain("::error::");
+    expect(result.status).toBe(0);
+    expect(result.env).toContain("INFRA_CREATE_GENERATED_SECRETS=false");
+  });
+
+  it("creates the generated secrets when none exists", () => {
+    const result = run([], "foundation");
+    expect(result.status).toBe(0);
+    expect(result.env).toContain("INFRA_CREATE_GENERATED_SECRETS=true");
+  });
+
+  it("refuses a partial set of generated secrets", () => {
+    const result = run(generated.slice(0, 3), "foundation");
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("Only 3 of the 7 generated secrets");
+  });
+
+  it("refuses the full stage while an owner secret is missing", () => {
+    const result = run([...generated, "ghcr-pat"], "full");
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("no secret microsoft-client-secret");
   });
 });
 
