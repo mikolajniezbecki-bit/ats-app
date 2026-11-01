@@ -315,15 +315,16 @@ Done once in the personal subscription and tenant (C1). `_docs/user-tasks.md` ha
 2. **Deploy service principal:** an app registration (`ATS GitHub deploy`, single tenant, no client secret) with a federated credential for GitHub Actions: organization `mikolajniezbecki-bit`, repository `ats-app`, entity *Branch*, branch `main`. On the resource group assign it:
    - **Contributor**;
    - **Role Based Access Control Administrator**, with the condition "allow assigning only **Storage Blob Data Contributor** and **Key Vault Secrets User** to **service principals**" (Q2).
-3. **GitHub Actions variables** (Settings → Secrets and variables → Actions → **Variables**, not Secrets): `AZURE_DEPLOY_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `GHCR_USERNAME`, `MICROSOFT_CLIENT_ID`, `TURNSTILE_SITE_KEY`, `DEMO_USER_DOMAIN` (`<tenant>.onmicrosoft.com`), `BUDGET_ALERT_EMAIL`.
-4. Run `infra.yml` with `stage: foundation` (what-if, then deploy). Give yourself **Key Vault Secrets Officer** on the new vault, then add the three secrets only you have:
+3. **Resource providers:** register `Microsoft.App`, `Microsoft.DBforPostgreSQL`, `Microsoft.KeyVault`, `Microsoft.ManagedIdentity`, `Microsoft.OperationalInsights`, `Microsoft.Storage` and `Microsoft.Consumption` in the subscription (`az provider register --namespace <ns>`). A new subscription has none of them registered, and the deploy service principal can't register them: that is a subscription-scope action (`MissingSubscriptionRegistration` otherwise).
+4. **GitHub Actions variables** (Settings → Secrets and variables → Actions → **Variables**, not Secrets): `AZURE_DEPLOY_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `GHCR_USERNAME`, `MICROSOFT_CLIENT_ID`, `TURNSTILE_SITE_KEY`, `DEMO_USER_DOMAIN` (`<tenant>.onmicrosoft.com`), `BUDGET_ALERT_EMAIL`.
+5. Run `infra.yml` with `stage: foundation` (what-if, then deploy). Give yourself **Key Vault Secrets Officer** on the new vault, then add the three secrets only you have:
    - `microsoft-client-secret`: the Entra sign-in app's client secret ([Microsoft Entra sign-in](#microsoft-entra-sign-in-owner-setup));
    - `turnstile-secret-key`: the real Turnstile widget's secret key;
-   - `ghcr-pat`: the token from step 5.
-5. **GHCR token (G9):** github.com → Settings → Developer settings → Personal access tokens → **Tokens (classic)**. The note is `ATS Azure image pull`, the expiry **90 days**, and the scope **`read:packages` only**. GitHub Packages accepts only classic tokens, and a classic token covers the whole personal account, so never give it any other scope.
+   - `ghcr-pat`: the token from step 6.
+6. **GHCR token (G9):** github.com → Settings → Developer settings → Personal access tokens → **Tokens (classic)**. The note is `ATS Azure image pull`, the expiry **90 days**, and the scope **`read:packages` only**. GitHub Packages accepts only classic tokens, and a classic token covers the whole personal account, so never give it any other scope.
    - **Reminders:** set a calendar reminder about two weeks before the token expires (Azure can no longer pull images after that) and one before the Entra client secret expires (staff sign-in stops). To renew, create a new token or secret, add it as a new version of the same Key Vault secret, and restart the web app's revision.
-6. Run `infra.yml` with `stage: full` and `image_tag` = the latest SHA in GHCR (the tag in `main.yml`'s job summary). What-if first, then deploy. The database takes 10–15 minutes.
-7. **Host-name settings (Q12):** the run's summary shows `appUrl`. Add `{appUrl}/api/auth/callback/microsoft` to the Entra app registration's redirect URIs (AU1), and add the host name (without `https://`) to the Turnstile widget's hostnames. Repeat this after a rebuild if the host name changes.
+7. Run `infra.yml` with `stage: full` and `image_tag` = the latest SHA in GHCR (the tag in `main.yml`'s job summary). What-if first, then deploy. The database takes 10–15 minutes.
+8. **Host-name settings (Q12):** the run's summary shows `appUrl`. Add `{appUrl}/api/auth/callback/microsoft` to the Entra app registration's redirect URIs (AU1), and add the host name (without `https://`) to the Turnstile widget's hostnames. Repeat this after a rebuild if the host name changes.
 
 ### Seeding
 

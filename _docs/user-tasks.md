@@ -301,6 +301,24 @@ Claude writes the Bicep files and the `infra.yml` workflow. A reviewer checks th
    - **Your approval:** read it, and if it matches what Claude described, start the matching **deploy** run. Choosing to start that run is your approval (task 44, your decision Q1).
    - If you see unexpected **deletions**, don't deploy; send Claude a screenshot.
 
+### Step 2.0 – Switch on the Azure services the project uses (once)
+
+- **Why:** a new subscription must "register" each kind of Azure service before anything of that kind can be created. Otherwise the deploy fails with `MissingSubscriptionRegistration`. Registering is a subscription-wide setting, so the deploy robot, whose rights cover only the resource group, can't do it. It's free.
+- **How:**
+  1. Open Cloud Shell (see [How to run an Azure command](#how-to-run-an-azure-command-cloud-shell)) and paste:
+
+     ```sh
+     for ns in Microsoft.App Microsoft.DBforPostgreSQL Microsoft.KeyVault Microsoft.ManagedIdentity Microsoft.OperationalInsights Microsoft.Storage Microsoft.Consumption; do az provider register --namespace $ns; done
+     ```
+
+  2. Wait 2–5 minutes, then paste this to check:
+
+     ```sh
+     for ns in Microsoft.App Microsoft.DBforPostgreSQL Microsoft.KeyVault Microsoft.ManagedIdentity Microsoft.OperationalInsights Microsoft.Storage Microsoft.Consumption; do echo "$ns $(az provider show --namespace $ns --query registrationState -o tsv)"; done
+     ```
+
+  3. Continue when every line ends in `Registered`. If some still say `Registering`, wait a minute and check again.
+
 ### Step 2.1 – Foundation: dry run, then deploy
 
 - **Why:** creates the safe and the other basics, and generates the app's own random passwords (database, sign-in sessions, email fingerprints, scheduled job). Nobody, including you, ever has to type those.
@@ -503,6 +521,7 @@ If a budget alert email arrives (80 % or 100 % of EUR 10), tell Claude. **The al
 - [ ] Told Claude "Part 1 is done" with the region and resource group
 
 **Part 2, when Claude says `infra.yml` is ready (task 44):**
+- [ ] 2.0 Azure services registered in the subscription (all `Registered`)
 - [ ] 2.1 Foundation: what-if, then deploy
 - [ ] 2.2 Key Vault Secrets Officer for yourself
 - [ ] 2.3 Three secrets added to Key Vault
