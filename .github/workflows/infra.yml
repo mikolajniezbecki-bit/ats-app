@@ -111,11 +111,24 @@ jobs:
           # Control-plane reads only: the deploy principal has no Key Vault data access.
           vault_id="$(az resource list -g "$RESOURCE_GROUP" --resource-type Microsoft.KeyVault/vaults \
             --query "[?tags.project=='ats'].id | [0]" -o tsv)"
-          existing=""
+          # One GET per expected name, not a list call: the ARM secrets list is
+          # paged (nextLink) and az rest returns only the first page, which made
+          # run #6 see 3 of 7 secrets in a vault that held all 10. 404 = absent;
+          # any other error fails the step instead of being counted as absent.
+          existing=" "
           if [ -n "$vault_id" ]; then
-            existing=" $(az rest --method get --url "https://management.azure.com${vault_id}/secrets?api-version=2023-07-01" \
-              --query "value[].name" -o tsv | tr '\n' ' ') "
+            for name in $generated $owner; do
+              if err="$(az rest --method get --output none \
+                  --url "https://management.azure.com${vault_id}/secrets/${name}?api-version=2023-07-01" 2>&1)"; then
+                existing="$existing$name "
+              elif ! grep -qiE "not ?found|\(404\)" <<< "$err"; then
+                echo "$err"
+                echo "::error::Couldn't read Key Vault secret $name from the control plane."
+                exit 1
+              fi
+            done
           fi
+          echo "Secrets present in Key Vault:$existing"
           present=0
           for name in $generated; do [[ "$existing" == *" $name "* ]] && present=$((present + 1)); done
 
