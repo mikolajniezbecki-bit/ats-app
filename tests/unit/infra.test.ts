@@ -86,6 +86,7 @@ describe("infra.yml", () => {
     expect(explain.if).toBe("failure() && inputs.mode == 'deploy'");
     expect(explain.run).toContain("SkuNotAvailable");
     expect(explain.run).toContain("InvalidResourceLocation");
+    expect(explain.run).toContain(`grep -q "'Version' should be in: \\[\\]" deploy-error.log`);
   });
 
   it("masks the generated secrets and creates them only when none exists", () => {
