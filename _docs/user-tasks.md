@@ -373,10 +373,12 @@ Claude writes the Bicep files and the `infra.yml` workflow. A reviewer checks th
      Pick a region whose list includes **`Standard_B1ms`**.
   2. **Set the variable.** On github.com open `ats-app` → **Settings** → **Secrets and variables** → **Actions** → tab **Variables** → **New repository variable**. **Name:** `POSTGRES_LOCATION`. **Value:** the region, in lower case without spaces (e.g. `westeurope`). Use the **Variables** tab, not Secrets.
   3. **Delete the failed database.** The failed run may have left a database server (`ats-pg-…`) in the resource group, in a **Failed** state. If you see it, open it → **Delete**. It holds no data. If you forget, the next run stops and tells you to.
-  4. Once a database exists, its region can't change. Don't edit `POSTGRES_LOCATION` afterwards: the run stops if the variable and the existing server don't match.
+     - Sometimes a refused attempt leaves an invisible leftover instead. You can't see it in the portal and you can't delete it. That's fine: the server name includes the region (`ats-pg-<region>-…`), so each new region gets a new name. If a run still fails with `InvalidResourceLocation`, pick a region you haven't tried yet. The run's **Explain a failed deployment** step says the same.
+     - A region can list `Standard_B1ms` and still refuse it with `SkuNotAvailable` (free-trial subscriptions often get this). Then set the next region from your list and run again.
+  4. Once a database exists, its region can't change. Don't edit `POSTGRES_LOCATION` afterwards: the run stops if the variable and the existing server don't match. Changing it is fine as long as no deployment has created a server yet.
 - **How:**
   1. Claude gives you the **image_tag** to use: the newest tested image, a long letters-and-digits code.
-  2. Run `infra.yml` with **mode `what-if`, stage `full`, image_tag `<that code>`**. Check the summary. In the run's **Read the current state** step, check the line `PostgreSQL region: <region>`: it should show the region you chose (or the resource group's region if you didn't set `POSTGRES_LOCATION`).
+  2. Run `infra.yml` with **mode `what-if`, stage `full`, image_tag `<that code>`**. Check the summary. In the run's **Read the current state** step, check the line `PostgreSQL region: <region>`: it should show the region you chose (or the resource group's region if you didn't set `POSTGRES_LOCATION`). The next line, `PostgreSQL server: …`, shows the existing server's name, or `none listed` before the first one.
   3. Run it again with **mode `deploy`**, same stage and tag. This takes a while (the database alone can take 10–15 minutes). At the end the workflow prepares the database and checks that the app answers.
   4. Tell Claude the result. Claude reads the app's new web address from the run, something like `https://ats-web-xxxx.<region>.azurecontainerapps.io`, and gives it to you.
 

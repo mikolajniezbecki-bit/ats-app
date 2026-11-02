@@ -135,6 +135,14 @@ jobs:
             done
           fi
           echo "Secrets present in Key Vault:$existing"
+          # The host the connection strings were written for; main.bicep rewrites
+          # them in the full stage when it differs from the current server's.
+          stored_host=""
+          if [[ "$existing" == *" database-url "* ]]; then
+            stored_host="$(az rest --method get --query "tags.postgresHost" --output tsv \
+              --url "https://management.azure.com${vault_id}/secrets/database-url?api-version=2023-07-01")"
+          fi
+          echo "INFRA_STORED_POSTGRES_HOST=$stored_host" >> "$GITHUB_ENV"
           present=0
           for name in $generated; do [[ "$existing" == *" $name "* ]] && present=$((present + 1)); done
 
@@ -159,18 +167,31 @@ jobs:
           fi
 
           if [ "$INFRA_STAGE" = "full" ]; then
-            # A server can't change region, and Bicep would fail late on a
-            # location mismatch, so stop before the deployment and say why.
+            # The server name includes its region (main.bicep), so a run with
+            # another POSTGRES_LOCATION would create a second server next to the
+            # existing one instead of moving it. Stop before that and say why.
             want="${POSTGRES_LOCATION:-$(az group show -n "$RESOURCE_GROUP" --query location -o tsv)}"
+            want="${want,,}"
             read -r pg_name pg_location <<< "$(az resource list -g "$RESOURCE_GROUP" \
               --resource-type Microsoft.DBforPostgreSQL/flexibleServers \
               --query "[?tags.project=='ats'] | [0].[name, location]" -o tsv | tr -d ' ' | tr '\t' ' ')"
             pg_location="${pg_location,,}"
-            if [ -n "${pg_name:-}" ] && [ "$pg_location" != "${want,,}" ]; then
-              echo "::error::PostgreSQL server $pg_name is in $pg_location, but this run would put it in $want. A server can't move: delete it in the portal (its data is lost), or set POSTGRES_LOCATION to $pg_location, then rerun."
+            if [ -n "${pg_name:-}" ] && [ "$pg_location" != "$want" ]; then
+              echo "::error::PostgreSQL server $pg_name is in $pg_location, but this run would create another one in $want. A server can't move: set POSTGRES_LOCATION to $pg_location to keep it, or delete it in the portal (its data is lost), then rerun."
               exit 1
             fi
             echo "PostgreSQL region: $want"
+            if [ -n "${pg_name:-}" ]; then
+              echo "PostgreSQL server: $pg_name"
+            else
+              # An empty list doesn't prove the name is free: a create refused with
+              # SkuNotAvailable can leave a record in ARM that az resource list
+              # doesn't show, delete calls report ResourceNotFound and
+              # checkNameAvailability reports free, yet a create of that name in
+              # another region fails with InvalidResourceLocation. The region in
+              # the name keeps such a record from blocking a new region.
+              echo "PostgreSQL server: none listed; this run creates ats-pg-$want-… (a failed earlier attempt can leave an unlisted record, see \"Explain a failed deployment\")."
+            fi
             for name in $owner; do
               if [[ "$existing" != *" $name "* ]]; then
                 echo "::error::Key Vault has no secret $name yet. Add the owner's secrets first (README \"Azure setup\" step 4)."
@@ -227,7 +248,8 @@ jobs:
           # deployment creates everything else, runs db-migrate, and then
           # deploys the whole template in the next step.
           az deployment group create -g "$RESOURCE_GROUP" --name "infra-full-bootstrap" \
-            --parameters infra/main.bicepparam --query "properties.provisioningState" -o tsv
+            --parameters infra/main.bicepparam --query "properties.provisioningState" -o tsv \
+            2> deploy-error.log || { cat deploy-error.log >&2; exit 1; }
           bash infra/run-job.sh "$(az deployment group show -g "$RESOURCE_GROUP" --name infra-full-bootstrap \
             --query "properties.outputs.migrateJobName.value" -o tsv)"
 
@@ -235,7 +257,8 @@ jobs:
         if: inputs.mode == 'deploy'
         run: |
           az deployment group create -g "$RESOURCE_GROUP" --name "infra-${INFRA_STAGE}" \
-            --parameters infra/main.bicepparam --query "properties.outputs" -o json > outputs.json
+            --parameters infra/main.bicepparam --query "properties.outputs" -o json > outputs.json \
+            2> deploy-error.log || { cat deploy-error.log >&2; exit 1; }
           cat outputs.json
           {
             echo "## Deployed: stage \`${INFRA_STAGE}\`"
@@ -266,3 +289,14 @@ jobs:
           done
           echo "::error::$url did not return 200 within 5 minutes."
           exit 1
+
+      - name: Explain a failed deployment
+        if: failure() && inputs.mode == 'deploy'
+        run: |
+          [ -f deploy-error.log ] || exit 0
+          if grep -q "SkuNotAvailable" deploy-error.log; then
+            echo "::error::Azure doesn't offer this subscription the database size (Standard_B1ms) in this region. Set POSTGRES_LOCATION to another EU region that offers it (user-tasks.md step 2.4), then rerun."
+          fi
+          if grep -q "InvalidResourceLocation" deploy-error.log; then
+            echo "::error::ARM says a resource of this name already exists in another region. For the PostgreSQL server this can be a record left by an earlier create that failed (e.g. SkuNotAvailable): az resource list doesn't show it, delete reports ResourceNotFound and checkNameAvailability reports the name free. It can't be removed, but the server name includes the region (ats-pg-<region>-…), so a POSTGRES_LOCATION that hasn't been tried before gets a new name (user-tasks.md step 2.4)."
+          fi
