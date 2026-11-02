@@ -44,6 +44,11 @@ resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {
   }
 }
 
+// The child resources deploy one at a time: server → firewall rule →
+// configuration → database. A new server keeps working for a while after it
+// reports Succeeded, and parallel child writes then fail with ServerIsBusy
+// (first full deploy in francecentral, on require_secure_transport).
+
 // 0.0.0.0–0.0.0.0 is Azure's "allow Azure services" rule.
 resource allowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2025-08-01' = {
   parent: server
@@ -61,6 +66,9 @@ resource secureTransport 'Microsoft.DBforPostgreSQL/flexibleServers/configuratio
     value: 'on'
     source: 'user-override'
   }
+  dependsOn: [
+    allowAzure
+  ]
 }
 
 resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2025-08-01' = {
@@ -73,7 +81,6 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2025-08-0
   dependsOn: [
     // Server configuration changes and database creation can't overlap.
     secureTransport
-    allowAzure
   ]
 }
 

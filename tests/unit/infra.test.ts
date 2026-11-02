@@ -285,6 +285,15 @@ describe("Bicep sources", () => {
     expect(urls).toContain("var connection = '${postgresHost}:5432/${databaseName}?sslmode=require'");
   });
 
+  it("creates the PostgreSQL children one at a time: firewall rule, then configuration, then database", () => {
+    const postgres = withoutComments(bicep["infra/modules/postgres.bicep"]);
+    const dependsOn = (resource: string) =>
+      postgres.match(new RegExp(`^resource ${resource} [\\s\\S]*?^}`, "m"))![0].match(/dependsOn: \[([^\]]*)\]/)?.[1].trim().split(/\s+/) ?? [];
+    expect(dependsOn("allowAzure")).toEqual([]);
+    expect(dependsOn("secureTransport")).toEqual(["allowAzure"]);
+    expect(dependsOn("database")).toEqual(["secureTransport"]);
+  });
+
   it("tags every taggable resource project=ats", () => {
     for (const [file, text] of Object.entries(bicep)) {
       if (file.endsWith("budget.bicep")) continue;
