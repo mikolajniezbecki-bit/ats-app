@@ -275,7 +275,7 @@ You can do all of Part 1 now. When it's done, tell Claude **"Part 1 is done"** a
      | `TURNSTILE_SITE_KEY` | Turnstile site key (step 1.8) |
      | `DEMO_USER_DOMAIN` | Tenant domain, e.g. `yourname.onmicrosoft.com` (step 1.2) |
      | `BUDGET_ALERT_EMAIL` | The email that should receive cost alerts |
-     | `POSTGRES_LOCATION` | Optional. Only if your region refuses the B1MS database (`SkuNotAvailable`): another EU region that offers it, e.g. `westeurope` |
+     | `POSTGRES_LOCATION` | Optional. Only if your region refuses the B1MS database (`SkuNotAvailable`): another EU region that offers it. This project: `francecentral` |
 
   3. Make sure you used the **Variables** tab, **not Secrets**. The project rule is: no Azure secrets in GitHub.
 
@@ -365,16 +365,17 @@ Claude writes the Bicep files and the `infra.yml` workflow. A reviewer checks th
   - **`tick`:** hourly housekeeping, such as reminders and the retention purge;
   - **`db-migrate`:** updates the database structure;
   - **`db-seed`:** fills in starting data.
-- **Before you start: the database region (only if your region refuses the database size).** A run fails with `SkuNotAvailable` ("Specified SKU is not supported in this region") when Azure won't give your subscription the cheap database size (B1MS) in the resource group's region. That happened in Poland Central. The database then goes in another EU region, and everything else stays where it is:
-  1. **Choose the region.** Open Cloud Shell (see [How to run an Azure command](#how-to-run-an-azure-command-cloud-shell)) and run this for a few EU regions, for example `westeurope`, `swedencentral`, `northeurope` and `germanywestcentral`:
+- **Before you start: the database region (only if your region refuses the database size).** A run fails with `SkuNotAvailable` ("Specified SKU is not supported in this region") when Azure won't give your subscription the cheap database size (B1MS) in the resource group's region. The database then goes in another EU region, and everything else stays where it is.
+  - **This project:** the free trial was refused B1MS in `polandcentral`, `westeurope`, `swedencentral` and `germanywestcentral`. **`POSTGRES_LOCATION` is `francecentral`.** If you rebuild with the same subscription, start there.
+  1. **Choose the region.** Open Cloud Shell (see [How to run an Azure command](#how-to-run-an-azure-command-cloud-shell)) and run this for a few EU regions, for example `francecentral`, `northeurope`, `italynorth` and `spaincentral`:
      ```sh
-     az postgres flexible-server list-skus --location westeurope -o table
+     az postgres flexible-server list-skus --location francecentral -o table
      ```
      Pick a region whose list includes **`Standard_B1ms`**.
-  2. **Set the variable.** On github.com open `ats-app` → **Settings** → **Secrets and variables** → **Actions** → tab **Variables** → **New repository variable**. **Name:** `POSTGRES_LOCATION`. **Value:** the region, in lower case without spaces (e.g. `westeurope`). Use the **Variables** tab, not Secrets.
+  2. **Set the variable.** On github.com open `ats-app` → **Settings** → **Secrets and variables** → **Actions** → tab **Variables** → **New repository variable**. **Name:** `POSTGRES_LOCATION`. **Value:** the region, in lower case without spaces (e.g. `francecentral`). Use the **Variables** tab, not Secrets.
   3. **Delete the failed database.** The failed run may have left a database server (`ats-pg-…`) in the resource group, in a **Failed** state. If you see it, open it → **Delete**. It holds no data. If you forget, the next run stops and tells you to.
      - Sometimes a refused attempt leaves an invisible leftover instead. You can't see it in the portal and you can't delete it. That's fine: the server name includes the region (`ats-pg-<region>-…`), so each new region gets a new name. If a run still fails with `InvalidResourceLocation`, pick a region you haven't tried yet. The run's **Explain a failed deployment** step says the same.
-     - A region can list `Standard_B1ms` and still refuse it with `SkuNotAvailable` (free-trial subscriptions often get this). Then set the next region from your list and run again.
+     - A region can list `Standard_B1ms` and still refuse it, with `SkuNotAvailable` or with `ParameterOutOfRange` "The value of the 'Version' should be in: []" (free-trial subscriptions often get this). Then set the next region from your list and run again.
   4. Once a database exists, its region can't change. Don't edit `POSTGRES_LOCATION` afterwards: the run stops if the variable and the existing server don't match. Changing it is fine as long as no deployment has created a server yet.
 - **How:**
   1. Claude gives you the **image_tag** to use: the newest tested image, a long letters-and-digits code.

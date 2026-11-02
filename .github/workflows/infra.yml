@@ -294,7 +294,10 @@ jobs:
         if: failure() && inputs.mode == 'deploy'
         run: |
           [ -f deploy-error.log ] || exit 0
-          if grep -q "SkuNotAvailable" deploy-error.log; then
+          # A region the subscription may not use for PostgreSQL fails either
+          # with SkuNotAvailable or, as in infra run #21 (germanywestcentral),
+          # with ParameterOutOfRange "The value of the 'Version' should be in: []".
+          if grep -q "SkuNotAvailable" deploy-error.log || grep -q "'Version' should be in: \[\]" deploy-error.log; then
             echo "::error::Azure doesn't offer this subscription the database size (Standard_B1ms) in this region. Set POSTGRES_LOCATION to another EU region that offers it (user-tasks.md step 2.4), then rerun."
           fi
           if grep -q "InvalidResourceLocation" deploy-error.log; then
