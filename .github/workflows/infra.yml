@@ -172,14 +172,38 @@ jobs:
             # existing one instead of moving it. Stop before that and say why.
             want="${POSTGRES_LOCATION:-$(az group show -n "$RESOURCE_GROUP" --query location -o tsv)}"
             want="${want,,}"
-            read -r pg_name pg_location <<< "$(az resource list -g "$RESOURCE_GROUP" \
+            # One server per row (id, name), then its location from one scalar
+            # read per server. Run #24 read "[0].[name, location]" with -o tsv:
+            # az prints a flat list one value per line, so read got the name
+            # and an empty location.
+            servers="$(az resource list -g "$RESOURCE_GROUP" \
               --resource-type Microsoft.DBforPostgreSQL/flexibleServers \
-              --query "[?tags.project=='ats'] | [0].[name, location]" -o tsv | tr -d ' ' | tr '\t' ' ')"
-            pg_location="${pg_location,,}"
-            if [ -n "${pg_name:-}" ] && [ "$pg_location" != "$want" ]; then
-              echo "::error::PostgreSQL server $pg_name is in $pg_location, but this run would create another one in $want. A server can't move: set POSTGRES_LOCATION to $pg_location to keep it, or delete it in the portal (its data is lost), then rerun."
-              exit 1
-            fi
+              --query "[?tags.project=='ats'].[id, name]" -o tsv)"
+            pg_name=""
+            while IFS=$'\t' read -r pg_id name; do
+              [ -n "$pg_id" ] || continue
+              if ! pg_location="$(az resource show --ids "$pg_id" --query location -o tsv 2>&1)"; then
+                # A create that Azure refused can leave a record that delete
+                # and show report as not found. It is no server: skip it.
+                if grep -qiE "not ?found|\(404\)" <<< "$pg_location"; then
+                  echo "::notice::Ignoring $name: listed, but Azure reports it not found (a record left by a failed create)."
+                  continue
+                fi
+                echo "$pg_location"
+                echo "::error::Couldn't read PostgreSQL server $name."
+                exit 1
+              fi
+              pg_location="$(tr -d ' \r\n' <<< "${pg_location,,}")"
+              if [ -z "$pg_location" ]; then
+                echo "::error::PostgreSQL server $name has no location in ARM; can't tell whether this run would move it."
+                exit 1
+              fi
+              if [ "$pg_location" != "$want" ]; then
+                echo "::error::PostgreSQL server $name is in $pg_location, but this run would create another one in $want. A server can't move: set POSTGRES_LOCATION to $pg_location to keep it, or delete it in the portal (its data is lost), then rerun."
+                exit 1
+              fi
+              pg_name="$name"
+            done <<< "$servers"
             echo "PostgreSQL region: $want"
             if [ -n "${pg_name:-}" ]; then
               echo "PostgreSQL server: $pg_name"
