@@ -110,7 +110,17 @@ args="$*"
 vault=/subscriptions/s/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/kv
 case "$args" in
   *"resource list"*KeyVault/vaults*) echo "$vault" ;;
-  *"resource list"*flexibleServers*) [ -z "$PG_SERVER" ] || echo "$PG_SERVER" ;;
+  # PG_SERVERS: one "name location" per line; location GHOST = a record left
+  # by a failed create (listed, but show says not found). Like the real az,
+  # a flat list in tsv prints one value per line.
+  *"resource list"*flexibleServers*"[id, name]"*)
+    while read -r n l; do [ -z "$n" ] || printf '/s/rg/flexibleServers/%s\t%s\n' "$n" "$n"; done <<< "$PG_SERVERS" ;;
+  *"resource list"*flexibleServers*) while read -r n l; do [ -z "$n" ] || printf '%s\n%s\n' "$n" "$l"; done <<< "$PG_SERVERS" ;;
+  *"resource show --ids /s/rg/flexibleServers/"*"--query location"*)
+    id="\${args#*--ids }"; n="\${id%% *}"; n="\${n##*/}"
+    l="$(while read -r a b; do [ "$a" = "$n" ] && echo "$b"; done <<< "$PG_SERVERS")"
+    if [ "$l" = GHOST ]; then echo "ERROR: (ResourceNotFound) The Resource was not found." >&2; exit 3; fi
+    echo "$l" ;;
   *"group show"*) echo polandcentral ;;
   *"resource list"*) echo "" ;;
   *"rest --method get"*"/secrets?"*) echo "{\\"value\\":[{\\"name\\":\\"\${SECRETS%% *}\\"}],\\"nextLink\\":\\"page-2\\"}" ;;
@@ -135,7 +145,7 @@ esac
         output = execFileSync("bash", ["-e", "-c", script], {
           encoding: "utf8",
           stdio: "pipe",
-          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GITHUB_ENV: githubEnv, RESOURCE_GROUP: "rg", INFRA_STAGE: stage, IMAGE_TAG_INPUT: "abc", SECRETS: secrets.join(" "), PG_SERVER: "", POSTGRES_LOCATION: "", STORED_HOST: "", ...extraEnv },
+          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GITHUB_ENV: githubEnv, RESOURCE_GROUP: "rg", INFRA_STAGE: stage, IMAGE_TAG_INPUT: "abc", SECRETS: secrets.join(" "), PG_SERVERS: "", POSTGRES_LOCATION: "", STORED_HOST: "", ...extraEnv },
         });
       } catch (error) {
         const failed = error as { status: number; stdout: string };
@@ -175,16 +185,39 @@ esac
   });
 
   it("refuses to deploy when the existing server is in another region than the run would use", () => {
-    const result = run(all, "full", { PG_SERVER: "ats-pg-x\tPoland Central", POSTGRES_LOCATION: "westeurope" });
+    const result = run(all, "full", { PG_SERVERS: "ats-pg-x polandcentral", POSTGRES_LOCATION: "westeurope" });
     expect(result.status).toBe(1);
     expect(result.output).toContain("PostgreSQL server ats-pg-x is in polandcentral, but this run would create another one in westeurope");
   });
 
   it("accepts an existing server in the region the run would use", () => {
-    const result = run(all, "full", { PG_SERVER: "ats-pg-x\twesteurope", POSTGRES_LOCATION: "westeurope" });
+    const result = run(all, "full", { PG_SERVERS: "ats-pg-x westeurope", POSTGRES_LOCATION: "westeurope" });
     expect(result.output).not.toContain("::error::");
     expect(result.status).toBe(0);
     expect(result.output).toContain("PostgreSQL server: ats-pg-x");
+  });
+
+  it("reads the location of a real server next to records left by failed creates (infra run #24)", () => {
+    const result = run(all, "full", {
+      PG_SERVERS: "ats-pg-3brhgxoyatsve GHOST\nats-pg-francecentral-3brhgxoyatsve francecentral",
+      POSTGRES_LOCATION: "francecentral",
+    });
+    expect(result.output).not.toContain("::error::");
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("Ignoring ats-pg-3brhgxoyatsve");
+    expect(result.output).toContain("PostgreSQL server: ats-pg-francecentral-3brhgxoyatsve");
+  });
+
+  it("treats a lone record left by a failed create as no server", () => {
+    const result = run(all, "full", { PG_SERVERS: "ats-pg-3brhgxoyatsve GHOST", POSTGRES_LOCATION: "francecentral" });
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("PostgreSQL server: none listed");
+  });
+
+  it("stops when a listed server's location can't be read", () => {
+    const result = run(all, "full", { PG_SERVERS: "ats-pg-x", POSTGRES_LOCATION: "francecentral" });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("PostgreSQL server ats-pg-x has no location in ARM");
   });
 
   it("warns that an empty server list may still hide a record left by a failed create", () => {
