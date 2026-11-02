@@ -275,7 +275,7 @@ You can do all of Part 1 now. When it's done, tell Claude **"Part 1 is done"** a
      | `TURNSTILE_SITE_KEY` | Turnstile site key (step 1.8) |
      | `DEMO_USER_DOMAIN` | Tenant domain, e.g. `yourname.onmicrosoft.com` (step 1.2) |
      | `BUDGET_ALERT_EMAIL` | The email that should receive cost alerts |
-     | `POSTGRES_LOCATION` | Optional. Only if your region refuses the B1MS database (`SkuNotAvailable`): another EU region that offers it. This project: `francecentral` |
+     | `POSTGRES_LOCATION` | Optional. Only if your region refuses the B1MS database (`SkuNotAvailable`, or `ParameterOutOfRange` "'Version' should be in: []"): another EU region that offers it. This project: `francecentral` |
 
   3. Make sure you used the **Variables** tab, **not Secrets**. The project rule is: no Azure secrets in GitHub.
 
@@ -538,7 +538,7 @@ If a budget alert email arrives (80 % or 100 % of EUR 10), tell Claude. **The al
 - [ ] 2.1 Foundation: what-if, then deploy
 - [ ] 2.2 Key Vault Secrets Officer for yourself
 - [ ] 2.3 Three secrets added to Key Vault
-- [ ] 2.4 Only if `SkuNotAvailable`: database region chosen, `POSTGRES_LOCATION` variable set, failed database server deleted
+- [ ] 2.4 Only if `SkuNotAvailable` or `ParameterOutOfRange`: database region chosen, `POSTGRES_LOCATION` variable set, failed database server deleted
 - [ ] 2.4 Full: what-if, then deploy (with the image tag from Claude); `PostgreSQL region` line checked
 - [ ] 2.5 Redirect URI added in Entra; real hostname set in Turnstile
 - [ ] 2.6 Calendar reminders for the token and the sign-in secret
