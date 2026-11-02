@@ -78,6 +78,16 @@ describe("infra.yml", () => {
     expect(steps[byName("Deploy")].run).toContain("az deployment group create");
   });
 
+  it("explains SkuNotAvailable and InvalidResourceLocation after a failed deployment", () => {
+    for (const name of ["Deploy", "Deploy, first full deployment without the web app"]) {
+      expect(steps[byName(name)].run, name).toContain("2> deploy-error.log || { cat deploy-error.log >&2; exit 1; }");
+    }
+    const explain = steps[byName("Explain a failed deployment")];
+    expect(explain.if).toBe("failure() && inputs.mode == 'deploy'");
+    expect(explain.run).toContain("SkuNotAvailable");
+    expect(explain.run).toContain("InvalidResourceLocation");
+  });
+
   it("masks the generated secrets and creates them only when none exists", () => {
     const state = steps[byName("Read the current state")].run!;
     expect(state).toContain("::add-mask::");
@@ -103,6 +113,7 @@ case "$args" in
   *"group show"*) echo polandcentral ;;
   *"resource list"*) echo "" ;;
   *"rest --method get"*"/secrets?"*) echo "{\\"value\\":[{\\"name\\":\\"\${SECRETS%% *}\\"}],\\"nextLink\\":\\"page-2\\"}" ;;
+  *"rest --method get"*"tags.postgresHost"*"/secrets/database-url?"*) echo "$STORED_HOST" ;;
   *"rest --method get"*"/secrets/"*)
     name="\${args##*/secrets/}"; name="\${name%%[?]*}"
     if [[ " $SECRETS " == *" $name "* ]]; then echo "{}"; else echo "ERROR: (SecretNotFound) Not Found" >&2; exit 1; fi ;;
@@ -123,7 +134,7 @@ esac
         output = execFileSync("bash", ["-e", "-c", script], {
           encoding: "utf8",
           stdio: "pipe",
-          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GITHUB_ENV: githubEnv, RESOURCE_GROUP: "rg", INFRA_STAGE: stage, IMAGE_TAG_INPUT: "abc", SECRETS: secrets.join(" "), PG_SERVER: "", POSTGRES_LOCATION: "", ...extraEnv },
+          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GITHUB_ENV: githubEnv, RESOURCE_GROUP: "rg", INFRA_STAGE: stage, IMAGE_TAG_INPUT: "abc", SECRETS: secrets.join(" "), PG_SERVER: "", POSTGRES_LOCATION: "", STORED_HOST: "", ...extraEnv },
         });
       } catch (error) {
         const failed = error as { status: number; stdout: string };
@@ -165,13 +176,27 @@ esac
   it("refuses to deploy when the existing server is in another region than the run would use", () => {
     const result = run(all, "full", { PG_SERVER: "ats-pg-x\tPoland Central", POSTGRES_LOCATION: "westeurope" });
     expect(result.status).toBe(1);
-    expect(result.output).toContain("PostgreSQL server ats-pg-x is in polandcentral, but this run would put it in westeurope");
+    expect(result.output).toContain("PostgreSQL server ats-pg-x is in polandcentral, but this run would create another one in westeurope");
   });
 
   it("accepts an existing server in the region the run would use", () => {
     const result = run(all, "full", { PG_SERVER: "ats-pg-x\twesteurope", POSTGRES_LOCATION: "westeurope" });
     expect(result.output).not.toContain("::error::");
     expect(result.status).toBe(0);
+    expect(result.output).toContain("PostgreSQL server: ats-pg-x");
+  });
+
+  it("warns that an empty server list may still hide a record left by a failed create", () => {
+    const result = run(all, "full", { POSTGRES_LOCATION: "germanywestcentral" });
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("PostgreSQL server: none listed; this run creates ats-pg-germanywestcentral-");
+  });
+
+  it("passes on the host the connection-string secrets were written for, or empty without a tag", () => {
+    const host = "ats-pg-westeurope-x.postgres.database.azure.com";
+    expect(run(all, "full", { STORED_HOST: host }).env).toContain(`INFRA_STORED_POSTGRES_HOST=${host}\n`);
+    expect(run(all, "full").env).toContain("INFRA_STORED_POSTGRES_HOST=\n");
+    expect(run([], "foundation").env).toContain("INFRA_STORED_POSTGRES_HOST=\n");
   });
 
   it("refuses the full stage while an owner secret is missing", () => {
@@ -227,8 +252,36 @@ describe("Bicep sources", () => {
     expect(workflow.env.POSTGRES_LOCATION).toBe("${{ vars.POSTGRES_LOCATION }}");
     expect(readFileSync("infra/main.bicepparam", "utf8")).toContain("param postgresLocation = readEnvironmentVariable('POSTGRES_LOCATION', '')");
     const main = withoutComments(bicep["infra/main.bicep"]);
-    expect(main).toMatch(/name: names\.postgres\s+location: empty\(postgresLocation\) \? location : postgresLocation/);
-    expect(main.match(/location: empty\(postgresLocation\)/g)).toHaveLength(1);
+    expect(main).toContain("var pgLocation = toLower(empty(postgresLocation) ? location : postgresLocation)");
+    expect(main).toMatch(/name: names\.postgres\s+location: pgLocation\n/);
+    expect(main.match(/location: pgLocation/g)).toHaveLength(1);
+  });
+
+  it("puts the database region in the server name, so a new POSTGRES_LOCATION gets a new name", () => {
+    expect(withoutComments(bicep["infra/main.bicep"])).toContain("postgres: '${prefix}-pg-${pgLocation}-${suffix}'");
+  });
+
+  it("rewrites the connection-string secrets in the full stage only when they point at another host", () => {
+    expect(readFileSync("infra/main.bicepparam", "utf8")).toContain(
+      "param storedPostgresHost = readEnvironmentVariable('INFRA_STORED_POSTGRES_HOST', '')",
+    );
+    const main = withoutComments(bicep["infra/main.bicep"]);
+    expect(main).toContain(
+      "module databaseUrls 'modules/database-urls.bicep' = if (stage == 'full' && storedPostgresHost != postgresHost)",
+    );
+    expect(main).toContain("tags: union(tags, { postgresHost: postgresHost })");
+    // Built from the stored passwords, never this run's generated values.
+    expect(main).toContain("appPassword: vault.getSecret('pg-app-password')");
+    expect(main).toContain("adminPassword: vault.getSecret('pg-admin-password')");
+    // The web app and the jobs read the secrets, so they deploy after.
+    expect(main).toMatch(/module apps [\s\S]*dependsOn: \[[^\]]*databaseUrls/);
+    // Raw text: withoutComments would cut the URLs at "//".
+    const urls = bicep["infra/modules/database-urls.bicep"];
+    expect(urls).toContain("name: 'database-url'");
+    expect(urls).toContain("name: 'database-admin-url'");
+    // Same format as the foundation stage writes (keyvault.bicep).
+    expect(urls).toContain("value: 'postgres://${appLogin}:${appPassword}@${connection}'");
+    expect(urls).toContain("var connection = '${postgresHost}:5432/${databaseName}?sslmode=require'");
   });
 
   it("tags every taggable resource project=ats", () => {

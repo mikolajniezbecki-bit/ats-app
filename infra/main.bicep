@@ -27,6 +27,9 @@ param location string = resourceGroup().location
 @description('Region of the PostgreSQL server only; empty means location. Set when Standard_B1ms is not offered to the subscription in the resource group\'s region (infra.yml reads the POSTGRES_LOCATION variable).')
 param postgresLocation string = ''
 
+@description('The postgresHost tag on the database-url secret, read by infra.yml; empty when the secret or the tag is missing.')
+param storedPostgresHost string = ''
+
 @description('Image tag in GHCR (a commit SHA pushed by main.yml). Required for stage full.')
 param imageTag string = ''
 param imageRepository string = 'ghcr.io/mikolajniezbecki-bit/ats-app'
@@ -65,6 +68,7 @@ param emailHashKey string = ''
 param tickSecret string = ''
 
 var suffix = uniqueString(resourceGroup().id)
+var pgLocation = toLower(empty(postgresLocation) ? location : postgresLocation)
 var tags = {
   project: 'ats'
 }
@@ -73,7 +77,12 @@ var names = {
   identity: '${prefix}-id-${suffix}'
   keyVault: '${prefix}-kv-${suffix}'
   storage: '${prefix}st${suffix}'
-  postgres: '${prefix}-pg-${suffix}'
+  // The region is part of the name, so changing POSTGRES_LOCATION gives a new
+  // name. A create refused with SkuNotAvailable can leave an invisible record
+  // of the name in ARM that blocks it in every other region
+  // (InvalidResourceLocation), and only a new name gets past it. Region names
+  // are lower-case letters and digits, so the name stays valid (max 63).
+  postgres: '${prefix}-pg-${pgLocation}-${suffix}'
   budget: '${prefix}-budget'
   environment: '${prefix}-env-${suffix}'
   web: '${prefix}-web-${suffix}'
@@ -82,6 +91,7 @@ var names = {
   seed: '${prefix}-db-seed-${suffix}'
 }
 var databaseName = 'ats'
+var postgresHost = '${names.postgres}.postgres.database.azure.com'
 var postgresAdminLogin = 'atsadmin'
 var postgresAppLogin = 'ats_app'
 // Azure requires three character classes in the PostgreSQL admin password;
@@ -115,7 +125,7 @@ module keyVault 'modules/keyvault.bicep' = {
     identityPrincipalId: identity.outputs.principalId
     createGeneratedSecrets: createGeneratedSecrets
     // The server's host name follows from its name; it doesn't exist yet in foundation.
-    postgresHost: '${names.postgres}.postgres.database.azure.com'
+    postgresHost: postgresHost
     postgresAdminLogin: postgresAdminLogin
     postgresAppLogin: postgresAppLogin
     databaseName: databaseName
@@ -156,12 +166,31 @@ module postgres 'modules/postgres.bicep' = if (stage == 'full') {
   name: 'postgres'
   params: {
     name: names.postgres
-    location: empty(postgresLocation) ? location : postgresLocation
+    location: pgLocation
     tags: tags
     adminLogin: postgresAdminLogin
     // Always the stored password, never this run's seed (Q4).
     adminPassword: vault.getSecret('pg-admin-password')
     databaseName: databaseName
+  }
+  dependsOn: [
+    keyVault
+  ]
+}
+
+// Point the connection strings at the current host, only when the stored ones
+// were written for another (database-urls.bicep).
+module databaseUrls 'modules/database-urls.bicep' = if (stage == 'full' && storedPostgresHost != postgresHost) {
+  name: 'database-urls'
+  params: {
+    vaultName: names.keyVault
+    tags: union(tags, { postgresHost: postgresHost })
+    postgresHost: postgresHost
+    adminLogin: postgresAdminLogin
+    appLogin: postgresAppLogin
+    databaseName: databaseName
+    adminPassword: vault.getSecret('pg-admin-password')
+    appPassword: vault.getSecret('pg-app-password')
   }
   dependsOn: [
     keyVault
@@ -193,6 +222,7 @@ module apps 'modules/apps.bicep' = if (stage == 'full') {
   dependsOn: [
     // The app's first revision connects to the database at start.
     postgres
+    databaseUrls
   ]
 }
 
@@ -202,3 +232,4 @@ output migrateJobName string = names.migrate
 output seedJobName string = names.seed
 output tickJobName string = names.tick
 output appUrl string = stage == 'full' ? apps!.outputs.appUrl : ''
+output postgresServerName string = names.postgres

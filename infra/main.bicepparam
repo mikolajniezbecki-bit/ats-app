@@ -17,6 +17,8 @@ param demoUserDomain = readEnvironmentVariable('DEMO_USER_DOMAIN', '')
 param budgetAlertEmail = readEnvironmentVariable('BUDGET_ALERT_EMAIL', '')
 // Optional: the database's region when it differs from the resource group's.
 param postgresLocation = readEnvironmentVariable('POSTGRES_LOCATION', '')
+// The host the stored connection-string secrets point at (tag on database-url).
+param storedPostgresHost = readEnvironmentVariable('INFRA_STORED_POSTGRES_HOST', '')
 
 // EUR 10, or the same amount in the subscription's billing currency (M8).
 param budgetAmount = 10
