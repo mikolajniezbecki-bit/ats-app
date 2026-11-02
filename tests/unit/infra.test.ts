@@ -240,6 +240,75 @@ esac
   });
 });
 
+// Runs infra/run-job.sh against a fake az whose status reads follow POLLS,
+// one entry per read: a status, or 500 / 403 for a failed read.
+describe("infra/run-job.sh", () => {
+  const fakeAz = `#!/usr/bin/env bash
+args="$*"
+case "$args" in
+  *"resource show"*) echo /s/rg/jobs/migrate ;;
+  *"rest --method post"*"/start?"*) echo exec-1 ;;
+  *"rest --method get"*"/executions/exec-1?"*)
+    n=$(cat "$FAKE_DIR/count" 2>/dev/null || echo 0); echo $((n + 1)) > "$FAKE_DIR/count"
+    read -ra polls <<< "$POLLS"; poll="\${polls[$n]:-Running}"
+    case "$poll" in
+      500) echo 'ERROR: Internal Server Error({"error":{"code":"InternalServerError","message":"Internal server error occurred."}})' >&2; exit 1 ;;
+      403) echo 'ERROR: (AuthorizationFailed) The client does not have authorization.' >&2; exit 1 ;;
+      *) echo "$poll" ;;
+    esac ;;
+  *) echo "unexpected az $args" >&2; exit 2 ;;
+esac
+`;
+  const run = (polls: string) => {
+    const dir = mkdtempSync(path.join(tmpdir(), "run-job-"));
+    try {
+      writeFileSync(path.join(dir, "az"), fakeAz);
+      chmodSync(path.join(dir, "az"), 0o755);
+      const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, FAKE_DIR: dir, POLLS: polls, RESOURCE_GROUP: "rg", RUN_JOB_POLL_SECONDS: "0", RUN_JOB_MAX_POLL_ERRORS: "3" };
+      try {
+        const output = execFileSync("bash", ["infra/run-job.sh", "migrate", "60"], { encoding: "utf8", stdio: "pipe", env });
+        return { status: 0, output };
+      } catch (error) {
+        const failed = error as { status: number; stdout: string; stderr: string };
+        return { status: failed.status, output: failed.stdout + failed.stderr };
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it("waits for the execution to succeed", () => {
+    const result = run("Running Succeeded");
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("exec-1: Succeeded.");
+  });
+
+  it("retries a status read that fails with a server error (infra run #26)", () => {
+    const result = run("Running 500 500 Running Succeeded");
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("Azure server error while reading the status of exec-1 (2 of 3 in a row); retrying.");
+    expect(result.output).toContain("exec-1: Succeeded.");
+  });
+
+  it("gives up after the maximum number of server errors in a row", () => {
+    const result = run("500 500 500 Succeeded");
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("failed with a server error 3 times in a row");
+  });
+
+  it("fails at once on an error that isn't a server error", () => {
+    const result = run("403 Succeeded");
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("Couldn't read the status of migrate execution exec-1.");
+  });
+
+  it("fails when the execution fails", () => {
+    const result = run("Running Failed");
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("ended with status Failed");
+  });
+});
+
 describe("check-arm.mjs", () => {
   it("finds every forbidden name as a whole word only", () => {
     expect(forbiddenNamesIn(JSON.stringify({ env: [{ name: "SMTP_HOST" }, { name: "AUTH_DEV_LOGIN" }] }))).toEqual([
