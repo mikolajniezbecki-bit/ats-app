@@ -265,11 +265,12 @@ pnpm dev
 ## CI/CD
 
 - **`ci.yml`** (pull requests): `pnpm verify`, `db:migrate` and the integration tests against service containers, then `pnpm build` with no configuration (W1). No Playwright.
-- **`main.yml`** (every push to `main`, and by hand from the Actions tab: *main* → *Run workflow*): `pnpm verify`, then the Docker image is built **once** as `ghcr.io/<owner>/ats-app:<full commit SHA>` and tested as is. The Compose stack runs it (`APP_IMAGE=<that tag> docker compose up --no-build --wait`; the `app` service has a `/api/health` healthcheck). The workflow migrates and seeds from the image (`node db/migrate.mjs`, `node db/seed.mjs`, which on the empty stack adds the demo data), runs `pnpm test:integration` against the Compose PostgreSQL, Azurite and Mailpit, and then the whole Playwright suite (`pnpm test:e2e`: parallel projects, then `time-travel`; one retry in CI). Only then is **the same image** pushed to GHCR (private package, SHA tag only, no `latest`); the job summary shows the tag and digest, and older versions are deleted so the 10 most recent remain.
-  - Each step runs only if the earlier ones passed. A newer push cancels the run in progress. Pushes that change only `_docs/**` or Markdown files don't start it. Manual runs from another branch run the tests but never push.
+- **`main.yml`** (every push to `main`, and by hand from the Actions tab: *main* → *Run workflow*): `pnpm verify`, then the Docker image is built **once** as `ghcr.io/<owner>/ats-app:<full commit SHA>` and tested as is. The Compose stack runs it (`APP_IMAGE=<that tag> docker compose up --no-build --wait`; the `app` service has a `/api/health` healthcheck). The workflow migrates and seeds from the image (`node db/migrate.mjs`, `node db/seed.mjs`, which on the empty stack adds the demo data), runs `pnpm test:integration` against the Compose PostgreSQL, Azurite and Mailpit, and then the whole Playwright suite (`pnpm test:e2e`: parallel projects, then `time-travel`; one retry in CI). Only then is **the same image** pushed to GHCR (private package, SHA tag only, no `latest`); the job summary shows the tag and digest.
+  - On `main`, the **`deploy`** job then rolls that image out to Azure: OIDC login, `db-migrate` on the new tag, the web app's image, the `tick` and `db-seed` jobs' image, and a smoke test (see [Deploy and rollback](#deploy-and-rollback)). Only after a successful deployment are older GHCR versions deleted so the 10 most recent remain; the image the web app runs is therefore never deleted.
+  - Each step runs only if the earlier ones passed. A newer push cancels a running test job, but never a deployment; deployments and `infra.yml` runs share one concurrency group (`azure-deploy`), so they never overlap. Pushes that change only `_docs/**` or Markdown files don't start it. Manual runs from another branch run the tests but never push or deploy; a manual run on `main` deploys.
   - On failure the run uploads `test-results/` (trace, video, screenshot), `playwright-report/` and the Compose logs as an artifact kept 7 days.
-  - The only credential is `GITHUB_TOKEN`. Playwright in CI needs internet access to `challenges.cloudflare.com` (Turnstile test keys, in the browser and the app).
-  - Expect about 20–30 minutes per run. Deployment steps come with the Azure tasks.
+  - The test job's only credential is `GITHUB_TOKEN`; the deploy job logs in to Azure with OIDC (no Azure secret in GitHub, G3). Playwright in CI needs internet access to `challenges.cloudflare.com` (Turnstile test keys, in the browser and the app).
+  - Expect about 25–35 minutes per run, of which 3–5 for the deployment.
 - **`infra.yml`** (by hand, `main` only): what-if or deploy of the Azure environment; see [Azure setup](#azure-setup).
 - Locally, `docker compose up --build` still builds the app itself and tags it `ats-app:local`.
 
@@ -351,13 +352,117 @@ az rest --method get --url "https://management.azure.com$JOB_ID/executions?api-v
 
 The second start replaces the execution's container settings, so it passes the job's complete settings plus `SEED_ADMIN_EMAIL`. Secret references stay in place. The job's output carries the user ID only, never the email (M2).
 
+### Deploy and rollback
+
+Every green push to `main` deploys the image it has just tested (`main.yml`, `deploy` job). The steps, each only if the previous one succeeded:
+
+1. Read the resource names from the outputs of the `infra-full` deployment. If it doesn't exist, the run stops: run `infra.yml` (stage `full`) first.
+2. Check that the PostgreSQL server is `Ready`. A stopped database stops the run ([Stop and start between demos](#stop-and-start-between-demos)).
+3. Set the `db-migrate` job's image to `ghcr.io/<owner>/ats-app:<commit SHA>`, run it (`infra/run-job.sh`, up to 10 minutes) and wait for `Succeeded`.
+4. Set the web app's image (`infra/set-image.sh`) and wait up to 10 minutes for the new revision to be ready. Until then the previous revision keeps serving (single revision mode). Only the image changes: the script compares the environment variable names, secret names and registry settings before and after and fails on any difference.
+5. Set the `tick` and `db-seed` jobs' image. Their trigger and settings stay as they are, so a `tick` job stopped for G10 stays stopped.
+6. Smoke test (`infra/smoke-test.sh`): within 5 minutes, `GET {appUrl}/api/health` returns 200 with `status`, `database` and `storage` all `ok`, and ARM shows exactly one active revision, with 100 % of the traffic, on the new image.
+
+The job summary shows the commit, the `db-migrate` execution, the new revision and the smoke test. The scripts use plain ARM calls (`az resource`, `az rest`), so no Azure CLI extension is needed, and they print names, never secret values.
+
+**After a failure.** There is no automatic rollback (TO-17). If the failure was transient (Azure busy, a timeout), rerun it: **Actions → main → the failed run → Re-run failed jobs**, or **Run workflow** on `main`. The scripts skip what is already done. If the new release is broken, fix it forward with a new pull request, or roll back by hand.
+
+**Rolling back by hand** (Azure Cloud Shell, Bash). Pick an earlier commit SHA whose image is still in GHCR: `main.yml` keeps the 10 most recent versions (the SHAs are in the runs' job summaries).
+
+```sh
+RG=rg-ats-demo
+SHA=<earlier full commit SHA>
+API=api-version=2024-03-01
+IMAGE=ghcr.io/mikolajniezbecki-bit/ats-app:$SHA
+OUT=$(az deployment group show -g "$RG" -n infra-full --query properties.outputs -o json)
+for NAME in $(jq -r '.webName.value, .tickJobName.value, .seedJobName.value, .migrateJobName.value' <<< "$OUT"); do
+  ID=$(az resource list -g "$RG" --query "[?name=='$NAME'].id | [0]" -o tsv)
+  # The current template with only the image changed; nothing else is sent.
+  az rest --method get --url "https://management.azure.com$ID?$API" \
+    | jq --arg image "$IMAGE" '{properties: {template: (.properties.template | del(.revisionSuffix) | .containers[0].image = $image)}}' \
+    > rollback.json
+  az rest --method patch --url "https://management.azure.com$ID?$API" --body @rollback.json --output none
+  az resource show --ids "$ID" --query "{name: name, image: properties.template.containers[0].image, state: properties.provisioningState}" -o table
+done
+```
+
+The web app's new revision takes a minute or two; check `GET {appUrl}/api/health` afterwards. **Migrations are never rolled back:** they are forward only, and each must work with the previous release still running (D2), so the earlier image runs against the newer schema. The next push to `main` deploys again over the rollback.
+
+### Stop and start between demos
+
+Stopping the database and the hourly `tick` job keeps the cost near zero between demos, which matters after month 12 when the database is no longer free (G10). Container Apps has no pause switch for a scheduled job, so **stop** switches the `tick` job's trigger to manual (it then never runs by itself) and **start** restores the hourly schedule `0 * * * *`. Rerunning `infra.yml` (stage `full`) restores it too. `main.yml` changes only images, so a deployment never turns the schedule back on.
+
+Run in Azure Cloud Shell (Bash). Set the names first:
+
+```sh
+RG=rg-ats-demo
+API=api-version=2024-03-01
+OUT=$(az deployment group show -g "$RG" -n infra-full --query properties.outputs -o json)
+PG=$(jq -r .postgresServerName.value <<< "$OUT")
+TICK_ID=$(az resource list -g "$RG" --query "[?name=='$(jq -r .tickJobName.value <<< "$OUT")'].id | [0]" -o tsv)
+```
+
+**Stop** (the tick first, so it doesn't fail against a stopped database):
+
+```sh
+az rest --method get --url "https://management.azure.com$TICK_ID?$API" \
+  | jq '{properties: {configuration: (.properties.configuration
+      | .triggerType = "Manual" | .scheduleTriggerConfig = null
+      | .manualTriggerConfig = {parallelism: 1, replicaCompletionCount: 1})}}' > tick-trigger.json
+az rest --method patch --url "https://management.azure.com$TICK_ID?$API" --body @tick-trigger.json --output none
+az postgres flexible-server stop -g "$RG" -n "$PG"
+```
+
+**Start** (the database first):
+
+```sh
+az postgres flexible-server start -g "$RG" -n "$PG"
+az rest --method get --url "https://management.azure.com$TICK_ID?$API" \
+  | jq '{properties: {configuration: (.properties.configuration
+      | .triggerType = "Schedule" | .manualTriggerConfig = null
+      | .scheduleTriggerConfig = {cronExpression: "0 * * * *", parallelism: 1, replicaCompletionCount: 1})}}' > tick-trigger.json
+az rest --method patch --url "https://management.azure.com$TICK_ID?$API" --body @tick-trigger.json --output none
+```
+
+**Check both** (the database `Ready` or `Stopped`; the tick `Schedule` with `0 * * * *`, or `Manual`; its recent executions):
+
+```sh
+az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv
+az resource show --ids "$TICK_ID" \
+  --query "properties.configuration.{trigger: triggerType, cron: scheduleTriggerConfig.cronExpression, secrets: length(secrets), registries: length(registries)}" -o table
+az rest --method get --url "https://management.azure.com$TICK_ID/executions?$API" \
+  --query "value[].{name: name, status: properties.status, start: properties.startTime}" -o table
+```
+
+Good to know:
+
+- Azure starts a stopped server again by itself after **7 days**. Stop it again to keep it stopped; the `tick` stays manual until you start it.
+- **While the database is stopped the site returns errors**: the app can't start without it (W1).
+- **`main.yml` deployments and `infra.yml` need the database running.** A deployment stops at its second step with "The database is stopped". Start it before merging anything into `main`, then rerun the failed workflow.
+
+### Rebuild from an empty resource group
+
+The environment can be rebuilt from nothing (G6). Task 44's first build was done this way. In order:
+
+0. **Only if the old resource group was deleted:**
+   - Recreate it with the same name and region (`rg-ats-demo`, Poland Central): portal **Resource groups → + Create**.
+   - Redo the deploy service principal's two role assignments on it ([One-time owner setup](#one-time-owner-setup) step 2): role assignments are deleted with the group. The app registration and its federated credential survive.
+   - Deal with the soft-deleted Key Vault (kept 7 days after the group is deleted). **Recover it** (recommended): portal **Key vaults → Manage deleted vaults →** select it **→ Recover**, or `az keyvault recover --name <vault>`. It keeps your three secrets and the generated ones. Or **purge** it (same page, **Purge**): `foundation` then generates new values, and you add your three secrets again (step 2 below). After a recovery, give yourself **Key Vault Secrets Officer** again if you need to change a secret.
+1. Run `infra.yml` with `stage: foundation`: what-if, then deploy.
+2. **Only if the vault was purged:** add `microsoft-client-secret`, `turnstile-secret-key` and `ghcr-pat` ([One-time owner setup](#one-time-owner-setup) step 5).
+3. Run `infra.yml` with `stage: full` and `image_tag` set to a SHA still in GHCR (one of the 10 most recent `main.yml` runs): what-if, then deploy. Keep `POSTGRES_LOCATION` (`francecentral`). If Azure refuses the PostgreSQL name because a deleted server still holds it, set `POSTGRES_LOCATION` to an EU region not tried before ([One-time owner setup](#one-time-owner-setup) step 1). The first full deployment is named `infra-full-bootstrap` and creates the web app only after `db-migrate` has run.
+4. **Actions → main → Run workflow** on `main`: tests the latest commit and deploys it.
+5. Run the `db-seed` job ([Seeding](#seeding), demo data).
+6. Run the `db-seed` job with `SEED_ADMIN_EMAIL=<your UPN>` ([Seeding](#seeding), first Admin).
+7. If the host name changed (`appUrl` in the `full` run's summary): update the Entra redirect URI and the Turnstile hostname ([One-time owner setup](#one-time-owner-setup) step 8, `_docs/user-tasks.md` step 2.5).
+
 ### Costs
 
 The settings above stay within the free offer (tech-stack.md §14): B1MS with 32 GB and 7-day backups (12 months free), about 3 GB of logs a month (5 GB free), Container Apps' monthly free grant, and cents for Key Vault and Blob. Things that would raise the cost are all off: PostgreSQL auto-grow, high availability, geo-redundant backups or a larger SKU, blob soft delete or versioning, diagnostic settings, and a second PostgreSQL server.
 
 - **The budget alert only notifies and never stops spending.** It counts in the subscription's billing currency: 10 means EUR 10 on a EUR subscription. On another currency, change `budgetAmount` in `infra/main.bicepparam` to the equivalent.
 - **Defender for Cloud plans stay on the free tier.** Don't enable paid plans.
-- Check **Cost Management → Cost analysis** for the resource group after the first week. After month 12, B1MS is billed at pay-as-you-go rates and will exceed the budget unless the database is stopped between demos (G10, task 45).
+- Check **Cost Management → Cost analysis** for the resource group after the first week. After month 12, B1MS is billed at pay-as-you-go rates and will exceed the budget unless the database is stopped between demos ([Stop and start between demos](#stop-and-start-between-demos), G10).
 
 ## Configuration
 

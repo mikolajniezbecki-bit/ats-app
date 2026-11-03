@@ -414,6 +414,10 @@ Claude handles the checks and may ask you for one or two more runs.
 
 From task 45 on, every merge into `main` updates Azure automatically. Nothing to click for that. You do need to start the demo data once, and do some checks in a browser that only a human can do (task 45's "cloud proofs").
 
+> **Merging into `main` now deploys, and that needs the database running.** If you stopped it (step 3.5, or between demos), start it before a pull request is merged. Otherwise the deployment stops with "The database is stopped": start it, then on GitHub open **Actions → main →** the failed run **→ Re-run failed jobs**.
+
+The app address is `https://<web app>.<environment>.<region>.azurecontainerapps.io` (the `appUrl` from step 2.4). Opening the bare address shows the public job board (`/jobs`); **staff sign in at `<app address>/sign-in`**.
+
 ### How to run an Azure command (Cloud Shell)
 
 A few steps ask you to run a command:
@@ -427,13 +431,13 @@ A few steps ask you to run a command:
 - **Why:** the app starts empty. The `db-seed` job adds:
   - the settings, the four demo staff users (matching your Microsoft accounts from step 1.4), and a fictitious demo set (requisitions, applications, CVs, interviews, offers; task 42);
   - in a second run, **you** as the first Admin (rule AU8).
-- **How:** Claude gives you two Cloud Shell commands (also in the README section that task 44 writes). Run them one after the other and send Claude the outputs. The second one includes your UPN `owner@yourname.onmicrosoft.com`.
+- **How:** run the two commands from the README section **Azure setup → Seeding** in Cloud Shell, one after the other, and send Claude the outputs. In the second one, replace `<your UPN>` with `owner@yourname.onmicrosoft.com`. The last command there lists the executions; both should show `Succeeded` after a minute or two.
 
 ### Step 3.2 – Sign in with each demo account (proof #6)
 
 - **Why:** sign-in with real Microsoft accounts can't be tested automatically. This proves the invite-only rule: known users get in, others don't (rules AU2–AU5).
 - **How:** use a **private/incognito browser window** for each account, so earlier sign-ins don't interfere.
-  1. Open the app address → **Sign in with Microsoft**.
+  1. Open `<app address>/sign-in` → **Sign in with Microsoft**.
   2. Sign in as `owner@…`, choose a new password when asked, and set up Authenticator if asked. You should land on the dashboard as **Admin**.
   3. Repeat with `admin@`, `recruiter@`, `hm@` and `interviewer@`. Each should land on the dashboard showing its role. Note what you see:
      - Hiring Manager: approvals waiting;
@@ -449,7 +453,23 @@ A few steps ask you to run a command:
 
 - **Why:** these features depend on Azure-only services: secure links to the file storage, the email Outbox, and the real Turnstile keys. Claude checks the technical details. You confirm what a user sees.
 - **How:**
-  1. **Proof #7, CV:** as `recruiter@`, open any demo application and check that the CV shows inside the page.
+  1. **Proof #7, CV:** as `recruiter@`, open any demo application and check that the CV shows inside the page. Then check the secure link itself, without ever showing it to anyone:
+     1. Copy the link the page uses for the CV: right-click the PDF → **Copy frame address** (Chrome/Edge), or press **F12** → **Elements**, find the `iframe` and copy its `src`.
+     2. In Cloud Shell, paste this command and press **Enter**. It asks for the link (**paste it and press Enter; nothing is shown on screen**) and never prints it:
+
+        ```sh
+        read -rsp "Paste the CV link, then Enter: " U; echo
+        o="${U%%\?*}"; o="${o#https://}"; o="https://${o%%/*}"
+        echo "origin is a blob storage account over HTTPS: $([[ "$o" =~ ^https://[a-z0-9]+\.blob\.core\.windows\.net$ ]] && echo yes || echo NO)"
+        echo "user delegation key (skoid and sktid): $([[ "$U" == *skoid=* && "$U" == *sktid=* ]] && echo yes || echo NO)"
+        curl -sI "$U" | grep -iE "^HTTP/|^content-type:|^content-disposition:" | sed -E 's/filename[^;]*/filename=…/gI'
+        echo "without the signature: $(curl -s -o /dev/null -w '%{http_code}' "${U%%\?*}")"
+        unset U o
+        ```
+
+     3. Expected: two `yes`, then `HTTP/1.1 200 OK` (or `HTTP/2 200`), `Content-Type: application/pdf`, `Content-Disposition: inline…`, and `without the signature:` followed by a 4xx code (e.g. `409` or `404`), not `200`.
+     4. **More than 5 minutes later**, run the same command with the same link again. The `HTTP` line must now say `403`: the link has expired.
+     5. Send Claude **only the output** of both runs, never the link.
   2. **Proof #8, Outbox:** Claude will ask you to do a short sequence:
      - as `recruiter@`, schedule an interview on a demo application;
      - as `hm@`, approve a waiting offer;
@@ -457,19 +477,30 @@ A few steps ask you to run a command:
 
      No email is really sent anywhere (rule C4).
   3. **Turnstile:** open the public job board (`/jobs` on the app address) in a normal window, open a job, and check that the robot check appears on the application form. Submit an application with made-up data, e.g. name "Test Person" and email `test@example.com`, and a small PDF (Claude can give you one). You should see the thank-you page. **Use made-up data only** (rule C3).
-- **Send Claude:** "proofs 7/8/Turnstile OK", or what went wrong.
+     If the invitation or the offer email is missing, reload any page of the app and wait one more minute: the worker that builds them only runs while the app is awake. Also choose the status filter **Sent**: it should show no rows (every email is only captured).
+- **Send Claude:** "proofs 7/8/Turnstile OK", the two outputs of the link check, or what went wrong.
 
 ### Step 3.4 – Help with the remaining technical checks if asked
 
-- **Proof #9 (which client IP header Azure provides):** Claude sends a few test requests and reads the logs. This may need you to paste one or two read-only commands into Cloud Shell.
-- **Rebuild check:** the README gains a "rebuild from an empty resource group" procedure. The first build you did in Part 2 counts as its proof (task 45, Q6). Nothing extra unless a step there didn't work as written.
+- **Proof #9 (which client IP header Azure provides):** Claude sends six test applications from the codespace with made-up IP headers, then asks you to read the log lines they left:
+  1. Portal → your resource group → the web app (`ats-web-…`) → **Monitoring → Logs**. Close the query gallery if it opens, and switch to **KQL mode** if asked.
+  2. Paste this query and click **Run**:
+
+     ```
+     ContainerAppConsoleLogs_CL | where Log_s has "application refused" | project TimeGenerated, Log_s | take 20
+     ```
+
+  3. Copy the result rows to Claude. They contain an `ip_source` value and never an IP address. Logs can take up to 5 minutes to appear; run it again if it's empty.
+  - Claude's test blocks the codespace's address on the application form for an hour. Do your Turnstile check (step 3.3) from your own network, which isn't affected.
+- **Rebuild check:** the README section **Rebuild from an empty resource group** describes the procedure. The first build you did in Part 2 counts as its proof (task 45, Q6). Nothing extra unless a step there didn't work as written.
 
 ### Step 3.5 – Test stopping and starting the database once
 
 - **Why:** after 12 months the database is no longer free. Stopping it (and the hourly job) between demos keeps the cost near zero (rule G10). This step proves the procedure works.
 - **How:**
-  1. Run Claude's **stop** commands in Cloud Shell. Then **wait about 2 hours**: the proof is that the hourly job doesn't run while stopped.
-  2. Run the **start** commands. Tell Claude, who checks that the next hourly run succeeds and the app answers.
+  1. In Cloud Shell, run the README section **Azure setup → Stop and start between demos**: first the block that sets the names, then **Stop**, then **Check both**. Send Claude the output: the database `Stopped` and the tick `Manual`.
+  2. **Wait about 2 hours**, then run the names block and **Check both** again. The executions list must show no new tick run in those 2 hours. Send Claude the output.
+  3. Run **Start**, then **Check both**: the database `Ready` and the tick `Schedule` with `0 * * * *`. After the next full hour, run **Check both** again: the newest tick execution should be `Succeeded`. Send Claude both outputs; Claude checks that the app answers.
 - **Good to know:**
   - Azure automatically restarts a stopped database after **7 days**. To keep it stopped longer, stop it again.
   - While it is stopped, deployments fail with a clear message. Start it first.
