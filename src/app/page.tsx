@@ -1,11 +1,9 @@
-import { getTranslations } from "next-intl/server";
+import { redirect } from "next/navigation";
 
-export default async function Home() {
-  const t = await getTranslations("Home");
-
-  return (
-    <main className="flex flex-1 items-center justify-center p-8">
-      <h1 className="text-2xl font-semibold">{t("title")}</h1>
-    </main>
-  );
+// The bare app address is what visitors get, so it opens the public job board
+// (ats-project-scope.md §5.3). Staff go to /dashboard, which sends them to
+// /sign-in first. A temporary (307) redirect, so browsers don't cache it if
+// the home page changes later.
+export default function Home() {
+  redirect("/jobs");
 }
