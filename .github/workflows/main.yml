@@ -68,7 +68,7 @@ jobs:
       # Built once and loaded into the runner's Docker; the same image is
       # tested below and pushed at the end, never rebuilt.
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
