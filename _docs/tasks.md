@@ -716,7 +716,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - Each step runs only if the previous one succeeded; superseded runs are cancelled.
 - A failing Playwright test uploads its trace, video and screenshot as artifacts.
 
-## 44. Azure infrastructure as code ✅
+## 44. Azure infrastructure as code
 
 **Issue:** [#50](https://github.com/mikolajniezbecki-bit/ats-app/issues/50)
 
