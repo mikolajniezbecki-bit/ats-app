@@ -5,7 +5,7 @@ import { getRequestId } from "@/server/request-id";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const t = await getTranslations("Home");
+  const t = await getTranslations("App");
   return { title: t("title") };
 }
 

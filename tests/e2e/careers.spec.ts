@@ -18,6 +18,13 @@ async function expectNoHorizontalScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 }
 
+test("the app's bare address opens the public job board", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/jobs$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Open positions" })).toBeVisible();
+  await expect(page.getByText("coming soon")).toHaveCount(0);
+});
+
 test("the board lists a published external job, search narrows it, and a job page shows it with Apply", async ({ page }) => {
   const word = tag();
   const job = await insertRequisition({ ...live, title: `Platform Engineer ${word}`, descriptionHtml: `<p>Kubernetes and ${word}.</p>` });
