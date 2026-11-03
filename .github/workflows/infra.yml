@@ -40,8 +40,10 @@ permissions:
   id-token: write
   contents: read
 
+# Shared with main.yml's deploy job (G4), so a deployment and an infra run
+# never change the same resources at the same time.
 concurrency:
-  group: infra
+  group: azure-deploy
   cancel-in-progress: false
 
 env:

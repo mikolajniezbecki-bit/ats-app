@@ -5,10 +5,20 @@
 # Each step runs only if every earlier one succeeded; the uploads on failure
 # are the only exception. Manual runs from another branch test but never
 # push (task 43 Q2). Pushes that change only _docs/** or Markdown don't start
-# it (Q3). The only credential is GITHUB_TOKEN; the Compose stack uses the
-# fake, local-only values from docker-compose.yml. Deployment comes in task 45.
-# A full green run takes about 25 minutes (the first one: 24 minutes). The
-# GHCR package `ats-app` is private (G9); proofs are linked on issue #49.
+# it (Q3). The test job's only credential is GITHUB_TOKEN; the Compose stack
+# uses the fake, local-only values from docker-compose.yml. A full green test
+# job takes about 25 minutes. The GHCR package `ats-app` is private (G9);
+# proofs are linked on issue #49.
+#
+# On main, the deploy job then rolls that same image out to Azure (task 45):
+# OIDC login (no Azure secret in GitHub, G3), db-migrate on the new tag, the
+# web app's image, the tick and db-seed jobs' image, and a smoke test of
+# GET /api/health plus the active revision. Only images change; settings
+# and the tick schedule are left as they are (README "Deploy and rollback").
+# A newer push cancels a running test job but never a deployment, and
+# deployments share one concurrency group with infra.yml (G4). Old GHCR
+# versions are deleted only after a successful deployment, so the image the
+# web app runs is never deleted.
 name: main
 
 on:
@@ -19,19 +29,21 @@ on:
       - "**/*.md"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
-
-# G4: a newer push to the same ref cancels the run in progress.
-concurrency:
-  group: main-${{ github.ref }}
-  cancel-in-progress: true
+# Each job asks for what it needs; nothing at workflow level.
+permissions: {}
 
 jobs:
   main:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    # G4: a newer push to the same ref cancels the test run in progress. This
+    # is job level on purpose: at workflow level it would cancel a deployment.
+    concurrency:
+      group: main-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
 
@@ -141,9 +153,116 @@ jobs:
             echo "- Digest: \`$digest\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Q4: GHCR keeps the 10 most recent versions; the one just pushed is the newest.
+  # Rolls the image the main job just tested and pushed out to Azure. Manual
+  # runs from other branches only test (task 43 Q2); a manual run on main
+  # deploys, which a rebuild needs (G6). Each step runs only if the previous
+  # one succeeded. There is no automatic rollback (TO-17).
+  deploy:
+    needs: main
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      id-token: write
+      contents: read
+    # Never cancelled by a newer push, and shared with infra.yml, so a
+    # deployment and an infra run never change the same resources at once.
+    concurrency:
+      group: azure-deploy
+      cancel-in-progress: false
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CORE_NO_COLOR: "true"
+      AZURE_CORE_ONLY_SHOW_ERRORS: "true"
+    steps:
+      - uses: actions/checkout@v7
+
+      # The same name the main job pushed (G2).
+      - name: Image name
+        run: |
+          echo "APP_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ats-app:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          {
+            echo "### Deployment"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Names come from the last infra.yml full deployment, never hard-coded.
+      - name: Read the resource names
+        run: |
+          if ! az deployment group show -g "$RESOURCE_GROUP" --name infra-full \
+              --query properties.outputs -o json > outputs.json 2> outputs-error.log; then
+            cat outputs-error.log >&2
+            echo "::error::Azure isn't set up yet: run infra.yml (stage full) first (README, Azure setup)."
+            exit 1
+          fi
+          for output in webName migrateJobName seedJobName tickJobName postgresServerName appUrl; do
+            value="$(jq -r --arg o "$output" '.[$o].value // ""' outputs.json)"
+            if [ -z "$value" ]; then
+              echo "::error::The infra-full deployment has no output $output: rerun infra.yml (stage full)."
+              exit 1
+            fi
+            echo "$output: $value"
+            echo "DEPLOY_${output}=$value" >> "$GITHUB_ENV"
+          done
+
+      # G10: the database is stopped between demos; migrate can't run then.
+      - name: Check that the database is running
+        run: |
+          state="$(az resource show -g "$RESOURCE_GROUP" --resource-type Microsoft.DBforPostgreSQL/flexibleServers \
+            -n "$DEPLOY_postgresServerName" --query properties.state -o tsv)"
+          echo "PostgreSQL $DEPLOY_postgresServerName: $state"
+          if [ "$state" != "Ready" ]; then
+            echo "::error::The database is stopped. Start it (README, Stop and start between demos) and rerun this workflow on main."
+            exit 1
+          fi
+
+      # Forward-only migrations that work with the previous release (D2), so
+      # they run before the web app changes.
+      - name: Migrate the database
+        run: |
+          set -o pipefail
+          bash infra/set-image.sh job "$DEPLOY_migrateJobName" "$APP_IMAGE" 600
+          bash infra/run-job.sh "$DEPLOY_migrateJobName" 600 | tee migrate.log
+          execution="$(sed -n 's/^Started .*, execution \(.*\)\.$/\1/p' migrate.log)"
+          echo "- db-migrate: \`${execution}\` Succeeded" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update the web app
+        id: web
+        run: |
+          bash infra/set-image.sh app "$DEPLOY_webName" "$APP_IMAGE" 600
+          echo "- Web app revision: \`${DEPLOY_webName}\` → \`$(grep '^revision=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Only the image: the tick schedule (stopped or not, G10) is untouched.
+      - name: Update the tick and db-seed jobs
+        run: |
+          bash infra/set-image.sh job "$DEPLOY_tickJobName" "$APP_IMAGE" 600
+          bash infra/set-image.sh job "$DEPLOY_seedJobName" "$APP_IMAGE" 600
+
+      - name: Smoke test
+        run: |
+          bash infra/smoke-test.sh "$DEPLOY_webName" "$DEPLOY_appUrl" "$APP_IMAGE"
+          echo "- Smoke test: \`GET ${DEPLOY_appUrl}/api/health\` 200, one active revision with 100 % traffic on \`${APP_IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # Q4: GHCR keeps the 10 most recent versions. Only after a successful
+  # deployment, so repeated failed deployments can never delete the image
+  # the web app still runs (it is pulled again on every cold start).
+  cleanup:
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
       - name: Delete old image versions
-        if: github.ref == 'refs/heads/main'
         uses: actions/delete-package-versions@v5
         with:
           package-name: ats-app
