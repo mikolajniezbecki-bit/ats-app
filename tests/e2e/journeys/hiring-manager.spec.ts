@@ -55,7 +55,7 @@ test("Hiring Manager journey: approves a requisition and an offer, and rejects a
 
   const rows = await query<{ id: string; approval_status: string }>("SELECT id, approval_status FROM offers WHERE id = ANY($1)", [[approvedOffer, rejectedOffer]]);
   expect(rows.find((row) => row.id === approvedOffer)?.approval_status).toBe("APPROVED");
-  expect(rows.find((row) => row.id === rejectedOffer)?.approval_status).not.toBe("APPROVED");
+  expect(rows.find((row) => row.id === rejectedOffer)?.approval_status).toBe("REJECTED");
 });
 
 test("Hiring Manager journey: approves a re-approval after an openings increase (L2)", async ({ asRole }) => {

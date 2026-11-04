@@ -2,6 +2,7 @@
 // the V6 allowlist on the page and on the API, a scorecard, the other
 // participant's scorecard after submitting (V7), and access ending when the
 // application is rejected (V8).
+import type { Page } from "@playwright/test";
 import { insertApplication } from "../support/applications";
 import { query } from "../support/db";
 import { expect, test } from "../support/fixtures";
@@ -44,19 +45,30 @@ test("Interviewer journey: allowlisted data, a scorecard, the other participant'
     await expect(body).not.toContainText("123,456");
     await expect(body).not.toContainText("Pre-screening");
     await expect(page.getByRole("form", { name: "Change status" })).toHaveCount(0);
+    // The Recruiter's page has both fields, so an empty result here means they are hidden, not that the locator is wrong.
+    const field = (on: Page, label: string) => on.locator("dt", { hasText: new RegExp(`^${label}$`) });
+    const recruiter = await asRole("recruiter");
+    await recruiter.goto(`/applications/${application.id}`);
+    for (const label of ["Status", "Pre-screening score"]) {
+      await expect(field(recruiter, label)).toHaveCount(1);
+      await expect(field(page, label)).toHaveCount(0);
+    }
 
     const response = await page.request.get(`/api/applications/${application.id}`);
     expect(response.status()).toBe(200);
-    const view = (await response.json()) as Record<string, unknown>;
+    const view = (await response.json()) as { audience: string; application: Record<string, unknown> };
     expect(view.audience).toBe("interviewer");
+    // V6 is an allowlist, so the exact keys: the full view keeps status and score inside `application`.
+    expect(Object.keys(view).sort()).toEqual(["application", "audience", "documents", "interviews", "requisition", "scorecards"]);
+    expect(Object.keys(view.application).sort()).toEqual(["email", "firstName", "id", "lastName", "phone"]);
     const text = JSON.stringify(view);
     expect(text).toContain(application.email);
     for (const hidden of ["Secret offer title", "123456", "salary", "prescreen", "offers", "history"]) expect(text).not.toContain(hidden);
-    expect(view).not.toHaveProperty("status");
   });
 
   await test.step("submits a scorecard, and only then sees the other participant's (V7)", async () => {
     const before = await page.request.get(`/api/applications/${application.id}/scorecards`);
+    expect(before.status()).toBe(200);
     expect(JSON.stringify(await before.json())).not.toContain(otherComment);
     await page.goto(`/applications/${application.id}`);
     await expect(page.getByText(otherComment)).toHaveCount(0);
@@ -69,6 +81,7 @@ test("Interviewer journey: allowlisted data, a scorecard, the other participant'
     await expect(page.getByText("This scorecard has been submitted and can't be changed.")).toBeVisible();
 
     const after = await page.request.get(`/api/applications/${application.id}/scorecards`);
+    expect(after.status()).toBe(200);
     expect(JSON.stringify(await after.json())).toContain(otherComment);
     await page.goto(`/applications/${application.id}`);
     await expect(page.getByText(otherComment)).toBeVisible();
