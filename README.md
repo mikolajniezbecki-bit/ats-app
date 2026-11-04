@@ -1,5 +1,7 @@
 # ats-app
 
+**New here? Read the [User Manual](user_manual.md):** a plain-language guide for HR testers and business evaluators.
+
 ## DataTalks.Club :: AI Dev Tools Zoomcamp 2026 — Capstone Project
 
 > **Peer reviewers:** this section is your guide to the project, and [section 5](#5-how-peer-reviewers-can-evaluate-the-app) shows how to try it. Everything below it is the project's operational runbook.
