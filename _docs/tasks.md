@@ -733,7 +733,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - The deployed resources match G5, including the log cap, budget alert and `APP_ENV=azure` on the app and all jobs.
 - No Azure secrets are stored in GitHub; the README documents OIDC and PAT setup with expiry reminders.
 
-## 45. Azure deployment and cloud proofs
+## 45. Azure deployment and cloud proofs ✅
 
 **Issue:** [#51](https://github.com/mikolajniezbecki-bit/ats-app/issues/51)
 

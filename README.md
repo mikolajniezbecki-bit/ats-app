@@ -390,6 +390,8 @@ The web app's new revision takes a minute or two; check `GET {appUrl}/api/health
 
 ### Stop and start between demos
 
+> **Not run in Azure.** The owner waived this proof on 2026-11-04 (task 45), so these commands, including the switch of the `tick` trigger to manual, are untested. Check the result with **Check both** the first time you use them.
+
 Stopping the database and the hourly `tick` job keeps the cost near zero between demos, which matters after month 12 when the database is no longer free (G10). Container Apps has no pause switch for a scheduled job, so **stop** switches the `tick` job's trigger to manual (it then never runs by itself) and **start** restores the hourly schedule `0 * * * *`. Rerunning `infra.yml` (stage `full`) restores it too. `main.yml` changes only images, so a deployment never turns the schedule back on.
 
 Run in Azure Cloud Shell (Bash). Set the names first:
@@ -455,6 +457,20 @@ The environment can be rebuilt from nothing (G6). Task 44's first build was done
 5. Run the `db-seed` job ([Seeding](#seeding), demo data).
 6. Run the `db-seed` job with `SEED_ADMIN_EMAIL=<your UPN>` ([Seeding](#seeding), first Admin).
 7. If the host name changed (`appUrl` in the `full` run's summary): update the Entra redirect URI and the Turnstile hostname ([One-time owner setup](#one-time-owner-setup) step 8, `_docs/user-tasks.md` step 2.5).
+
+### Cloud proofs
+
+The manual Sprint 0 proofs in Azure (tech-stack.md §15), all on image `202e9d9` and recorded on issue #51.
+
+| Proof | Date | Image SHA | Outcome | Notes |
+|---|---|---|---|---|
+| #6 Entra sign-in and refusal | 2026-11-04 | `202e9d9` | Passed | Owner-reported, in a browser (`_docs/user-tasks.md` step 3.2). |
+| #7 Signed links | 2026-11-04 | `202e9d9` | Passed | Cloud Shell check: Blob origin over HTTPS, user delegation key, `200`, `application/pdf`, `inline`; `409` without the signature. The `403` after 5 minutes is owner-reported. |
+| #8 Outbox | 2026-11-04 | `202e9d9` | Passed | Owner-reported, in a browser (step 3.3). |
+| #9 Client IP header | 2026-11-04 | `202e9d9` | Passed | Six attempts with spoofed headers: five refused by Turnstile, the sixth by the rate limit. All six logged `ip_source: envoy`, so `x-envoy-external-address` is the confirmed header. |
+| Turnstile on the Azure host name | 2026-11-04 | `202e9d9` | Passed | Owner-reported, in a browser (step 3.3). |
+| Dev-only features off | 2026-11-04 | `202e9d9` | Passed | `POST /api/auth/sign-in/email` returns 400 `EMAIL_PASSWORD_DISABLED` with no cookie; `/sign-in` shows only **Sign in with Microsoft**. |
+| G10 stop and start | n/a | n/a | Not run (owner decision) | Waived on 2026-11-04: the app won't be used after the Azure free trial. |
 
 ### Costs
 

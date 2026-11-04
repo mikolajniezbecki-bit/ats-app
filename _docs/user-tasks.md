@@ -483,7 +483,7 @@ A few steps ask you to run a command:
 ### Step 3.4 – Help with the remaining technical checks if asked
 
 - **Proof #9 (which client IP header Azure provides):** Claude sends six test applications from the codespace with made-up IP headers, then asks you to read the log lines they left:
-  1. Portal → your resource group → the web app (`ats-web-…`) → **Monitoring → Logs**. Close the query gallery if it opens, and switch to **KQL mode** if asked.
+  1. Portal → your resource group → the Log Analytics workspace (`ats-logs-…`) → **Logs**. Close the query gallery if it opens, switch to **KQL mode** if asked, and set the time range to **Last 7 days**. Use the workspace, not the web app's **Monitoring → Logs**: that page returned no rows in task 45.
   2. Paste this query and click **Run**:
 
      ```
@@ -494,7 +494,9 @@ A few steps ask you to run a command:
   - Claude's test blocks the codespace's address on the application form for an hour. Do your Turnstile check (step 3.3) from your own network, which isn't affected.
 - **Rebuild check:** the README section **Rebuild from an empty resource group** describes the procedure. The first build you did in Part 2 counts as its proof (task 45, Q6). Nothing extra unless a step there didn't work as written.
 
-### Step 3.5 – Test stopping and starting the database once
+### Step 3.5 – Test stopping and starting the database once (optional, not done)
+
+> You skipped this proof on 2026-11-04, because you won't use the app after the Azure free trial. So the commands are untested. The steps stay here in case you want to run them.
 
 - **Why:** after 12 months the database is no longer free. Stopping it (and the hourly job) between demos keeps the cost near zero (rule G10). This step proves the procedure works.
 - **How:**
@@ -579,7 +581,7 @@ If a budget alert email arrives (80 % or 100 % of EUR 10), tell Claude. **The al
 - [ ] 3.2 Sign-in checks with all accounts, including `outsider` and `throwaway`
 - [ ] 3.3 CV, Outbox and robot-check checks
 - [ ] 3.4 Help with technical checks if asked
-- [ ] 3.5 Stop/start test (about 2 hours of waiting)
+- [ ] 3.5 Stop/start test (optional; skipped by owner decision on 2026-11-04)
 
 **Part 4 (task 46):**
 - [ ] Nothing to set up; answer questions if asked
