@@ -3,6 +3,7 @@ import {
   NOT_REQUIRED_IDS,
   REQUIRED_IDS,
   checkRules,
+  formatReport,
   isCollectedTestFile,
   type SourceFile,
 } from "../check-rules";
@@ -16,17 +17,12 @@ function file(text: string, path = UNIT): SourceFile {
 }
 
 // Small required list so each case states exactly what is covered.
-function run(files: SourceFile[], pending: string[] | string | undefined, required = ["A2", "AU2", "L1", "L11", "R1", "R2", "R5", "R7"]) {
-  return checkRules({
-    files,
-    pendingJson: Array.isArray(pending) ? JSON.stringify(pending) : pending,
-    required,
-    notRequired: ["V9", "M2"],
-  });
+function run(files: SourceFile[], required = ["A2", "AU2", "L1", "L11", "R1", "R2", "R5", "R7"]) {
+  return checkRules({ files, required, notRequired: ["V9", "M2"] });
 }
 
 function testedIds(files: SourceFile[]): string[] {
-  return [...run(files, []).tested.keys()].sort();
+  return [...run(files).tested.keys()].sort();
 }
 
 describe("which files are scanned", () => {
@@ -161,7 +157,7 @@ describe("required ID list", () => {
     const src = ["M2: logger redacts email", "J7: helper", "D8: seed", "W6: outbox", "T2: isolation", "G10: x"]
       .map((t) => `test('${t}', () => {});`)
       .join("\n");
-    const result = checkRules({ files: [file(src)], pendingJson: JSON.stringify(REQUIRED_IDS) });
+    const result = checkRules({ files: [file(src)], required: [] });
     expect(result.errors).toEqual([]);
     expect(result.ok).toBe(true);
   });
@@ -169,49 +165,48 @@ describe("required ID list", () => {
 
 describe("pass and fail", () => {
   const ALL = ["A2", "AU2", "L1", "L11", "R1", "R2", "R5", "R7"];
+  const titles = (ids: readonly string[]) => ids.map((id) => `test('${id}: x', () => {});`).join("\n");
 
-  it("passes when every required ID is tested or pending and prints the counts", () => {
-    const result = run([file("test('A2: x', () => {}); test('R7: y', () => {});")], ALL.filter((id) => id !== "A2" && id !== "R7"));
+  it("passes when every required ID is tested and prints the counts", () => {
+    const result = run([file(titles(ALL))]);
     expect(result.errors).toEqual([]);
     expect(result.ok).toBe(true);
-    expect(result.summary).toEqual({ required: 8, tested: 2, pending: 6 });
+    expect(result.summary).toEqual({ required: 8, tested: 8 });
   });
 
   it("fails naming every missing ID, sorted", () => {
-    const result = run([file("test('A2: x', () => {});")], ["L1", "R1"]);
+    const result = run([file("test('A2: x', () => {}); test('L1: y', () => {}); test('R1: z', () => {});")]);
     expect(result.ok).toBe(false);
-    expect(result.errors).toEqual(["Required rule IDs without a test or pending entry: AU2, L11, R2, R5, R7"]);
+    expect(result.errors).toEqual(["Required rule IDs without a test: AU2, L11, R2, R5, R7"]);
   });
 
-  it("fails when a pending ID already has a test, naming the ID and files", () => {
-    const files = [file("test('R7: x', () => {});", "tests/unit/a.test.ts"), file("test('R7: y', async () => {});", "tests/e2e/b.spec.ts")];
-    const result = run(files, ALL);
-    expect(result.ok).toBe(false);
-    expect(result.errors).toEqual([
-      "R7 is pending but already tested in tests/unit/a.test.ts, tests/e2e/b.spec.ts: remove it from the pending list.",
-    ]);
-  });
+  it("with test files covering all 102 IDs the scan passes; removing the only R7 title makes it fail and name R7", () => {
+    const covered = checkRules({ files: [file(titles(REQUIRED_IDS))] });
+    expect(covered.errors).toEqual([]);
+    expect(covered.ok).toBe(true);
+    expect(covered.summary).toEqual({ required: 102, tested: 102 });
 
-  it.each([
-    ["missing", undefined, /is missing/],
-    ["invalid JSON", "[\"A2\",", /is not valid JSON/],
-    ["an object", "{\"A2\": true}", /must be a JSON array of strings/],
-    ["an array with a number", "[\"A2\", 7]", /must be a JSON array of strings/],
-    ["a duplicate", JSON.stringify([...ALL, "R7"]), /lists R7 more than once/],
-    ["a typo ID", JSON.stringify([...ALL, "AU11"]), /lists AU11, which is not a required rule ID/],
-    ["a not-required ID", JSON.stringify([...ALL, "V9"]), /lists V9, which is not a required rule ID/],
-  ])("fails when the pending list is %s", (_label, pending, message) => {
-    const result = run([], pending);
+    const result = checkRules({ files: [file(titles(REQUIRED_IDS.filter((id) => id !== "R7")))] });
     expect(result.ok).toBe(false);
-    expect(result.errors.join("\n")).toMatch(message);
+    expect(result.errors).toEqual(["Required rule IDs without a test: R7"]);
   });
 
   it("fails on a test title with an unknown rule-shaped ID, naming file and title", () => {
-    const result = run([file("test('AU11: typo', () => {}); test('X3: unknown', () => {});")], ALL);
+    const result = run([file(`${titles(ALL)}\ntest('AU11: typo', () => {}); test('X3: unknown', () => {});`)]);
     expect(result.ok).toBe(false);
     expect(result.errors).toEqual([
       `${UNIT}: test "AU11: typo" starts with unknown rule ID AU11. Fix the typo or the ID list in tests/check-rules.ts.`,
       `${UNIT}: test "X3: unknown" starts with unknown rule ID X3. Fix the typo or the ID list in tests/check-rules.ts.`,
     ]);
+  });
+});
+
+describe("report", () => {
+  it("lists each required ID in order with the files of its tests, and marks an ID without a test", () => {
+    const result = run(
+      [file("test('R7: x', () => {});", "tests/unit/a.test.ts"), file("test('R7: y', async () => {});", "tests/e2e/b.spec.ts")],
+      ["A2", "R7"],
+    );
+    expect(formatReport(result, ["A2", "R7"])).toBe("A2: (no test)\nR7: tests/unit/a.test.ts, tests/e2e/b.spec.ts");
   });
 });

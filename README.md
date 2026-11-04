@@ -45,7 +45,8 @@ Test files:
 Rule traceability (`pnpm test:rules`, tech-stack.md §11 T1):
 
 - A test covers rule `X` when the title of the `test(...)`/`it(...)` call itself starts with `X:` (e.g. `test("R7: status change cancels pending rejection email", ...)`). IDs match exactly (`AU2:` is not `A2:`), one per test. Titles on `describe(...)` and skipped, todo, fixme or failing tests don't count.
-- Required IDs that have no test yet are listed in `tests/rules-pending.json`. Every task that adds the first test for an ID removes that ID from the list in the same change; the scan fails if a pending ID already has a test, if a required ID is neither tested nor pending, or if a title starts with an unknown rule-shaped ID.
+- The scan fails, naming the IDs, if a required ID has no test or a title starts with an unknown rule-shaped ID. There are no exceptions.
+- `pnpm test:rules --report` also lists each required ID with the files of its tests. The scan proves that a title exists, not that the test is meaningful, so use the list to review coverage.
 - Pull requests run the same checks in `.github/workflows/ci.yml`: `pnpm verify`, then `pnpm db:migrate` and `pnpm test:integration` against a `postgres:17` service container, then `pnpm build`.
 
 ## Sign-in and end-to-end tests
