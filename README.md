@@ -1,5 +1,128 @@
 # ats-app
 
+## DataTalks.Club :: AI Dev Tools Zoomcamp 2026 — Capstone Project
+
+> **Peer reviewers:** this section is your guide to the project, and [section 5](#5-how-peer-reviewers-can-evaluate-the-app) shows how to try it. Everything below it is the project's operational runbook.
+
+### 1. Problem Statement & Project Goal
+
+**The problem.** Enterprise recruiting systems are heavy, expensive and complex to maintain, which is too much for a focused hiring workflow.
+
+**The solution.** A lightweight, production-grade, GDPR-aware Applicant Tracking System (ATS) and public Career Portal. It runs on Azure Container Apps with scale-to-zero and near-zero idle cost, within the project's constraints (`C1–C4`): built by one person, self-funded, synthetic data only, and no real email delivery.
+
+**Core capabilities:**
+
+- **Public Career Portal:** the `/jobs` board and Quick Apply with CV upload, protected by Cloudflare Turnstile.
+- **Requisitions and approvals:** the full requisition lifecycle, with single-step approvals, segregation of duties, reassignment and reminders.
+- **Recruiter Workbench:** pipeline list, inline CV preview, interview scheduling with `.ics` invites, scorecards, offer PDF generation and an internal email Outbox.
+- **Admin and GDPR governance:** the retention purge, an audit trail of approvals and requisition changes, master data, and a KPI dashboard.
+
+### 2. AI-Assisted Development & Multi-Agent Workflow
+
+The application was built end to end across 46 tasks with **Claude Code**, using a spec-driven, multi-agent setup.
+
+**Specifications (`_docs/`)** are the source of truth:
+
+- `ats-project-scope.md`: business rules and domain constraints.
+- `tech-stack.md`: architecture, security and testing rules.
+
+**Sub-agents (`.claude/agents/`)** each have one role:
+
+| Agent | Role |
+|---|---|
+| `pm` | Grooms each task from `_docs/tasks.md` into a GitHub Issue with checkable acceptance criteria |
+| `software-engineer` | Implements one groomed task with its tests, within the layer boundaries and using rule-tagged test titles |
+| `reviewer` | Independently audits the PR against the acceptance criteria, verifies test integrity (`T8`), merges to `main` and cleans up the environment |
+
+**Automated rule coverage (`T1`).** Business and technical rules have IDs such as `R7` or `AU2`. Every required rule needs a test whose title starts with its ID, for example `R7: status change cancels pending rejection email`. `pnpm test:rules` scans the test files and fails, naming the rule, if any of the 102 required IDs has no running test. It runs in CI as part of `pnpm verify`, and `pnpm test:rules --report` lists the test files for each rule.
+
+### 3. Architecture & Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Web framework | Next.js 16 (App Router, Server Actions), TypeScript |
+| Database and ORM | PostgreSQL 17, Drizzle ORM |
+| Authentication | Better Auth: Microsoft Entra ID in the cloud, dev credentials locally |
+| Background jobs | pg-boss, with an hourly tick |
+| UI | Tailwind CSS, `shadcn/ui` |
+| Hosting | Azure Container Apps |
+| Managed database | Azure Database for PostgreSQL Flexible Server (B1MS) |
+| Files | Azure Blob Storage |
+| Secrets | Azure Key Vault |
+| Logging | Log Analytics |
+| Infrastructure as code | Bicep |
+
+### 4. Verification, Testing & Passwordless CI/CD
+
+**Test layers:**
+
+- **Vitest unit tests**, which need no services.
+- **Vitest integration tests** against real PostgreSQL and Azurite.
+- **Playwright end-to-end tests**, including a full journey for each of the four roles.
+- **`@axe-core/playwright`** WCAG 2.1 AA accessibility checks.
+- **`pnpm verify`**, which runs lint, type checks, unit tests and the rule scan.
+
+**GitHub Actions pipelines:**
+
+| Workflow | Purpose |
+|---|---|
+| `ci.yml` | The PR gate |
+| `main.yml` | Full verification, GHCR image publishing and automated Azure rollout |
+| `infra.yml` | Two-stage Bicep `what-if` / `deploy` |
+
+Azure access uses passwordless GitHub OIDC federated credentials, so no Azure secrets are stored in GitHub.
+
+### 5. How Peer Reviewers Can Evaluate the App
+
+#### Option A — Live Azure Cloud Deployment
+
+**Career Portal:** https://ats-web-3brhgxoyatsve.politemushroom-7e0cd08d.polandcentral.azurecontainerapps.io/jobs
+
+- Browse the jobs and submit an application through the Cloudflare Turnstile check.
+- **Use made-up data only** (`C3`), for example "Test Person" and `test@example.com`, with a small sample PDF.
+- The app scales to zero, so the first page can take up to a minute to load.
+
+The cloud Back Office (`/sign-in`) is locked to a single-tenant Microsoft Entra ID directory by security design (`AU1–AU5`). To try the staff roles, use Option B.
+
+#### Option B — 2-Minute Local Quickstart (Full Back-Office Access for Reviewers)
+
+Requires Docker with Compose v2. No Node.js or Azure account is needed.
+
+> The first run also has to build the app image, which takes several minutes on top. The build needs plenty of free memory: on an 8 GB machine it can stop with exit code 143. If it does, close other applications and run it again.
+
+```sh
+git clone https://github.com/mikolajniezbecki-bit/ats-app.git
+cd ats-app
+docker compose up --build -d                    # Postgres, Azurite, Mailpit and the app
+docker compose run --rm app node db/migrate.mjs  # database migrations
+docker compose run --rm app node db/seed.mjs     # demo users and the rich demo data
+```
+
+Then open http://localhost:3000/sign-in. To start again from an empty database, run `docker compose down -v`.
+
+**Demo accounts** (local only, password `local-only-not-secret-demo` for all four):
+
+| Role | Email |
+|---|---|
+| Admin | `admin@ats-demo.local` |
+| Recruiter | `recruiter@ats-demo.local` |
+| Hiring Manager | `hm@ats-demo.local` |
+| Interviewer | `interviewer@ats-demo.local` |
+
+**Key routes:**
+
+| Route | What to look at |
+|---|---|
+| `/sign-in` | Staff sign-in |
+| `/requisitions` | Requisitions, and from there their applications |
+| `/approvals` | Pending approvals (Hiring Manager, Admin) |
+| `/reports` | KPI dashboard (Recruiter, Admin) |
+| `/admin` | Settings, master data, users, templates, Outbox and jobs (Admin) |
+| `/jobs` | The public Career Portal |
+| http://localhost:8025 | Mailpit: the emails the app sends locally |
+
+---
+
 Custom ATS & career portal. Specs live in `_docs/` (start with `ats-project-scope.md` and `tech-stack.md`).
 
 ## Development
