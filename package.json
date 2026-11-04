@@ -63,7 +63,7 @@
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
     "eslint": "^9",
-    "eslint-config-next": "16.4.2",
+    "eslint-config-next": "16.4.3",
     "shadcn": "^4.22.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
