@@ -1,12 +1,12 @@
 // Rule-traceability scan (tech-stack.md §11 T1): every required rule ID needs
-// a test whose own title starts with "<ID>:", or an entry in
-// tests/rules-pending.json until the task that implements it adds the test.
+// a test whose own title starts with "<ID>:", with no exceptions.
 //
 // The core (`checkRules`) is a pure function over in-memory sources so every
 // rule is unit-tested in tests/unit/check-rules.test.ts; the CLI at the bottom
-// only reads the files. Run with `pnpm test:rules` (Node 24 type stripping, so
-// this file must stay free of enums and other non-erasable TypeScript).
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+// only reads the files. Run with `pnpm test:rules`, or `pnpm test:rules --report`
+// to list each required ID with the files of its tests (Node 24 type stripping,
+// so this file must stay free of enums and other non-erasable TypeScript).
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 
@@ -68,14 +68,10 @@ export const NOT_REQUIRED_IDS: readonly string[] = [
   ...range("M", 1, 8),
 ];
 
-export const PENDING_FILE = "tests/rules-pending.json";
-
 export type SourceFile = { path: string; text: string };
 
 export type CheckInput = {
   files: readonly SourceFile[];
-  // Contents of tests/rules-pending.json, or undefined when the file is missing.
-  pendingJson: string | undefined;
   required?: readonly string[];
   notRequired?: readonly string[];
 };
@@ -83,7 +79,7 @@ export type CheckInput = {
 export type CheckResult = {
   ok: boolean;
   errors: string[];
-  summary: { required: number; tested: number; pending: number };
+  summary: { required: number; tested: number };
   // Required ID -> files with a counting test.
   tested: Map<string, string[]>;
 };
@@ -157,31 +153,6 @@ function compareIds(a: string, b: string): number {
   return a.localeCompare(b, "en", { numeric: true });
 }
 
-function parsePending(json: string | undefined, required: ReadonlySet<string>): { ids: string[]; errors: string[] } {
-  if (json === undefined) {
-    return { ids: [], errors: [`${PENDING_FILE} is missing. Commit it as a JSON array of rule IDs (may be empty).`] };
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(json);
-  } catch (error) {
-    return { ids: [], errors: [`${PENDING_FILE} is not valid JSON: ${(error as Error).message}`] };
-  }
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-    return { ids: [], errors: [`${PENDING_FILE} must be a JSON array of strings.`] };
-  }
-  const errors: string[] = [];
-  const seen = new Set<string>();
-  for (const id of value as string[]) {
-    if (seen.has(id)) errors.push(`${PENDING_FILE} lists ${id} more than once.`);
-    seen.add(id);
-    if (!required.has(id)) {
-      errors.push(`${PENDING_FILE} lists ${id}, which is not a required rule ID (tech-stack.md §11 T1).`);
-    }
-  }
-  return { ids: [...seen], errors };
-}
-
 export function checkRules(input: CheckInput): CheckResult {
   const requiredList = input.required ?? REQUIRED_IDS;
   const required = new Set(requiredList);
@@ -204,27 +175,20 @@ export function checkRules(input: CheckInput): CheckResult {
     }
   }
 
-  const pending = parsePending(input.pendingJson, required);
-  errors.push(...pending.errors);
-  const pendingSet = new Set(pending.ids);
-
-  if (pending.errors.length === 0) {
-    for (const id of pending.ids) {
-      const files = tested.get(id);
-      if (files) errors.push(`${id} is pending but already tested in ${files.join(", ")}: remove it from the pending list.`);
-    }
-    const missing = requiredList.filter((id) => !tested.has(id) && !pendingSet.has(id)).sort(compareIds);
-    if (missing.length > 0) {
-      errors.push(`Required rule IDs without a test or pending entry: ${missing.join(", ")}`);
-    }
-  }
+  const missing = requiredList.filter((id) => !tested.has(id)).sort(compareIds);
+  if (missing.length > 0) errors.push(`Required rule IDs without a test: ${missing.join(", ")}`);
 
   return {
     ok: errors.length === 0,
     errors,
-    summary: { required: required.size, tested: tested.size, pending: pendingSet.size },
+    summary: { required: required.size, tested: tested.size },
     tested,
   };
+}
+
+/** One line per required ID with the files of its tests, for reviewing coverage by hand. */
+export function formatReport(result: CheckResult, required: readonly string[] = REQUIRED_IDS): string {
+  return required.map((id) => `${id}: ${result.tested.get(id)?.join(", ") ?? "(no test)"}`).join("\n");
 }
 
 function readTestFiles(root: string): SourceFile[] {
@@ -237,13 +201,10 @@ function readTestFiles(root: string): SourceFile[] {
 
 if (import.meta.main) {
   const root = path.resolve(import.meta.dirname, "..");
-  const pendingPath = path.join(root, PENDING_FILE);
-  const result = checkRules({
-    files: readTestFiles(root),
-    pendingJson: existsSync(pendingPath) ? readFileSync(pendingPath, "utf8") : undefined,
-  });
-  const { required, tested, pending } = result.summary;
-  console.log(`Rule IDs: ${required} required, ${tested} tested, ${pending} pending.`);
+  const result = checkRules({ files: readTestFiles(root) });
+  if (process.argv.includes("--report")) console.log(formatReport(result));
+  const { required, tested } = result.summary;
+  console.log(`Rule IDs: ${required} required, ${tested} tested.`);
   for (const error of result.errors) console.error(`✗ ${error}`);
   process.exitCode = result.ok ? 0 : 1;
 }

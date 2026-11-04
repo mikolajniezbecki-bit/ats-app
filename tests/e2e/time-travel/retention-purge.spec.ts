@@ -46,4 +46,14 @@ test("RT3: after a tick past the retention period a rejected application shows '
   await expect(recruiter.getByText("Removed under the retention policy")).toBeVisible();
   await expect(recruiter.getByTestId("document-CV")).toHaveCount(0);
   await expect(recruiter.getByRole("form", { name: "Change status" })).toHaveCount(0);
+
+  // The purge journey (task 46): an Admin sees the same result, and the CV is deleted (the row stays, without its name).
+  const admin = await asRole("admin");
+  await admin.goto(`/applications/${application.id}`);
+  await expect(admin.getByRole("heading", { level: 1 })).toHaveText("Anonymized applicant");
+  await expect(admin.getByTestId("document-CV")).toHaveCount(0);
+  const files = await query<{ deleted_at: Date | null; original_name: string | null }>("SELECT deleted_at, original_name FROM files WHERE owner_id = $1 AND owner_type = 'APPLICATION'", [application.id]);
+  expect(files).toHaveLength(1);
+  expect(files[0].deleted_at).not.toBeNull();
+  expect(files[0].original_name).toBeNull();
 });
