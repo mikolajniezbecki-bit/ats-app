@@ -42,6 +42,8 @@ Test files:
 - Vitest integration tests: `tests/integration/**/*.test.ts`, run only by `pnpm test:integration` against the Compose PostgreSQL (never mocks, D9). A global setup drops the `ats_test_*` databases of earlier runs and migrates `ats_test_template`; each Vitest worker then works in its own clone, `ats_test_<worker id>` (T2). The setup refuses any `DATABASE_URL` host other than `localhost`, `127.0.0.1` or `postgres`, and `APP_ENV=azure`. It defaults to the Compose credentials when `DATABASE_URL` is unset. Run a single file with `pnpm test:integration tests/integration/<file>`.
 - Playwright specs: `tests/e2e/**/*.spec.ts`, run by `pnpm test:e2e` against a running app at `E2E_BASE_URL` (default `http://localhost:3000`, the Compose stack): start it with `docker compose up --build -d` and migrate it first (see "Local stack"). Chromium only; one retry when `CI` is set; trace, video and screenshot are kept on failure in `test-results/`. See "Sign-in and end-to-end tests" below.
 
+The role journeys are in `tests/e2e/journeys/`, one spec per role (Recruiter, Hiring Manager, Interviewer, Admin). They run with the other Playwright specs; the purge journey is in `tests/e2e/time-travel/retention-purge.spec.ts`.
+
 Rule traceability (`pnpm test:rules`, tech-stack.md §11 T1):
 
 - A test covers rule `X` when the title of the `test(...)`/`it(...)` call itself starts with `X:` (e.g. `test("R7: status change cancels pending rejection email", ...)`). IDs match exactly (`AU2:` is not `A2:`), one per test. Titles on `describe(...)` and skipped, todo, fixme or failing tests don't count.

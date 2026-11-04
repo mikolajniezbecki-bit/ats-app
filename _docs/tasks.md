@@ -751,7 +751,7 @@ When a task's "Done when" criteria pass, mark it done by appending ` ✅` to its
 - A CV opens inline from Azure Blob, a captured email appears in the Outbox, and the confirmed client IP header is recorded in `tech-stack.md`.
 - The README documents the rebuild and stop/start procedures.
 
-## 46. Rule coverage close-out
+## 46. Rule coverage close-out ✅
 
 **Issue:** [#52](https://github.com/mikolajniezbecki-bit/ats-app/issues/52)
 
