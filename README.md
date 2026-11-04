@@ -627,3 +627,9 @@ Refused combinations: `AUTH_DEV_LOGIN=true` with `APP_ENV=azure` or `EMAIL_PROVI
 `src/server/logger.ts` writes pino JSON lines to stdout (M1). It reads only `LOG_LEVEL` (default `info`), so it works even when the configuration is invalid. Log identifiers only, never personal data (M2); the `redact` paths are a safety net. In server code, use `getRequestLogger()` from `src/server/request-id.ts` to bind the request's `request_id`, which `src/proxy.ts` generates for every request and returns in `x-request-id` (M3). Unhandled errors are logged by `onRequestError` in `src/instrumentation.ts` (M4).
 
 For readable output locally, pipe it through pino-pretty: `pnpm dev | pnpm dlx pino-pretty`.
+
+## License & Attribution
+
+Licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only); see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+Copyright (c) 2026 Mikołaj Niezbecki. Any reuse, modification or network deployment must retain the original authorship attribution and comply with the license terms.
