@@ -2,6 +2,8 @@
   "name": "ats-app",
   "version": "0.1.0",
   "private": true,
+  "author": "Mikołaj Niezbecki",
+  "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.28.6",
   "engines": {
     "node": ">=24 <25"
