@@ -1,6 +1,8 @@
 # ats-app
 
 **New here? Read the [User Manual](user_manual.md):** a plain-language guide for HR testers and business evaluators.
+Specs live in `_docs/` (start with `ats-project-scope.md` and `tech-stack.md`).
+You might also want to check `tradeoffs.md` to understand how this PoC differ from a enterprise ready solution.
 
 ## DataTalks.Club :: AI Dev Tools Zoomcamp 2026 — Capstone Project
 
@@ -124,8 +126,6 @@ Then open http://localhost:3000/sign-in. To start again from an empty database, 
 | http://localhost:8025 | Mailpit: the emails the app sends locally |
 
 ---
-
-Custom ATS & career portal. Specs live in `_docs/` (start with `ats-project-scope.md` and `tech-stack.md`).
 
 ## Development
 

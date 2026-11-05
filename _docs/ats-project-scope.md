@@ -40,7 +40,7 @@
 
 ## 1. Context
 
-The company uses **SAP SuccessFactors Recruiting** for requisitions, candidate pipelines, interviews and offers. This project builds a standalone **Applicant Tracking System (ATS) with a public career portal** as a **proof of concept (PoC)** that covers the core recruiting workflow with a much simpler model. A later enterprise version will build on it (see `tradeoffs.md`).
+This project builds a standalone **Applicant Tracking System (ATS) with a public career portal** as a **proof of concept (PoC)** that covers the core recruiting workflow with a much simpler model.
 
 ### Project constraints
 | # | Constraint | Consequence |
